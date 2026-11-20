@@ -1,0 +1,1 @@
+{"name":"@urlput/import","private":true,"type":"module","exports":"./src/index.ts","dependencies":{"@urlput/contracts":"*","csv-parse":"^7.0.3","ipaddr.js":"^2.5.0"}}
