@@ -21,7 +21,7 @@ dialog{width:min(360px,calc(100% - 24px));border:1px solid var(--line);border-ra
 const numbers = new Intl.NumberFormat('zh-CN');
 const n = value => numbers.format(value);
 const demoSites = Array.from({length:100},(_,i)=>({id:'site-'+(i+1),name:'brand-'+(i+1)+'.example',url:'https://brand-'+(i+1)+'.example/'}));
-const demoLinks = Array.from({length:1000},(_,i)=>({id:'row-'+(i+1),line:i+1,url:'https://channel-'+(i+1)+'.example/submit'}));
+const demoLinks = Array.from({length:1000},(_,i)=>({id:'row-'+(i+1),line:i+1,url:'https://channel-'+(i+1)+'.example/submit',entryType:i%2===0?'directory':'resource'}));
 const storageKey = 'urlput-panel-prototype-v2';
 let saved;
 try {saved=JSON.parse(localStorage.getItem(storageKey))}catch{}
@@ -312,6 +312,11 @@ async function handleSiteCycle(item,index,now,history,notes){
     if(current?.status==='retry'&&current.retryAt>now){
       notes.add('提交前临时失败，等待次日重试');break;
     }
+    const content=chooseSubmissionContent(item.publication,site,link);
+    if(content===null){
+      ((daily.contentBlocked??={})[site.id]??=[]).push(link.url);
+      finishPair(item,index,link,false);continue;
+    }
     if(!budgetRemaining(item,site.id,now)){notes.add('额度已用完');break}
     if(index===0&&!daily.injectedFailure&&used===1&&offset+1<item.links.length){
       daily.injectedFailure=true;
@@ -321,7 +326,7 @@ async function handleSiteCycle(item,index,now,history,notes){
     }
 
     const record={siteId:site.id,url:link.url,status:'processing',owner:item.id,
-      content:chooseSubmissionContent(item.publication,site,link)};
+      content};
     pairLedger.set(key,record);
     const existing=attempts.find(entry=>entry.siteId===site.id&&entry.at===now);
     if(existing)existing.count++;
@@ -377,11 +382,24 @@ function cycleMarkup(item){
     (daily.nextAt&&!item.stopped?'<p class="hint">'+safe(daily.reason)+'</p><p class="hint">下轮最早 · '+safe(new Date(daily.nextAt).toLocaleString('zh-CN'))+'</p>':'');
 }
 
+const templateCategories={
+  general:{label:'通用文案',title:'投稿标题',body:'投稿正文',fields:'标题、正文',
+    steps:'根据目标入口选择填写和发布流程。'},
+  directory:{label:'目录收录 · 站点简介',title:'产品名称文案',body:'关键描述（短简介）',fields:'产品名称、官网、关键描述、产品介绍、分类、产品图片',
+    steps:'核对收录分类与必填资料 → 填产品表单，官网写入独立字段 → 核对并提交。'},
+  resource:{label:'社区推荐 · 资源推荐',title:'推荐标题',body:'推荐理由与正文',fields:'板块、标题、推荐理由、正文链接',
+    steps:'核对板块是否允许推荐 → 写推荐理由并插入正文链接 → 预览帖子后发布。'},
+};
 const starterTemplates = [
-  {id:'intro',revision:1,name:'站点简介',title:'了解 {{站点名称}}',body:'{{站点名称}} 提供易上手的工具。访问 {{站点网址}} 了解详情。'},
-  {id:'resource',revision:1,name:'资源推荐',title:'推荐资源：{{站点名称}}',body:'分享一个实用资源：{{站点名称}}（{{站点网址}}）。'},
+  {id:'intro',revision:1,category:'directory',name:'站点简介',title:'{{产品名称}}',body:'{{关键描述}}'},
+  {id:'resource',revision:1,category:'resource',name:'资源推荐',title:'资源分享：{{产品名称}}',body:'想推荐 {{产品名称}}。{{关键描述}}\n官网：{{站点网址}}'},
 ];
-let contentTemplates=saved?.contentTemplates??starterTemplates;
+let contentTemplates=(saved?.contentTemplates??starterTemplates).map(template=>{
+  if(template.category)return template;
+  const starter=starterTemplates.find(item=>item.id===template.id);
+  if(starter&&template.revision===1)return starter;
+  return {...template,category:starter?.category??'general'};
+});
 let defaultTemplateId=saved?.defaultTemplateId??'intro';
 let contentStrategy='templates', pickedTemplates=null, editingTemplate='', templatesFromSetup=false;
 let templateQuery='',templatePageIndex=0;
@@ -397,26 +415,28 @@ function contentOptions(){
   const selectedIds=new Set(chosenTemplates().map(template=>template.id));
   const choices=contentTemplates.map(template=>
     '<label class="check item"><input type="checkbox" data-content-id="'+safe(template.id)+'" '+(selectedIds.has(template.id)?'checked':'')+'>'+
-    '<span>'+safe(template.name)+(template.id===defaultTemplateId?' <span class="chip">默认</span>':'')+'</span></label>'
+    '<span>'+safe(template.name)+(template.id===defaultTemplateId?' <span class="chip">默认</span>':'')+
+    '<small class="truncate">'+safe(templateCategories[template.category].label)+'</small></span></label>'
   ).join('');
   return '<section class="card"><h2>投稿内容</h2>'+
     '<label class="field">内容来源<select id="content-strategy"><option value="templates" '+(contentStrategy==='templates'?'selected':'')+'>仅用内容模板</option>'+
     '<option value="ai" '+(contentStrategy==='ai'?'selected':'')+'>AI 根据目标网页拟写</option>'+
     '<option value="hybrid" '+(contentStrategy==='hybrid'?'selected':'')+'>AI 分析 + 模板</option></select></label>'+
     (mode==='analysis'?'<p class="hint">当前仅分析。切换为「分析后执行」时使用这里的选择。</p>':'')+
-    (contentStrategy!=='ai'?'<p class="hint">'+(contentStrategy==='hybrid'?'每条先选一份模板，再结合目标网页要求调整。':'可以多选。每条从选中模板随机取一份，记录版本。')+'</p>'+
+    (contentStrategy!=='ai'?'<p class="hint">'+(contentStrategy==='hybrid'?'按入口选适用模板，再结合网页要求调整。':'可以多选。先匹配入口类型，再在同类模板中随机取一份。')+'</p>'+
       '<div class="list" aria-label="可选内容模板">'+choices+'</div><p class="hint" id="content-count">已选 '+selectedIds.size+' 份模板</p>':
       '<p class="hint">AI 用目标网页的主题和要求拟写。原型生成示例预览。正式执行遇到模型不可用或网页信息不足时，转人工处理。</p>')+
     btn('管理内容模板','manage-content','secondary')+'</section>';
 }
 function templateRows(){
-  const filtered=[...contentTemplates].reverse().filter(template=>matches(template.name+' '+template.title,templateQuery));
+  const filtered=[...contentTemplates].reverse().filter(template=>matches(template.name+' '+template.title+' '+templateCategories[template.category].label,templateQuery));
   templatePageIndex=Math.min(templatePageIndex,Math.max(0,Math.ceil(filtered.length/pageSize)-1));
   if(!filtered.length)return '<p class="hint">没有匹配的模板。</p>';
   return filtered.slice(templatePageIndex*pageSize,(templatePageIndex+1)*pageSize).map(template=>
     '<div class="item"><div class="row"><strong>'+safe(template.name)+'</strong>'+
     (template.id===defaultTemplateId?'<span class="chip">默认</span>':'')+'</div>'+
-    '<p class="hint truncate">'+safe(template.title)+'</p><div class="actions">'+
+    '<p class="hint">'+safe(templateCategories[template.category].label)+' · '+safe(templateCategories[template.category].fields)+'</p>'+
+    '<p class="hint">'+safe(templateCategories[template.category].steps)+'</p><div class="actions">'+
     entityButton('编辑','edit-content',template.id)+
     (template.id===defaultTemplateId?'':entityButton('设为默认','default-content',template.id))+entityButton('删除','delete-content',template.id)+'</div></div>'
   ).join('')+paging('template',filtered.length,templatePageIndex);
@@ -427,35 +447,64 @@ function templateSettings(){
     '<label class="field">搜索模板<input id="template-search" value="'+safe(templateQuery)+'"></label>'+
     '<div id="template-rows" aria-label="内容模板库">'+templateRows()+'</div></section>';
 }
+function editorCategoryLabels(category){
+  const detail=templateCategories[category];
+  document.querySelector('#editor-content-title-label').textContent=detail.title;
+  document.querySelector('#editor-content-body-label').textContent=detail.body;
+  document.querySelector('#editor-content-workflow').textContent=detail.fields+'。'+detail.steps;
+}
 function openTemplateEditor(template){
   editingTemplate=template?.id??'';
+  const category=template?.category??'general';
   dialog.innerHTML='<h2 id="editor-title">'+(editingTemplate?'编辑内容模板':'新增内容模板')+'</h2>'+
     '<label class="field">模板名称<input id="content-name" maxlength="80" value="'+safe(template?.name)+'"></label>'+
-    '<label class="field">投稿标题<input id="content-title" maxlength="180" value="'+safe(template?.title)+'"></label>'+
-    '<label class="field">投稿正文<textarea id="content-body" rows="5" maxlength="4000">'+safe(template?.body)+'</textarea></label>'+
-    '<p class="hint">可用变量：{{站点名称}}、{{站点网址}}。每条任务用对应站点的资料替换。</p>'+
+    '<label class="field">模板分类<select id="content-category">'+Object.entries(templateCategories).map(([key,detail])=>
+      '<option value="'+key+'" '+(key===category?'selected':'')+'>'+detail.label+'</option>').join('')+'</select></label>'+
+    '<p class="hint" id="editor-content-workflow"></p>'+
+    '<label class="field"><span id="editor-content-title-label"></span><input id="content-title" maxlength="180" value="'+safe(template?.title)+'"></label>'+
+    '<label class="field"><span id="editor-content-body-label"></span><textarea id="content-body" rows="5" maxlength="4000">'+safe(template?.body)+'</textarea></label>'+
+    '<p class="hint">可用变量：{{站点名称}}、{{站点网址}}、{{产品名称}}、{{关键描述}}。</p>'+
     '<p role="status" class="notice" id="content-error"></p><div class="actions">'+btn('保存模板','save-content')+btn('取消','close-dialog','secondary')+'</div>';
+  editorCategoryLabels(category);
   dialog.showModal();
 }
 function fillTemplateText(text,site){
-  const values={'站点名称':site.name,'站点网址':site.url};
-  return text.replace(/\{\{(站点名称|站点网址)\}\}/g,(_match,key)=>values[key]);
+  const values={'站点名称':site.name,'站点网址':site.url,
+    '产品名称':site.profile?.productName??site.name,'关键描述':site.profile?.summary??'（待补关键描述）'};
+  return text.replace(/\{\{(站点名称|站点网址|产品名称|关键描述)\}\}/g,(_match,key)=>values[key]);
+}
+function simulatedEntryType(link){
+  return link.entryType??demoLinks.find(item=>item.url===link.url)?.entryType??'directory';
 }
 function chooseSubmissionContent(config,site,link){
   if(!config)return;
   const {strategy}=config;
+  const category=simulatedEntryType(link);
+  const directory=category==='directory';
   const host=new URL(link.url).hostname;
-  const pageSummary='示例页面 '+host+'：目录征集效率工具，要求简要介绍和官网链接。';
+  const pageSummary='示例页面 '+host+'：'+(directory?'目录征集效率工具，要求简要介绍和官网链接。':'社区接受工具推荐帖，要求写明推荐理由。');
+  const draft={strategy,category};
   if(strategy==='ai'){
-    return {strategy,title:'效率工具推荐：'+site.name,pageSummary,
-      body:'与目录读者分享一个效率工具：'+site.name+'。可在 '+site.url+' 查看该站提供的功能。'};
+    draft.title=directory?(site.profile?.productName??site.name):'效率工具推荐：'+site.name;
+    draft.body=directory?(site.profile?.summary??'（待补关键描述）'):
+      '与社区读者分享这个工具：'+site.name+'。官网：'+site.url;
+    draft.pageSummary=pageSummary;
+  }else{
+    const matching=config.templates.filter(template=>template.category===category);
+    const compatible=matching.length?matching:config.templates.filter(template=>!template.category||template.category==='general');
+    const template=compatible[Math.floor(Math.random()*compatible.length)];
+    if(!template)return null;
+    const body=fillTemplateText(template.body,site);
+    Object.assign(draft,{templateId:template.id,templateName:template.name,revision:template.revision,
+      title:fillTemplateText(template.title,site),
+      body:strategy==='hybrid'?(directory?'按目录要求简要介绍：':'结合社区主题推荐：')+body:body});
+    if(strategy==='hybrid')draft.pageSummary=pageSummary;
   }
-  const template=config.templates[Math.floor(Math.random()*config.templates.length)];
-  const body=fillTemplateText(template.body,site);
-  return {strategy,templateId:template.id,templateName:template.name,revision:template.revision,
-    title:fillTemplateText(template.title,site),
-    body:strategy==='hybrid'?'按目录要求简要介绍：'+body:body,
-    ...(strategy==='hybrid'?{pageSummary}:{})};
+  draft.fields=directory?[
+    ['产品名称',draft.title],['官网',site.profile?.landingPage??site.url],['关键描述',draft.body],
+    ['产品介绍',site.profile?.description??'待补'],['分类',site.profile?.category??'待补'],['产品图片',String((site.profile?.images?.length??0)+(site.profile?.imageUrls?.length??0))+' 张'],
+  ]:[['板块','工具分享（示例）'],['推荐标题',draft.title],['推荐理由与正文',draft.body],['正文链接',site.profile?.landingPage??site.url]];
+  return draft;
 }
 function contentLabel(content){
   if(content.strategy==='ai')return 'AI 网页拟写（模拟）';
@@ -489,6 +538,10 @@ function unverified(item,site){
   const groups=site?[item.daily?.verify?.[site.id]??[]]:Object.values(item.daily?.verify??{});
   return groups.reduce((sum,keys)=>sum+keys.filter(key=>pairLedger.get(key)?.status==='verify').length,0);
 }
+function missingContent(item,site){
+  const groups=site?[item.daily?.contentBlocked?.[site.id]??[]]:Object.values(item.daily?.contentBlocked??{});
+  return groups.reduce((count,urls)=>count+urls.length,0);
+}
 function metrics(site,batchItem=batch){
   const width=batchItem.links.length, index=site?batchItem.sites.indexOf(site):-1;
   const start=index<0?0:index*width;
@@ -497,7 +550,7 @@ function metrics(site,batchItem=batch){
   const held=batchItem.manual&&start===0?1:0;
   const regular=index>=0&&batchItem.daily?batchItem.daily.positions[index]:Math.max(0,Math.min(total,batchItem.cursor-start));
   const pending=held&&!batchItem.resolved?1:0;
-  const dealt=Math.max(0,regular-pending-unverified(batchItem,site));
+  const dealt=Math.max(0,regular-pending-unverified(batchItem,site)-missingContent(batchItem,site));
   return {total,dealt,pending,percent:Math.floor(dealt*100/total)};
 }
 function sample(site){
@@ -512,8 +565,9 @@ function sample(site){
     const sameWork=shared?.owner!==batch.id;
     const waiting=shared?.status==='processing';
     const retry=shared?.status==='retry'||batch.daily?.retry?.siteId===target.id&&batch.daily.retry.offset===offset;
-    const status=shared?.status==='verify'?'待核验':skipped?'已跳过':pending?'需人工':complete?'已处理':waiting?(sameWork?'等待共享结果':'处理中'):retry?'待重试':'排队中';
-    const result=shared?.status==='verify'?shared.result:skipped?(shared?.result?'复用批次 '+shared.owner+' 的结果 · '+shared.result:'历史已提交'):
+    const blocked=batch.daily?.contentBlocked?.[target.id]?.includes(link.url);
+    const status=blocked?'需人工':shared?.status==='verify'?'待核验':skipped?'已跳过':pending?'需人工':complete?'已处理':waiting?(sameWork?'等待共享结果':'处理中'):retry?'待重试':'排队中';
+    const result=blocked?'缺少适用模板 · '+templateCategories[simulatedEntryType(link)].label:shared?.status==='verify'?shared.result:skipped?(shared?.result?'复用批次 '+shared.owner+' 的结果 · '+shared.result:'历史已提交'):
       waiting?(sameWork?'批次 '+shared.owner+' 正在处理':'正在等待处理结果'):
       retry?'提交前临时失败，等下一周期':pending?'等待核对账号':!complete?'等待继续':batch.mode==='analysis'?'仅分析 · 已检查入口':
       shared?.result??simulatedResults[index%3];
@@ -543,18 +597,21 @@ function progress(){
         ['waiting','verification'].includes(state)?'':btn('暂停','pause','secondary')+(activeCycles.has(batch.id)?'':btn(batch.daily?'执行本轮':'推进一步','advance','subtle')))+
       (['interrupted','stopped'].includes(state)?'':btn('中断','interrupt','subtle'))+
       (state==='stopped'?'':btn('停止','stop','subtle'))+'</div>':'')+'</section>'+
+    (missingContent(batch,site)?'<section class="card"><h2>待人工 · 缺少适用模板</h2><p>'+n(missingContent(batch,site))+' 条。可新建批次选用对应模板。这些条目未占提交额度。</p></section>':'')+
     (m.pending&&!['interrupted','stopped'].includes(state)?'<section class="card"><div class="row"><h2>人工待办</h2><span class="chip warm">1 条</span></div><p>'+safe(batch.sites[0].name)+' → '+safe(batch.links[0].url)+'</p><p class="hint">核对站点专用账号。其他组合继续运行。</p>'+btn('已确认，恢复该条','resolve','secondary')+'</section>':'')+
     detail('report','记录与导出 <small>· 当前范围抽样</small>',
       '<p class="hint">每条都保留推广站点、来源行和外链网址。</p>'+
       '<div class="list">'+records.map(({target,link,status,result,content})=>'<div class="item"><div class="row"><strong>'+safe(target.name)+'</strong><span class="chip">'+status+'</span></div><small class="links">第 '+link.line+' 行 · '+safe(link.url)+'</small><p class="hint">'+safe(result)+'</p>'+
       (content?'<details><summary>'+safe(contentLabel(content))+'</summary>'+(content.pageSummary?'<p class="hint">'+safe(content.pageSummary)+'</p>':'')+'<strong>'+safe(content.title)+'</strong><p class="links">'+safe(content.body)+'</p>'+
+        (content.category?'<p class="hint">'+safe(templateCategories[content.category].steps)+'</p>'+
+          '<ul>'+content.fields.map(([label,value])=>'<li>'+safe(label)+'：'+safe(value)+'</li>').join('')+'</ul>':'')+
         (status==='已处理'&&content.pageSummary?entityButton('另存为内容模板','save-draft-template',pairKey(target,link)):'')+'</details>':'')+'</div>').join('')+'</div>'+
       btn('导出演示样本 CSV','export','secondary')+'<p class="notice" role="status" id="export-notice"></p>');
 }
 const pageSize=8;
 function batchStatus(item){
   const total=item.sites.length*item.links.length;
-  if(item.cursor===total&&(!item.manual||item.resolved)&&!unverified(item))return ['completed','已完成'];
+  if(item.cursor===total&&(!item.manual||item.resolved)&&!unverified(item)&&!missingContent(item))return ['completed','已完成'];
   if(item.stopped)return ['stopped','已停止'];
   if(item.interrupted)return ['interrupted','已中断'];
   if(item.paused)return ['paused','已暂停'];
@@ -853,6 +910,7 @@ document.addEventListener('change',event=>{
   if(input.id==='task-filter'){taskFilter=input.value;taskPageIndex=0;render()}
   if(input.id==='shared-list'){listId=input.value;persist();render()}
   if(input.id==='scope'){scope=input.value;render()}
+  if(input.id==='content-category')editorCategoryLabels(input.value);
   if(input.id==='content-strategy'){contentStrategy=input.value;render()}
   if(input.dataset.contentId){
     pickedTemplates??=new Set([defaultTemplateId]);
@@ -884,7 +942,7 @@ document.addEventListener('click',event=>{
     const record=pairLedger.get(key),site=batch.sites.find(item=>item.id===record?.siteId);
     if(!record?.content||!site)return;
     const asTemplate=text=>text.replaceAll(site.url,'{{站点网址}}').replaceAll(site.name,'{{站点名称}}');
-    openTemplateEditor({name:'AI 投稿草稿',title:asTemplate(record.content.title),body:asTemplate(record.content.body)});
+    openTemplateEditor({name:'AI 投稿草稿',category:record.content.category,title:asTemplate(record.content.title),body:asTemplate(record.content.body)});
     return;
   }
   if(action==='download-site-columns'){
@@ -909,15 +967,16 @@ document.addEventListener('click',event=>{
     const name=document.querySelector('#content-name').value.trim();
     const title=document.querySelector('#content-title').value.trim();
     const body=document.querySelector('#content-body').value.trim();
+    const category=document.querySelector('#content-category').value;
     if(!name||!title||!body){
       document.querySelector('#content-error').textContent='请填写模板名称、标题和正文。';return;
     }
     if(editingTemplate){
       contentTemplates=contentTemplates.map(template=>template.id===editingTemplate&&
-        (template.name!==name||template.title!==title||template.body!==body)?
-        {...template,name,title,body,revision:template.revision+1}:template);
+        (template.name!==name||template.title!==title||template.body!==body||template.category!==category)?
+        {...template,name,title,body,category,revision:template.revision+1}:template);
     }else{
-      contentTemplates=[...contentTemplates,{id:crypto.randomUUID(),revision:1,name,title,body}];
+      contentTemplates=[...contentTemplates,{id:crypto.randomUUID(),revision:1,name,title,body,category}];
       if(!contentTemplates.some(template=>template.id===defaultTemplateId))defaultTemplateId=contentTemplates.at(-1).id;
       templateQuery='';templatePageIndex=0;
       if(view==='progress')view='templates';
