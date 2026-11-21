@@ -32,7 +32,7 @@ let listId=saved?.listId??'initial';
 let taskQuery='',taskFilter='all',taskPageIndex=0,libraryTab='sites',libraryQuery='',libraryPageIndex=0,showArchived=false,editing='',batchName='';
 let batch=batches.find(item=>item.id===saved?.batchId)??batches.at(-1)??null;
 let picked=new Set(saved?.picked??[]), view='setup', query='', scope='', limit=1000, mode='analysis', notice='';
-let pendingSitesOnly=false;
+let pendingSitesOnly=false, libraryFromSetup=false;
 const imports={sites:{text:'',filename:'',format:'txt'},links:{text:'',filename:'',format:'txt',name:''}};
 let open=new Set(['sites']), model={type:'local',endpoint:'http://127.0.0.1:11434/v1',name:'',analysis:false,writing:false};
 const main = document.querySelector('#main'), nav = document.querySelector('#nav'), dialog=document.querySelector('#dialog');
@@ -99,7 +99,7 @@ function reviewMarkup(kind){
     (kind==='links'?'<label class="field">新外链清单名称<input id="import-list-name" value="'+safe(draft.name)+'"></label>':'')+
     btn('检查'+label,'review-'+kind,'secondary')+
     (draft.error?'<p class="hint" role="alert">'+safe(draft.error)+'</p>':'')+preview+
-    (usable?btn(kind==='sites'?'保存并选中有效站点':'保存并使用有效外链','accept-'+kind):''));
+    (usable?btn(libraryFromSetup?'保存并返回批次':kind==='sites'?'保存有效站点':'保存有效外链清单','accept-'+kind):''));
 }
 function submittedForSite(site){
   const urls=new Set();
@@ -206,10 +206,10 @@ function setup(){
       '<div class="actions" style="margin-top:6px">'+btn('全选搜索结果','select-all','secondary')+btn('清空选择','clear','subtle')+'</div>'+
       '<div class="list">'+(selectors||'<p class="hint">没有匹配站点。</p>')+'</div>'+
       (visible.length>20?'<p class="hint result-count">展示前 20 个，共 '+n(visible.length)+' 个匹配。全选包含所有匹配站点。</p>':'')+
-      reviewMarkup('sites')+btn('维护推广站点','manage-sites','subtle'))+
+      btn('去清单补充站点','manage-sites','secondary'))+
     detail('links','2. 外链清单 <small>· '+n(currentList()?.links.length??0)+' 条可用候选</small>',
       '<label class="field">共享外链清单<select id="shared-list"><option value="">请选择清单</option>'+linkLists.filter(list=>!list.archived).map(list=>'<option value="'+safe(list.id)+'" '+(list.id===listId?'selected':'')+'>'+safe(list.name)+' · '+n(list.links.length)+' 条</option>').join('')+'</select></label>'+
-      reviewMarkup('links')+btn('维护已有外链清单','manage-links','subtle'))+
+      btn('去清单补充外链','manage-links','secondary'))+
     '<section class="card"><h2>启动预览</h2><label class="field">批次名称（可选）<input id="batch-name" value="'+safe(batchName)+'"></label><label class="field">每站最多使用<input id="limit" type="number" min="1" max="10000" value="'+safe(limit)+'"></label>'+
     '<div class="stats"><div><strong id="per-site">'+n(perSite())+'</strong><small>每站候选</small></div><div><strong id="combinations">'+n(picked.size*perSite())+'</strong><small>站点 × 外链组合</small></div></div><p class="hint">其中待提交 <strong id="pending-combinations">'+n(selectedPending())+'</strong> 条</p>'+
     '<p class="hint">每个已选推广站点都用同一份外链清单。历史投稿和同平台跳过会影响实际尝试数。</p>'+
@@ -314,23 +314,25 @@ function libraryRows(){
   libraryPageIndex=Math.min(libraryPageIndex,Math.max(0,Math.ceil(filtered.length/pageSize)-1));
   return filtered.length?'<div>'+filtered.slice(libraryPageIndex*pageSize,(libraryPageIndex+1)*pageSize).map(item=>
     '<div class="item"><strong>'+safe(item.name)+'</strong><p class="hint truncate">'+(isSites?safe(item.url):n(item.links.length)+' 条 · '+safe(sourceNames[item.source]??'清单'))+'</p>'+
-    '<div class="actions">'+entityButton('查看／编辑','edit-library',item.id)+entityButton(item.archived?'恢复':'归档','archive-library',item.id)+'</div></div>'
+    '<div class="actions">'+entityButton('查看／编辑','edit-library',item.id)+entityButton(item.archived?'恢复':'归档','archive-library',item.id)+
+    (libraryFromSetup&&!item.archived?entityButton(isSites?'选中并返回':'使用并返回','use-library',item.id):'')+'</div></div>'
   ).join('')+'</div>'+paging('library',filtered.length,libraryPageIndex):'<p class="hint">没有符合条件的记录。</p>';
 }
 function library(){
   const isSites=libraryTab==='sites';
-  return '<h1>清单</h1><section class="card"><div class="actions">'+btn('推广站点','library-sites',isSites?'':'secondary')+btn('外链清单','library-links',isSites?'secondary':'')+'</div>'+
-    '<label class="field">搜索'+(isSites?'站点':'清单')+'<input id="library-search" value="'+safe(libraryQuery)+'"></label>'+
+  return '<div class="row"><h1>清单</h1>'+(libraryFromSetup?btn('返回新建批次','return-setup','subtle'):'')+'</div>'+
+    (libraryFromSetup?'<p class="hint" style="margin-bottom:8px">批次草稿已保留，补充后可直接返回。</p>':'')+
+    '<section class="card"><div class="actions">'+btn('推广站点','library-sites',isSites?'':'secondary')+btn('外链清单','library-links',isSites?'secondary':'')+'</div></section>'+
+    reviewMarkup(libraryTab)+
+    '<section class="card"><label class="field">搜索'+(isSites?'站点':'清单')+'<input id="library-search" value="'+safe(libraryQuery)+'"></label>'+
     '<label class="check"><input type="checkbox" id="archived-only" '+(showArchived?'checked':'')+'>查看已归档</label>'+
-    '<div id="library-rows">'+libraryRows()+'</div></section>'+
-    (isSites?detail('site-add','批量添加推广站点',
-      '<label class="field">每行一个站点网址<textarea id="site-input" rows="3" placeholder="https://your-site.example/"></textarea></label>'+btn('添加站点','save-sites','secondary')):
-      detail('link-add','新建外链清单',
-      '<label class="field">清单名称<input id="list-name"></label><label class="field">导入方式<select id="new-list-source">'+Object.entries(sourceNames).map(([id,label])=>'<option value="'+id+'">'+label+'</option>').join('')+'</select></label>'+
-      '<label class="field">粘贴外链网址，每行一条<textarea id="link-input" rows="3"></textarea></label><p class="hint">CSV、Excel、TXT 在原型里使用内置样本，可另存为独立清单。</p>'+
-      '<div class="actions">'+btn('保存粘贴清单','save-links','secondary')+btn('保存示例清单','demo-links','secondary')+'</div>'))+
-    '<p class="notice" role="status">'+safe(notice)+'</p>';
+    '<div id="library-rows">'+libraryRows()+'</div></section><p class="notice" role="status">'+safe(notice)+'</p>';
 }
+function returnToSetup(){
+  libraryFromSetup=false;view='setup';open.add(libraryTab);persist();render();window.scrollTo(0,0);
+  main.querySelector('[data-action="manage-'+libraryTab+'"]')?.focus();
+}
+
 function openEditor(item){
   const site=libraryTab==='sites';
   editing=item.id;
@@ -421,7 +423,7 @@ document.addEventListener('input',event=>{
   if(event.target.id.startsWith('input-')){
     const kind=event.target.id.slice(6),draft=imports[kind];
     draft.text=event.target.value;draft.filename='';draft.format='txt';draft.error='';draft.saved=false;
-    if(draft.rows){draft.rows=null;render();const field=document.querySelector('#input-'+kind);field.focus();field.setSelectionRange(draft.text.length,draft.text.length)}
+    if(draft.rows){draft.rows=null;render();const field=document.querySelector('#input-'+kind);field?.focus();field?.setSelectionRange(draft.text.length,draft.text.length)}
   }
   if(event.target.id==='import-list-name')imports.links.name=event.target.value;
   if(event.target.id==='site-search'){query=event.target.value;refreshSection('sites')}
@@ -442,8 +444,8 @@ document.addEventListener('change',event=>{
     void file.text().then(value=>{
       draft.text=value;draft.saved=false;draft.filename=file.name;draft.format=file.name.toLowerCase().endsWith('.csv')?'csv':'txt';
       draft.rows=compareImport(value,kind,draft.format);draft.error=draft.rows.length?'':'文件没有可检查的内容。';
-      if(view==='setup')render();
-    }).catch(()=>{draft.rows=null;draft.error='未能读取文件。';if(view==='setup')render()});
+      if(view==='library')render();
+    }).catch(()=>{draft.rows=null;draft.error='未能读取文件。';if(view==='library')render()});
   }
   if(input.id==='task-filter'){taskFilter=input.value;taskPageIndex=0;render()}
   if(input.id==='archived-only'){showArchived=input.checked;libraryPageIndex=0;render()}
@@ -460,7 +462,16 @@ document.addEventListener('click',event=>{
   const control=event.target.closest('[data-action]');
   const action=control?.dataset.action,key=control?.dataset.key;
   if(!action)return;
-  if(['setup','tasks','library','settings'].includes(action)){view=action;notice='';render();window.scrollTo(0,0);return}
+  if(['setup','tasks','library','settings'].includes(action)){
+    libraryFromSetup=false;view=action;notice='';render();window.scrollTo(0,0);return;
+  }
+  if(action==='return-setup'){notice='';returnToSetup();return}
+  if(action==='use-library'){
+    if(libraryTab==='sites'){picked.add(key);pendingSitesOnly=false;query=''}
+    else listId=key;
+    notice='已从清单带回所选'+(libraryTab==='sites'?'站点。':'外链。');
+    returnToSetup();return;
+  }
   if(action.startsWith('review-')){
     const kind=action.slice(7),draft=imports[kind];
     draft.rows=compareImport(draft.text,kind,draft.format);
@@ -473,19 +484,23 @@ document.addEventListener('click',event=>{
     if(kind==='sites'){
       const added=valid.filter(row=>row.status==='new').map(row=>({id:crypto.randomUUID(),name:row.name,url:row.url}));
       sites=[...sites,...added];
-      for(const site of [...added,...valid.flatMap(row=>row.previous&&!row.previous.archived?[row.previous]:[])])picked.add(site.id);
-      query='';
+      if(libraryFromSetup){
+        for(const site of [...added,...valid.flatMap(row=>row.previous&&!row.previous.archived?[row.previous]:[])])picked.add(site.id);
+        query='';pendingSitesOnly=false;
+      }
       notice='已新增 '+added.length+' 个站点，已有站点保留原记录。';
     }else{
       if(!valid.length)return;
-      listId=crypto.randomUUID();
+      const newListId=crypto.randomUUID();
+      if(libraryFromSetup)listId=newListId;
       const name=draft.name.trim()||draft.filename?.replace(/\.[^.]+$/,'')||'外链清单 '+(linkLists.length+1);
-      linkLists=[...linkLists,{id:listId,name,source:draft.filename?draft.format:'paste',links:valid.map(row=>({id:'row-'+row.line,line:row.line,url:row.url}))}];
+      linkLists=[...linkLists,{id:newListId,name,source:draft.filename?draft.format:'paste',links:valid.map(row=>({id:'row-'+row.line,line:row.line,url:row.url}))}];
       notice='已保存 '+valid.length+' 条有效外链。已有外链可在新清单复用。';
     }
     if(rows.some(row=>row.status==='error'))notice+=' 有问题的行未加入。';
     draft.rows=rows;draft.saved=true;
-    persist();render();return;
+    if(libraryFromSetup){returnToSetup();return}
+    libraryQuery='';showArchived=false;persist();render();return;
   }
   if(action==='select-all'){for(const site of matchSites())picked.add(site.id);persist();refreshSection('sites');return}
   if(action==='clear'){picked.clear();persist();refreshSection('sites');return}
@@ -500,20 +515,15 @@ document.addEventListener('click',event=>{
     if(action.startsWith('task-'))taskPageIndex+=step;else libraryPageIndex+=step;
   }
   if(['manage-sites','manage-links','library-sites','library-links'].includes(action)){
+    const fromSetup=action.startsWith('manage-');
     view='library';libraryTab=action.endsWith('sites')?'sites':'links';libraryQuery='';libraryPageIndex=0;showArchived=false;
-  }
-  if(action==='save-sites'){
-    const rows=parseLines(document.querySelector('#site-input').value);
-    const added=rows.filter(row=>!sites.some(site=>site.url===row.url));
-    if(!added.length){document.querySelector('.notice').textContent='没有可新增的有效站点。已归档站点可在清单恢复。';return}
-    sites=[...sites,...added.map(({url})=>({id:crypto.randomUUID(),name:new URL(url).hostname,url}))];query='';
-  }
-  if(action==='save-links'||action==='demo-links'){
-    const rows=action==='demo-links'?demoLinks:parseLines(document.querySelector('#link-input').value).map(row=>({...row,id:'row-'+row.line}));
-    if(!rows.length){document.querySelector('.notice').textContent='请输入至少一个有效外链网址。';return}
-    const name=document.querySelector('#list-name').value.trim()||'外链清单 '+(linkLists.length+1);
-    const source=action==='demo-links'?document.querySelector('#new-list-source').value:'paste';
-    listId=crypto.randomUUID();linkLists=[...linkLists,{id:listId,name,source,links:rows}];
+    if(fromSetup){
+      libraryFromSetup=true;
+      const draft=imports[libraryTab];
+      if(draft.saved)Object.assign(draft,{text:'',filename:'',format:'txt',name:'',rows:null,saved:false,error:''});
+      open.add('import-'+libraryTab);
+      notice='';render();window.scrollTo(0,0);return;
+    }
   }
   const records=libraryTab==='sites'?sites:linkLists;
   if(action==='edit-library'){openEditor(records.find(item=>item.id===key));return}
