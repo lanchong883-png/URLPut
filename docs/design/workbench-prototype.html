@@ -39,7 +39,7 @@ let pendingSitesOnly=false, libraryFromSetup=false;
 const imports={sites:{text:'',filename:'',format:'txt'},links:{text:'',filename:'',format:'txt',name:''}};
 let open=new Set(['sites']), model={type:'local',endpoint:'http://127.0.0.1:11434/v1',name:'',analysis:false,writing:false};
 const main = document.querySelector('#main'), nav = document.querySelector('#nav'), dialog=document.querySelector('#dialog');
-function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts}))}catch{}}
+function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts,pairLedger:[...pairLedger]}))}catch{}}
 const safe = value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const btn = (label,action,style='')=>'<button class="button '+style+'" data-action="'+action+'">'+label+'</button>';
 const detail = (id,title,body)=>'<details data-section="'+id+'" '+(open.has(id)?'open':'')+'><summary>'+title+'</summary>'+body+'</details>';
@@ -108,8 +108,11 @@ function submittedForSite(site){
   if(site.id==='site-1'||site.id==='site-2'){
     for(const link of demoLinks.slice(0,site.id==='site-1'?240:1000))urls.add(link.url);
   }
+  for(const entry of pairLedger.values()){
+    if(entry.siteId===site.id&&entry.status==='done'&&entry.accepted)urls.add(entry.url);
+  }
   for(const item of batches){
-    if(item.mode!=='execute')continue;
+    if(item.mode!=='execute'||item.daily?.sharedPairs)continue;
     const index=item.sites.findIndex(entry=>entry.id===site.id);
     if(index===-1)continue;
     const start=index*item.links.length;
@@ -155,39 +158,104 @@ function budgetRemaining(item,siteId,now){
   const used=attempts.reduce((sum,entry)=>sum+(entry.siteId===siteId&&now-entry.at<DAY?entry.count:0),0);
   return Math.max(0,effective-used);
 }
-function processCycle(item){
+// The demo runs in one page. Claim synchronously before the async work yields.
+function pairKey(site,link){return JSON.stringify([site.id,checkedUrl(link.url,'links')?.href??link.url])}
+const pairLedger=new Map(saved?.pairLedger??[]);
+const pairFlights=new Map(), activeCycles=new Set();
+const simulatedResults=['模拟有效外链','模拟待审核','模拟入口已关闭'];
+for(const record of pairLedger.values()){
+  if(record.status==='processing'){
+    record.status='verify';record.result='上次处理未确认，等待核验';
+  }
+}
+function updateProgress(){
+  persist();
+  if(view==='progress')render();
+  if(view==='tasks'&&!dialog.open)document.querySelector('#task-rows').innerHTML=taskRows();
+}
+function canDispatch(item){return !item.paused&&!item.interrupted&&!item.stopped}
+function finishPair(item,index,link,reference){
+  if(reference)(item.daily.skipped[item.sites[index].id]??=[]).push(link.url);
+  item.daily.positions[index]++;
+  item.cursor++;
+  updateProgress();
+}
+async function handleSiteCycle(item,index,now,history,notes){
+  const daily=item.daily,site=item.sites[index];
+  let used=0;
+  while(canDispatch(item)&&daily.positions[index]<item.links.length){
+    const offset=daily.positions[index],link=item.links[offset],key=pairKey(site,link);
+    let current=pairLedger.get(key);
+    if(current?.status==='processing'){
+      await pairFlights.get(key);
+      if(!canDispatch(item))break;
+      current=pairLedger.get(key);
+    }
+    if(current?.status==='verify'){
+      ((daily.verify??={})[site.id]??=[]).push(key);
+      finishPair(item,index,link,false);continue;
+    }
+    if(current?.status==='done'||history.has(link.url)){
+      finishPair(item,index,link,current?.owner!==item.id);continue;
+    }
+    if(current?.status==='retry'&&current.retryAt>now){
+      notes.add('提交前临时失败，等待次日重试');break;
+    }
+    if(!budgetRemaining(item,site.id,now)){notes.add('额度已用完');break}
+    if(index===0&&!daily.injectedFailure&&used===1&&offset+1<item.links.length){
+      daily.injectedFailure=true;
+      daily.retry={siteId:site.id,offset};
+      pairLedger.set(key,{siteId:site.id,url:link.url,status:'retry',owner:item.id,retryAt:now+DAY});
+      notes.add('提交前临时失败，等待次日重试');updateProgress();break;
+    }
+
+    const record={siteId:site.id,url:link.url,status:'processing',owner:item.id};
+    pairLedger.set(key,record);
+    const existing=attempts.find(entry=>entry.siteId===site.id&&entry.at===now);
+    if(existing)existing.count++;
+    else attempts.push({siteId:site.id,count:1,at:now});
+    used++;
+    const flight=new Promise(resolve=>{
+      setTimeout(()=>{
+        const outcome=(index*item.links.length+offset)%simulatedResults.length;
+        Object.assign(record,{status:'done',accepted:outcome!==2,result:simulatedResults[outcome]});
+        finishPair(item,index,link,false);
+        resolve();
+      },daily.demoDelay??45);
+    });
+    pairFlights.set(key,flight);
+    updateProgress();
+    await flight;
+    pairFlights.delete(key);
+  }
+}
+async function processCycle(item){
   const now=demoNow(),daily=item.daily;
-  if(daily.nextAt>now)return false;
-  if(daily.nextAt&&!daily.recurring&&!daily.allowed)return false;
+  if(activeCycles.has(item.id)||daily.nextAt>now)return;
+  if(daily.nextAt&&!daily.recurring&&!daily.allowed)return;
+  activeCycles.add(item.id);
   daily.allowed=false;
   daily.nextAt=0;
   daily.retry=null;
   attempts=attempts.filter(entry=>now-entry.at<DAY);
-  let phase='';
-  for(const [index,site] of item.sites.entries()){
-    let position=daily.positions[index];
-    let remaining=budgetRemaining(item,site.id,now);
-    let used=0;
-    const history=submittedForSite(site);
-    const skipped=new Set(daily.skipped[site.id]??[]);
-    while(position<item.links.length){
-      const link=item.links[position];
-      if(history.has(link.url)){skipped.add(link.url);position++;continue}
-      if(!remaining){phase||='额度已用完';break}
-      if(index===0&&!daily.injectedFailure&&used===1&&position+1<item.links.length){
-        daily.injectedFailure=true;daily.retry={siteId:site.id,offset:position};phase='提交前临时失败，等待次日重试';break;
-      }
-      remaining--;used++;position++;
+  const notes=new Set();
+  const histories=item.sites.map(submittedForSite);
+  let siteIndex=0;
+  const worker=async()=>{
+    while(canDispatch(item)&&siteIndex<item.sites.length){
+      const index=siteIndex++;
+      await handleSiteCycle(item,index,now,histories[index],notes);
     }
-    daily.positions[index]=position;
-    if(skipped.size)daily.skipped[site.id]=[...skipped];
-    if(used)attempts.push({siteId:site.id,count:used,at:now});
+  };
+  try{
+    await Promise.all(Array.from({length:Math.min(8,item.sites.length)},worker));
+    if(item.cursor<item.sites.length*item.links.length&&notes.size){
+      daily.nextAt=now+DAY;daily.reason=[...notes].join('；');
+    }else{daily.nextAt=0;daily.reason=''}
+  }finally{
+    activeCycles.delete(item.id);
+    updateProgress();
   }
-  item.cursor=daily.positions.reduce((total,count)=>total+count,0);
-  if(item.cursor<item.sites.length*item.links.length){
-    daily.nextAt=now+DAY;daily.reason=phase||'等待下一周期';
-  }else{daily.nextAt=0;daily.reason=''}
-  return true;
 }
 function cycleMarkup(item){
   if(!item.daily)return '';
@@ -219,6 +287,10 @@ function setup(){
     '</section>'+limitsMarkup()+'<section class="card">'+
     '<button class="button full" data-action="start" '+(!picked.size||!perSite()?'disabled':'')+'>启动模拟批次</button><p class="notice" role="status">'+safe(notice)+'</p></section>';
 }
+function unverified(item,site){
+  const groups=site?[item.daily?.verify?.[site.id]??[]]:Object.values(item.daily?.verify??{});
+  return groups.reduce((sum,keys)=>sum+keys.filter(key=>pairLedger.get(key)?.status==='verify').length,0);
+}
 function metrics(site,batchItem=batch){
   const width=batchItem.links.length, index=site?batchItem.sites.indexOf(site):-1;
   const start=index<0?0:index*width;
@@ -227,7 +299,7 @@ function metrics(site,batchItem=batch){
   const held=batchItem.manual&&start===0?1:0;
   const regular=index>=0&&batchItem.daily?batchItem.daily.positions[index]:Math.max(0,Math.min(total,batchItem.cursor-start));
   const pending=held&&!batchItem.resolved?1:0;
-  const dealt=Math.max(0,regular-pending);
+  const dealt=Math.max(0,regular-pending-unverified(batchItem,site));
   return {total,dealt,pending,percent:Math.floor(dealt*100/total)};
 }
 function sample(site){
@@ -238,10 +310,15 @@ function sample(site){
     const siteIndex=batch.sites.indexOf(target);
     const complete=(batch.daily?offset<batch.daily.positions[siteIndex]:index<batch.cursor)&&!pending;
     const skipped=batch.daily?.skipped[target.id]?.includes(link.url);
-    const retry=batch.daily?.retry?.siteId===target.id&&batch.daily.retry.offset===offset;
-    const status=skipped?'已跳过':pending?'需人工':complete?'已处理':retry?'待重试':'排队中';
-    const result=skipped?'历史已提交':retry?'提交前临时失败，等下一周期':pending?'等待核对账号':!complete?'等待继续':batch.mode==='analysis'?'仅分析 · 已检查入口':
-      ['模拟有效外链','模拟待审核','模拟入口已关闭'][index%3];
+    const shared=batch.mode==='execute'?pairLedger.get(pairKey(target,link)):undefined;
+    const sameWork=shared?.owner!==batch.id;
+    const waiting=shared?.status==='processing';
+    const retry=shared?.status==='retry'||batch.daily?.retry?.siteId===target.id&&batch.daily.retry.offset===offset;
+    const status=shared?.status==='verify'?'待核验':skipped?'已跳过':pending?'需人工':complete?'已处理':waiting?(sameWork?'等待共享结果':'处理中'):retry?'待重试':'排队中';
+    const result=shared?.status==='verify'?shared.result:skipped?(shared?.result?'复用批次 '+shared.owner+' 的结果 · '+shared.result:'历史已提交'):
+      waiting?(sameWork?'批次 '+shared.owner+' 正在处理':'正在等待处理结果'):
+      retry?'提交前临时失败，等下一周期':pending?'等待核对账号':!complete?'等待继续':batch.mode==='analysis'?'仅分析 · 已检查入口':
+      shared?.result??simulatedResults[index%3];
     return {target,link,status,result};
   }));
 }
@@ -263,23 +340,23 @@ function progress(){
     (state!=='completed'?'<div class="actions" style="margin-top:7px">'+
       (['paused','interrupted','stopped'].includes(state)?btn('继续','resume','secondary'):
         state==='budget'?btn('模拟 24 小时后','next-cycle','secondary')+btn('暂停','pause','subtle'):
-        state==='waiting'?'':btn('暂停','pause','secondary')+btn(batch.daily?'执行本轮':'推进一步','advance','subtle'))+
+        ['waiting','verification'].includes(state)?'':btn('暂停','pause','secondary')+(activeCycles.has(batch.id)?'':btn(batch.daily?'执行本轮':'推进一步','advance','subtle')))+
       (['interrupted','stopped'].includes(state)?'':btn('中断','interrupt','subtle'))+
       (state==='stopped'?'':btn('停止','stop','subtle'))+'</div>':'')+'</section>'+
     (m.pending&&!['interrupted','stopped'].includes(state)?'<section class="card"><div class="row"><h2>人工待办</h2><span class="chip warm">1 条</span></div><p>'+safe(batch.sites[0].name)+' → '+safe(batch.links[0].url)+'</p><p class="hint">核对站点专用账号。其他组合继续运行。</p>'+btn('已确认，恢复该条','resolve','secondary')+'</section>':'')+
     detail('report','记录与导出 <small>· 当前范围抽样</small>',
       '<p class="hint">每条都保留推广站点、来源行和外链网址。</p>'+
-      '<div class="list">'+records.map(({target,link,status,result})=>'<div class="item"><div class="row"><strong>'+safe(target.name)+'</strong><span class="chip">'+status+'</span></div><small class="links">第 '+link.line+' 行 · '+safe(link.url)+'</small><p class="hint">'+result+'</p></div>').join('')+'</div>'+
+      '<div class="list">'+records.map(({target,link,status,result})=>'<div class="item"><div class="row"><strong>'+safe(target.name)+'</strong><span class="chip">'+status+'</span></div><small class="links">第 '+link.line+' 行 · '+safe(link.url)+'</small><p class="hint">'+safe(result)+'</p></div>').join('')+'</div>'+
       btn('导出演示样本 CSV','export','secondary')+'<p class="notice" role="status" id="export-notice"></p>');
 }
 const pageSize=8;
 function batchStatus(item){
   const total=item.sites.length*item.links.length;
-  if(item.cursor===total&&(!item.manual||item.resolved))return ['completed','已完成'];
+  if(item.cursor===total&&(!item.manual||item.resolved)&&!unverified(item))return ['completed','已完成'];
   if(item.stopped)return ['stopped','已停止'];
   if(item.interrupted)return ['interrupted','已中断'];
   if(item.paused)return ['paused','已暂停'];
-  if(item.cursor===total)return ['waiting','待人工'];
+  if(item.cursor===total)return unverified(item)?['verification','待核验']:['waiting','待人工'];
   if(item.daily?.nextAt&&(item.daily.nextAt>demoNow()||!item.daily.recurring&&!item.daily.allowed))return ['budget','待下轮'];
   return ['running','执行中'];
 }
@@ -305,8 +382,9 @@ function taskRows(){
 }
 function tasks(){
   return '<h1>任务</h1><section class="card"><label class="field">搜索批次<input id="task-search" placeholder="批次名称或编号" value="'+safe(taskQuery)+'"></label>'+
-    '<label class="field">任务状态<select id="task-filter">'+[['all','全部'],['running','执行中'],['waiting','待人工'],['paused','已暂停'],['interrupted','已中断'],['stopped','已停止'],['budget','待下轮'],['completed','已完成']].map(([id,label])=>'<option value="'+id+'" '+(id===taskFilter?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
-    '<div id="task-rows">'+taskRows()+'</div>'+(!batches.length?btn('载入历史任务示例','demo-history','secondary'):'')+'</section>';
+    '<label class="field">任务状态<select id="task-filter">'+[['all','全部'],['running','执行中'],['waiting','待人工'],['verification','待核验'],['paused','已暂停'],['interrupted','已中断'],['stopped','已停止'],['budget','待下轮'],['completed','已完成']].map(([id,label])=>'<option value="'+id+'" '+(id===taskFilter?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
+    '<div id="task-rows">'+taskRows()+'</div>'+(!batches.length?btn('载入历史任务示例','demo-history','secondary'):'')+'</section>'+
+    '<section class="card"><p class="hint">两个示例任务使用同一推广站点和同一外链。</p>'+btn('运行并发去重演示','demo-concurrent','secondary')+'</section>';
 }
 const entityButton=(label,action,key)=>'<button class="button secondary" data-action="'+action+'" data-key="'+safe(key)+'">'+label+'</button>';
 function libraryRows(){
@@ -392,12 +470,12 @@ function advance(targets=batches){
   for(const item of targets){
     const total=item.sites.length*item.links.length;
     if(item.paused||item.interrupted||item.stopped||item.cursor>=total)continue;
-    if(item.daily){if(processCycle(item))changed=true;continue}
+    if(item.daily){void processCycle(item);continue}
     item.manual=true;
     item.cursor=Math.min(total,item.cursor+Math.max(1,Math.ceil(total/5)));
     changed=true;
   }
-  if(changed){persist();if(view==='progress')render();if(view==='tasks'&&!dialog.open)document.querySelector('#task-rows').innerHTML=taskRows()}
+  if(changed)updateProgress()
 }
 function exportSample(){
   const site=batch.sites.find(site=>site.id===scope);
@@ -505,6 +583,19 @@ document.addEventListener('click',event=>{
   if(action==='select-all'){for(const site of matchSites())picked.add(site.id);persist();refreshSection('sites');return}
   if(action==='clear'){picked.clear();persist();refreshSection('sites');return}
   if(action==='open-task'){batch=batches.find(item=>String(item.id)===key);scope='';view='progress';open.add('report')}
+  if(action==='demo-concurrent'){
+    const id=(batches.at(-1)?.id??0)+1;
+    const site=demoSites[2],link={id:'demo-overlap-'+id,line:1,url:'https://concurrent-'+id+'.example/submit'};
+    const created=['去重演示 A','去重演示 B'].map((name,index)=>({
+      id:id+index,name,sites:[site],links:[link],mode:'execute',cursor:0,
+      daily:{sharedPairs:true,defaultQuota:10,recurring:true,quotas:{[site.id]:10},positions:[0],skipped:{},nextAt:0,
+        allowed:false,injectedFailure:false,demoDelay:1000}
+    }));
+    batches.push(...created);
+    batch=created[1];scope='';view='progress';open.add('report');
+    lastTick=performance.now();
+    advance(created);render();return;
+  }
   if(action==='demo-history'){
     const examples=[['品牌目录回访',5,false,false],['社区测试批次',2,true,false],['海外目录检查',2,false,true]];
     batches=examples.map(([name,cursor,paused,interrupted],index)=>({id:index+1,name,sites:demoSites.slice(0,1),links:demoLinks.slice(0,5),
@@ -569,7 +660,7 @@ document.addEventListener('click',event=>{
     batch={id:(batches.at(-1)?.id??0)+1,name:batchName.trim(),listName:list.name,sites:selected(),links:list.links.slice(0,perSite()),mode,source:list.source,
       cursor:0,paused:false,interrupted:false,manual:false,resolved:false};batchName='';
     if(mode==='execute'){
-      batch.daily={defaultQuota:dailyLimit,recurring,quotas:Object.fromEntries(batch.sites.map(site=>[site.id,Object.hasOwn(overrides,site.id)?overrides[site.id]:dailyLimit])),
+      batch.daily={sharedPairs:true,defaultQuota:dailyLimit,recurring,quotas:Object.fromEntries(batch.sites.map(site=>[site.id,Object.hasOwn(overrides,site.id)?overrides[site.id]:dailyLimit])),
         positions:batch.sites.map(()=>0),skipped:{},nextAt:0,reason:'',allowed:false,injectedFailure:false};
     }
     batches.push(batch);
