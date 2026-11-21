@@ -124,48 +124,6 @@ h1, h2, h3, p { margin: 0; }
 h1 { margin-bottom: 12px; font-size: 23px; line-height: 1.35; overflow-wrap: anywhere; }
 h2 { font-size: 15px; }
 h3 { font-size: 13px; }
-.page-banner {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 93px;
-  margin-bottom: 13px;
-  padding: 15px 18px;
-  border: 1px solid #423091;
-  border-radius: 13px;
-  background: linear-gradient(112deg, #262050 0%, #3c2885 64%, #5740b3 100%);
-  color: white;
-}
-.page-banner h1 { position: relative; z-index: 1; margin: 0; font-size: 24px; letter-spacing: .02em; }
-.page-banner::after {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  right: -9px;
-  top: -35px;
-  width: 168px;
-  height: 170px;
-  background: radial-gradient(circle, #c7bbff55 1px, transparent 1.5px) 0 0 / 11px 11px;
-  mask-image: linear-gradient(90deg, transparent, #000 49%);
-}
-.banner-mark { position: absolute; inset: 0 14px 0 auto; width: 132px; pointer-events: none; }
-.banner-mark::before, .banner-mark::after {
-  content: "";
-  position: absolute;
-  top: 28px;
-  width: 58px;
-  height: 30px;
-  border: 2px solid #b3a0ff;
-  border-radius: 30px;
-  transform: rotate(-35deg);
-  box-shadow: 0 0 22px #aa90ff55, inset 0 0 14px #bbabff24;
-}
-.banner-mark::before { right: 37px; top: 38px; }
-.banner-mark::after { right: 7px; top: 17px; border-color: #e2dcff; }
-
 .bar, .row, .actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .bar, .row { justify-content: space-between; }
 .row > :first-child { min-width: 0; }
@@ -404,7 +362,6 @@ function actionLabel(label,action){
 }
 const btn = (label,action,style='')=>'<button class="button '+style+'" data-action="'+action+'">'+actionLabel(label,action)+'</button>';
 const stepTitle = (number,label)=>'<span class="step-title"><b>'+number+'</b> '+label+'</span>';
-const pageBanner = title=>'<div class="page-banner"><h1>'+title+'</h1><span class="banner-mark" aria-hidden="true"></span></div>';
 const detail = (id,title,body)=>'<details data-section="'+id+'" '+(open.has(id)?'open':'')+'><summary>'+title+'</summary>'+body+'</details>';
 const matchSites=()=>sites.filter(site=>!site.deleted&&matchesSite(site,query)&&(!pendingSitesOnly||siteCounts(site).pending>0));
 const selected=()=>sites.filter(site=>!site.deleted&&picked.has(site.id));
@@ -1209,8 +1166,7 @@ function activeLinkPreview(){
 }
 
 function setup(){
-  return pageBanner('新建批次')+
-    detail('sites',stepTitle(1,'推广站点')+' <small>已选 '+n(picked.size)+' / '+n(sites.filter(site=>!site.deleted).length)+'</small>',
+  return detail('sites',stepTitle(1,'推广站点')+' <small>已选 '+n(picked.size)+' / '+n(sites.filter(site=>!site.deleted).length)+'</small>',
       '<p class="hint">按所选清单统计。平台已收件就算已接收，包括审核中的投稿。</p>'+
       '<label class="field"><span>'+icon('search')+'搜索站点</span><input id="site-search" value="'+safe(query)+'" placeholder="网址、域名、类别或产品描述"></label>'+
       '<label class="check"><input type="checkbox" id="pending-sites" '+(pendingSitesOnly?'checked':'')+'>只看有待接收外链的站点</label>'+
@@ -1358,7 +1314,7 @@ function taskRows(){
   }).join('')+'</div>'+paging('task',filtered.length,taskPageIndex):'<p class="hint">没有符合条件的批次。</p>';
 }
 function tasks(){
-  return pageBanner('任务')+'<section class="card"><label class="field"><span>'+icon('search')+'搜索批次</span><input id="task-search" placeholder="批次名称或编号" value="'+safe(taskQuery)+'"></label>'+
+  return '<section class="card"><label class="field"><span>'+icon('search')+'搜索批次</span><input id="task-search" placeholder="批次名称或编号" value="'+safe(taskQuery)+'"></label>'+
     '<label class="field">任务状态<select id="task-filter">'+[['all','全部'],['running','执行中'],['waiting','待人工'],['confirmations','待确认'],['verification','待核对提交结果'],['paused','已暂停'],['interrupted','已中断'],['stopped','已停止'],['budget','等待下一轮'],['completed','已完成']].map(([id,label])=>'<option value="'+id+'" '+(id===taskFilter?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
     '<div class="actions">'+btn('待确认清单','show-confirmations','secondary')+'</div>'+
     '<div id="task-rows">'+taskRows()+'</div>'+(!batches.length?btn('载入历史任务示例','demo-history','secondary'):'')+'</section>'+
