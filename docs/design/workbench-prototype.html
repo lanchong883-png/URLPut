@@ -370,7 +370,7 @@ const importDraft=()=>({text:'',filename:'',format:'txt',read:0});
 const imports={sites:importDraft(),links:importDraft()};
 let open=new Set(['sites']), model={type:'local',endpoint:'http://127.0.0.1:11434/v1',name:'',analysis:false,writing:false};
 const main = document.querySelector('#main'), nav = document.querySelector('#nav'), dialog=document.querySelector('#dialog');
-function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts,pairLedger:[...pairLedger],contentTemplates,defaultTemplateIds,authAccounts}));return true}catch{return false}}
+function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts,pairLedger:[...pairLedger],templateCatalogVersion:2,contentTemplates,defaultTemplateIds,authAccounts}));return true}catch{return false}}
 const safe = value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const iconPaths={
   plus:'M12 5v14M5 12h14', tasks:'m3 7 2 2 4-5M12 7h9M3 15l2 2 4-5M12 15h9',
@@ -758,6 +758,13 @@ const templateCategories={
 const starterTemplates = [
   {id:'intro',revision:1,category:'directory',name:'站点简介',title:'{{产品名称}}',body:'{{关键描述}}'},
   {id:'resource',revision:1,category:'resource',name:'资源推荐',title:'资源分享：{{产品名称}}',body:'想推荐 {{产品名称}}。{{关键描述}}\n官网：{{站点网址}}'},
+  {id:'directory-brand',revision:1,category:'directory',name:'品牌与产品',title:'{{产品名称}}',body:'{{站点名称}} 的产品 {{产品名称}}。{{关键描述}}'},
+  {id:'directory-index',revision:1,category:'directory',name:'目录条目',title:'{{产品名称}}',body:'产品简介：{{关键描述}}\n官网域名：{{站点名称}}'},
+  {id:'resource-roundup',revision:1,category:'resource',name:'资源清单推荐',title:'资源清单补充 · {{产品名称}}',body:'给这份资源清单补充一项：{{产品名称}}。{{关键描述}}\n查看产品：{{站点网址}}'},
+  {id:'resource-discuss',revision:1,category:'resource',name:'社区讨论',title:'有人用过 {{产品名称}} 吗？',body:'{{关键描述}}\n产品页面在 {{站点网址}}。用过的朋友觉得它适合哪些场景？'},
+  {id:'general-brief',revision:1,category:'general',name:'一句话介绍',title:'{{产品名称}}',body:'{{关键描述}}'},
+  {id:'general-card',revision:1,category:'general',name:'产品资料卡',title:'{{产品名称}} · 产品资料',body:'产品：{{产品名称}}\n简介：{{关键描述}}\n官网：{{站点网址}}'},
+  {id:'general-guide',revision:1,category:'general',name:'官网导览',title:'了解 {{产品名称}}',body:'{{关键描述}}\n如需了解详情，可访问 {{站点名称}} 的产品页面：{{站点网址}}'},
 ];
 let contentTemplates=(saved?.contentTemplates??starterTemplates).map(template=>{
   if(template.category)return template;
@@ -765,6 +772,13 @@ let contentTemplates=(saved?.contentTemplates??starterTemplates).map(template=>{
   if(starter&&template.revision===1)return starter;
   return {...template,category:starter?.category??'general'};
 });
+// Older libraries already had intro and resource. Keep their edits and deletions.
+if(saved?.contentTemplates && !saved.templateCatalogVersion){
+  const existingIds=new Set(contentTemplates.map(template=>template.id));
+  const additions=starterTemplates.filter(template=>
+    !['intro','resource'].includes(template.id)&&!existingIds.has(template.id));
+  contentTemplates.push(...additions);
+}
 const oldDefault=contentTemplates.find(template=>template.id===saved?.defaultTemplateId);
 let defaultTemplateIds=currentTemplateDefaults(saved?.defaultTemplateIds??(oldDefault?{[oldDefault.category]:oldDefault.id}:{}));
 function currentTemplateDefaults(previous){
