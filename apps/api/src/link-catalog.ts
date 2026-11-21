@@ -9,6 +9,7 @@ const workspaceParams = z.object({ workspaceId: z.uuid() });
 const catalogQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).safe().default(0),
+  q: z.string().trim().max(200).default(''),
 });
 const observationSchema = z.object({
   url: z.string().max(8192),
@@ -36,7 +37,7 @@ export function registerLinkCatalog(
       const params = workspaceParams.safeParse(request.params);
       const query = catalogQuery.safeParse(request.query);
       if (!params.success || !query.success) return reply.code(400).send({ message: '清单参数无效。' });
-      const { limit, offset } = query.data;
+      const { limit, offset, q } = query.data;
       const eligibility = due
         ? sql`l.observed_at <= now() - interval '7 days'`
         : sql`l.status = 'active' AND l.observed_at > now() - interval '30 days'`;
@@ -47,6 +48,7 @@ export function registerLinkCatalog(
             'status', l.status, 'observedAt', l.observed_at, 'reason', l.reason)
           FROM external_link_catalog l
           WHERE l.workspace_id = m.workspace_id AND ${eligibility}
+            AND (${q} = '' OR strpos(lower(l.normalized_url), lower(${q})) > 0)
           ORDER BY ${sort}, l.url_fingerprint
           LIMIT ${limit + 1} OFFSET ${offset}
         ) AS links

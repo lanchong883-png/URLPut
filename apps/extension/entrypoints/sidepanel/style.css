@@ -102,3 +102,15 @@
 .panel-content .table table { min-width: 38rem; }
 .panel-content .table th { white-space: nowrap; }
 .panel-content .stack { overflow-wrap: anywhere; }
+
+.library-tabs {
+  display: flex;
+  gap: .4rem;
+  margin-bottom: .8rem;
+}
+.library-tabs button { flex: 1; }
+.catalog-scroll { max-height: 19rem; overflow-y: auto; }
+.catalog-list { list-style: none; margin: 0; padding: 0; }
+.catalog-list li { display: grid; gap: .15rem; padding: .55rem .15rem; border-bottom: 1px solid var(--line); }
+.catalog-list span, .catalog-list time { color: #5e637b; }
+.catalog-list time { font-size: .8rem; }

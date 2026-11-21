@@ -27,7 +27,7 @@ export type Batch = {
 };
 export type BatchSummary = Omit<Batch, 'rows'> & { rowCount: number };
 
-export async function request<T>(path: string, body?: ImportBatch): Promise<T> {
+export async function request<T>(path: string, body?: ImportBatch, signal?: AbortSignal): Promise<T> {
   const { data } = (await auth?.auth.getSession()) ?? {};
   const headers = new Headers();
   if (body) headers.set('Content-Type', 'application/json');
@@ -37,7 +37,7 @@ export async function request<T>(path: string, body?: ImportBatch): Promise<T> {
     headers,
     body: body ? JSON.stringify(body) : undefined,
     redirect: 'error',
-    signal: AbortSignal.timeout(15_000),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));

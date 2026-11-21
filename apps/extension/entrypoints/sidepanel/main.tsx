@@ -37,7 +37,7 @@ function SidePanel() {
     <main className="panel-content">
       <div hidden={view !== 'library'}>
         <h1>清单</h1>
-        <ImportWorkbench />
+        <ImportWorkbench withCatalog />
       </div>
       {view === 'models' && <ModelSettings />}
     </main>

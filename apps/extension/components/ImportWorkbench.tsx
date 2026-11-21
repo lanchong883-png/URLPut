@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { importBatchSchema, MAX_IMPORT_BYTES, type ImportBatch, type Workspace } from '@urlput/contracts';
 import { buildLedger, mapRows, readTable, type ColumnMapping, type Delimiter, type LedgerRow } from '@urlput/import';
 import { auth, request, requestConfiguredAccess, type Batch, type BatchSummary } from '../lib/api';
+import { LinkCatalog } from './LinkCatalog';
 import { downloadLedger, reportCells, reportColumns, type ReportSite } from '../lib/report';
 
 const fields: Record<keyof ColumnMapping, string> = { url: '候选网址', entry: '投稿入口', name: '名称', notes: '备注' };
@@ -38,7 +39,8 @@ function RowTable({ rows, site }: { rows: LedgerRow[]; site?: ReportSite }) {
   </>;
 }
 
-export function ImportWorkbench() {
+export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean }) {
+  const [library, setLibrary] = useState<'sites' | 'links'>('sites');
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspace] = useState('');
   const [siteId, setSite] = useState('');
@@ -187,6 +189,12 @@ export function ImportWorkbench() {
       {!configured && <section className="card"><button onClick={() => void requestConfiguredAccess()
         .then(granted => { if (granted) setConfigured(true); else setError('请授权工作台 API。'); })
         .catch(error => setError(message(error)))}>连接工作台</button></section>}
+      {withCatalog && <div className="library-tabs" role="group" aria-label="清单类型">
+        <button type="button" aria-pressed={library === 'sites'} className={library === 'sites' ? '' : 'secondary'}
+          onClick={() => setLibrary('sites')}>推广站点</button>
+        <button type="button" aria-pressed={library === 'links'} className={library === 'links' ? '' : 'secondary'}
+          onClick={() => setLibrary('links')}>外链清单</button>
+      </div>}
       <section className="card controls">
         <label>工作空间<select value={workspaceId} disabled={busy} onChange={event => {
           if (workspaceId === event.target.value) return;
@@ -194,67 +202,70 @@ export function ImportWorkbench() {
           setWorkspace(event.target.value);
           setSite(workspaces.find(item => item.id === event.target.value)?.sites[0]?.id ?? '');
         }}>{!workspaces.length && <option value="">暂无工作空间</option>}{workspaces.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <label>推广站点<select value={siteId} disabled={busy} onChange={event => {
+        {library === 'sites' && <label>推广站点<select value={siteId} disabled={busy} onChange={event => {
           if (siteId === event.target.value) return;
           resetSite();
           setSite(event.target.value);
         }}>
           {!workspace?.sites.length && <option value="">暂无站点</option>}
           {workspace?.sites.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select></label>
+        </select></label>}
         {auth && <button className="secondary" onClick={() => void auth?.auth.signOut().then(({ error }) => {
           if (error) { setError(message(error)); return; }
           resetSite(); setWorkspaces([]); setWorkspace(''); setSite(''); setCodeSent(false); setCode('');
         })}>退出登录</button>}
       </section>
-      <section className="card stack">
-        <h2>导入候选网址</h2>
-        <label>CSV 文件<input type="file" accept=".csv,text/csv" disabled={busy} onChange={event => {
-          const file = event.target.files?.[0];
-          event.target.value = '';
-          if (!file) return;
-          if (file.size > MAX_IMPORT_BYTES) { setError('文件超过 2 MB，请拆分后导入。'); return; }
-          void file.text().then(value => updateText(value, file.name)).catch(error => setError(message(error)));
-        }} /></label>
-        {filename && <div>来源文件：{filename}</div>}
-        <label>或粘贴表格及网址<textarea value={text} disabled={busy} rows={5} placeholder={'URL,投稿入口\nhttps://example.org'} onChange={event => updateText(event.target.value)} /></label>
-        <div className="controls">
-          <label>分隔符<select value={delimiter} disabled={busy} onChange={event => { setDelimiter(event.target.value as Delimiter); setPreview(undefined); }}>
-            <option value=",">逗号</option><option value=";">分号</option><option value={'\t'}>制表符</option>
-          </select></label>
-          <label className="inline"><input type="checkbox" checked={header} disabled={busy} onChange={event => { setHeader(event.target.checked); setPreview(undefined); }} /> 首行是表头</label>
-        </div>
-        {parsed.error && <div className="error" role="alert">{parsed.error}</div>}
-        {!!columns.length && <div className="controls">
-          {(Object.keys(fields) as Array<keyof ColumnMapping>).map(field => <label key={field}>{fields[field]}
-            <select value={mapping[field] ?? ''} disabled={busy} onChange={event => {
-              const value = event.target.value === '' ? undefined : Number(event.target.value);
-              setMapping({ ...mapping, [field]: value });
-              setPreview(undefined);
-            }}>
-              {field !== 'url' && <option value="">无</option>}
-              {columns.map((column, index) => <option key={index} value={index}>{column}</option>)}
-            </select>
-          </label>)}
-        </div>}
-        <button disabled={busy || !parsed.table.length || !columns[mapping.url]} onClick={createPreview}>预览导入</button>
-      </section>
-      {preview && <section className="card stack">
-        <h2>导入预览</h2><p>共 {ledger.length} 行，其中 {ledger.filter(row => row.disposition === 'candidate').length} 条候选。</p>
-        <RowTable key={preview.requestId} rows={ledger} />
-        <button disabled={busy || !path} onClick={() => void save()}>{busy ? '保存中…' : '确认并保存'}</button>
-      </section>}
-      <section className="card stack">
-        <h2>逐行台账</h2>
-        {history.length ? <label>导入批次<select value={saved?.id ?? ''} disabled={busy} onChange={event => void openBatch(event.target.value)}>
-          <option value="">选择历史批次</option>
-          {history.map(item => <option key={item.id} value={item.id}>{new Date(item.createdAt).toLocaleString()} · {item.filename ?? '粘贴'} · {item.rowCount} 行</option>)}
-        </select></label> : <p>当前站点暂无导入记录。</p>}
-        {saved && site && <>
-          <button className="secondary" type="button" onClick={() => downloadLedger(saved, site)}>导出 CSV</button>
-          <RowTable key={saved.id} rows={saved.rows} site={site} />
-        </>}
-      </section>
+      {library === 'links' && workspaceId && <LinkCatalog key={workspaceId} workspaceId={workspaceId} />}
+      <div hidden={library !== 'sites'}>
+        <section className="card stack">
+          <h2>导入候选网址</h2>
+          <label>CSV 文件<input type="file" accept=".csv,text/csv" disabled={busy} onChange={event => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (!file) return;
+            if (file.size > MAX_IMPORT_BYTES) { setError('文件超过 2 MB，请拆分后导入。'); return; }
+            void file.text().then(value => updateText(value, file.name)).catch(error => setError(message(error)));
+          }} /></label>
+          {filename && <div>来源文件：{filename}</div>}
+          <label>或粘贴表格及网址<textarea value={text} disabled={busy} rows={5} placeholder={'URL,投稿入口\nhttps://example.org'} onChange={event => updateText(event.target.value)} /></label>
+          <div className="controls">
+            <label>分隔符<select value={delimiter} disabled={busy} onChange={event => { setDelimiter(event.target.value as Delimiter); setPreview(undefined); }}>
+              <option value=",">逗号</option><option value=";">分号</option><option value={'\t'}>制表符</option>
+            </select></label>
+            <label className="inline"><input type="checkbox" checked={header} disabled={busy} onChange={event => { setHeader(event.target.checked); setPreview(undefined); }} /> 首行是表头</label>
+          </div>
+          {parsed.error && <div className="error" role="alert">{parsed.error}</div>}
+          {!!columns.length && <div className="controls">
+            {(Object.keys(fields) as Array<keyof ColumnMapping>).map(field => <label key={field}>{fields[field]}
+              <select value={mapping[field] ?? ''} disabled={busy} onChange={event => {
+                const value = event.target.value === '' ? undefined : Number(event.target.value);
+                setMapping({ ...mapping, [field]: value });
+                setPreview(undefined);
+              }}>
+                {field !== 'url' && <option value="">无</option>}
+                {columns.map((column, index) => <option key={index} value={index}>{column}</option>)}
+              </select>
+            </label>)}
+          </div>}
+          <button disabled={busy || !parsed.table.length || !columns[mapping.url]} onClick={createPreview}>预览导入</button>
+        </section>
+        {preview && <section className="card stack">
+          <h2>导入预览</h2><p>共 {ledger.length} 行，其中 {ledger.filter(row => row.disposition === 'candidate').length} 条候选。</p>
+          <RowTable key={preview.requestId} rows={ledger} />
+          <button disabled={busy || !path} onClick={() => void save()}>{busy ? '保存中…' : '确认并保存'}</button>
+        </section>}
+        <section className="card stack">
+          <h2>逐行台账</h2>
+          {history.length ? <label>导入批次<select value={saved?.id ?? ''} disabled={busy} onChange={event => void openBatch(event.target.value)}>
+            <option value="">选择历史批次</option>
+            {history.map(item => <option key={item.id} value={item.id}>{new Date(item.createdAt).toLocaleString()} · {item.filename ?? '粘贴'} · {item.rowCount} 行</option>)}
+          </select></label> : <p>当前站点暂无导入记录。</p>}
+          {saved && site && <>
+            <button className="secondary" type="button" onClick={() => downloadLedger(saved, site)}>导出 CSV</button>
+            <RowTable key={saved.id} rows={saved.rows} site={site} />
+          </>}
+        </section>
+      </div>
     </>}
   </>;
 }

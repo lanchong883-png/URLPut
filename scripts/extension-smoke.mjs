@@ -25,6 +25,21 @@ try {
     INSERT INTO promotion_sites (id, workspace_id, name, homepage)
     VALUES (${crypto.randomUUID()}, ${localIdentity.workspace}, '第二站点', 'https://second.example')
   `);
+  const catalogFixtures = [
+    ...Array.from({ length: 6 }, (_, index) => ({
+      url: `https://catalog${index + 1}.example/submit`,
+      status: 'active',
+      observedAt: new Date(Date.now() - (index + 1) * 1000).toISOString(),
+    })),
+    { url: 'https://inactive.example/', status: 'inactive', observedAt: new Date().toISOString() },
+    { url: 'https://expired.example/', status: 'active', observedAt: new Date(Date.now() - 31 * 86_400_000).toISOString() },
+  ];
+  for (const payload of catalogFixtures) {
+    const result = await api.inject({
+      method: 'POST', url: `/api/workspaces/${localIdentity.workspace}/link-catalog/observations`, payload,
+    });
+    assert.equal(result.statusCode, 200, result.body);
+  }
   await api.listen({ port: 4310, host: '127.0.0.1' });
 
   const extension = resolve('apps/extension/.output/chrome-mv3');
@@ -124,6 +139,24 @@ try {
   assert.match(secondCsv, /second-target.example/);
   assert.match(secondCsv, /第二站点/);
   assert.doesNotMatch(secondCsv, /example.net|示例站点/);
+  await page.getByRole('button', { name: '外链清单' }).click();
+  const catalog = page.getByRole('region', { name: '活跃外链列表' });
+  await catalog.getByText('catalog5.example', { exact: true }).waitFor();
+  assert.equal(await catalog.getByRole('listitem').count(), 5);
+  await catalog.evaluate(element => { element.scrollTop = element.scrollHeight; });
+  await catalog.getByText('catalog6.example', { exact: true }).waitFor();
+  assert.equal(await catalog.getByRole('listitem').count(), 6);
+  const search = page.getByLabel('搜索网址或域名');
+  await search.fill('CATALOG6.EXAMPLE');
+  await catalog.getByText('catalog6.example', { exact: true }).waitFor();
+  assert.equal(await catalog.getByRole('listitem').count(), 1);
+  for (const term of ['inactive', 'expired']) {
+    await search.fill(term);
+    await page.getByText('没有匹配的活跃外链。').waitFor();
+    assert.equal(await catalog.getByRole('listitem').count(), 0);
+  }
+  await page.getByRole('button', { name: '推广站点' }).click();
+  await page.getByRole('cell', { name: 'https://second-target.example/', exact: true }).waitFor();
   await page.getByRole('button', { name: 'AI 模型' }).click();
   await page.getByLabel('服务类型').waitFor();
   const opened = context.waitForEvent('page');
@@ -157,7 +190,7 @@ try {
     ['/local/v1/chat/completions', undefined, 'local-model'],
     ['/custom/v1/chat/completions', 'Bearer test-session-key', 'custom-model'],
   ]);
-  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV export, site isolation, legacy workbench and two model profiles.`);
+  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV export, site isolation, catalog search and scrolling, legacy workbench and two model profiles.`);
 } finally {
   try {
     await context?.close();

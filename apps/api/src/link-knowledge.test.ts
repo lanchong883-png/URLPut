@@ -111,5 +111,11 @@ test('reuses form templates across paths and keeps the active catalog current', 
   const second = (await load(catalog + '?limit=1&offset=1')).json();
   assert.deepEqual(second.links.map((record: { url: string }) => record.url), ['https://second.example/']);
   assert.equal(second.nextOffset, null);
+  assert.deepEqual((await load(catalog + '?q=SECOND.EXAMPLE&limit=1')).json(), {
+    links: second.links, nextOffset: null,
+  });
+  assert.deepEqual((await load(catalog + '?q=expired')).json().links, []);
+  assert.deepEqual((await load(catalog + '?q=%25')).json().links, []);
+  assert.equal((await load(catalog + '?q=' + 'x'.repeat(201))).statusCode, 400);
   assert.deepEqual((await load(`${catalog}/recheck`)).json().links.map((record: { url: string }) => record.url), ['https://expired.example/']);
 });
