@@ -1114,8 +1114,7 @@ function browseMarkup(kind){
   const label=browseLabels[kind];
   return '<div class="list" tabindex="0" role="list" data-browse="'+kind+'" aria-label="'+label+'">'+
     (items.length?items.slice(0,count).map(item=>browseRow(kind,item)).join(''):'<p class="hint">没有匹配的记录。</p>')+'</div>'+
-    '<p class="hint" id="browse-status-'+kind+'" aria-live="polite">'+browseStatus(count,items.length)+'</p>'+
-    '<button class="button subtle" id="browse-more-'+kind+'" data-action="browse-more" data-key="'+kind+'" '+(count>=items.length?'hidden':'')+'>加载更多</button>';
+    '<p class="hint" id="browse-status-'+kind+'" aria-live="polite">'+browseStatus(count,items.length)+'</p>';
 }
 function refreshBrowse(kind,reset=false){
   if(reset)browseCounts[kind]=browseStep;
@@ -1126,7 +1125,6 @@ function refreshBrowse(kind,reset=false){
   list.innerHTML=items.length?items.slice(0,count).map(item=>browseRow(kind,item)).join(''):'<p class="hint">没有匹配的记录。</p>';
   list.scrollTop=scroll;
   main.querySelector('#browse-status-'+kind).textContent=browseStatus(count,items.length);
-  main.querySelector('#browse-more-'+kind).hidden=count>=items.length;
 }
 function growBrowse(kind){
   const list=main.querySelector('[data-browse="'+kind+'"]');
@@ -1137,7 +1135,6 @@ function growBrowse(kind){
   browseCounts[kind]=count;
   list.insertAdjacentHTML('beforeend',items.slice(before,count).map(item=>browseRow(kind,item)).join(''));
   main.querySelector('#browse-status-'+kind).textContent=browseStatus(count,items.length);
-  main.querySelector('#browse-more-'+kind).hidden=count>=items.length;
 }
 function activeLinkPreview(){
   const list=previewList();
@@ -1869,7 +1866,6 @@ document.addEventListener('click',event=>{
       mode:'analysis',cursor,paused,interrupted,manual:cursor>0,resolved:cursor===5}));
   }
   if(action==='task-prev'||action==='task-next'){taskPageIndex+=action==='task-next'?1:-1}
-  if(action==='browse-more'){growBrowse(key);return}
   if(action==='preview-library-links'){
     libraryPreviewId=key;resetLinkBrowse();render();main.querySelector('#library-link-preview').scrollIntoView({block:'nearest'});return;
   }
