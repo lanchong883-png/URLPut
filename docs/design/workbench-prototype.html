@@ -1,0 +1,2123 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>URLPut · Chrome 侧边栏</title>
+<style>
+:root {
+  color-scheme: light;
+  font: 14px/1.55 "Inter", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  color: #20233a;
+  background: #e9e9f3;
+  --text: #20233a;
+  --muted: #5e637b;
+  --line: #e1e3ef;
+  --accent: #4e36b5;
+  --accent-deep: #392589;
+  --soft: #eeebff;
+  --warm: #fff1d9;
+  --warm-text: #77470d;
+  --success: #dff4eb;
+  --success-text: #176448;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: .55; }
+:focus-visible { outline: 2px solid #694de5; outline-offset: 2px; }
+
+.panel {
+  max-width: 392px;
+  min-height: 100vh;
+  margin: 0 auto;
+  background: #f5f5fb;
+  border-inline: 1px solid #dddded;
+  box-shadow: 0 0 42px #28205016;
+}
+header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+header .bar { padding: 12px 15px 10px; }
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -.055em;
+  line-height: 1;
+}
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  border-radius: 8px;
+  background: #4e36b5;
+  box-shadow: inset 0 1px 0 #ffffff44;
+}
+.brand-mark::before {
+  content: "";
+  width: 13px;
+  height: 10px;
+  border: solid #fff;
+  border-width: 0 0 2px 2px;
+  transform: translateY(-2px) rotate(-45deg);
+}
+.brand-mark::after {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border: solid #fff;
+  border-width: 2px 2px 0 0;
+  transform: translate(4px, -4px);
+}
+.demo-label { color: #5e637b; background: #f4f4fa; }
+nav {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 2px;
+  padding: 0 8px;
+}
+nav button {
+  position: relative;
+  min-height: 40px;
+  padding: 0 1px 2px;
+  border: 0;
+  border-radius: 7px 7px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.ui-icon { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: -.16em; }
+.button .ui-icon, .field .ui-icon { margin-right: 5px; }
+nav .ui-icon { display: block; width: 16px; height: 16px; margin: 0 auto 2px; }
+nav button:hover { background: #f7f5ff; color: var(--accent); }
+nav button[aria-current] { background: #f2efff; color: var(--accent-deep); }
+nav button[aria-current]::after {
+  content: "";
+  position: absolute;
+  inset: auto 8px 0;
+  height: 3px;
+  border-radius: 5px 5px 0 0;
+  background: #6244d3;
+}
+nav .chip {
+  position: absolute;
+  top: 2px;
+  right: 1px;
+  min-width: 14px;
+  padding: 0 3px;
+  font-size: 9px;
+}
+
+main { padding: 14px 13px 24px; }
+h1, h2, h3, p { margin: 0; }
+h1 { margin-bottom: 12px; font-size: 23px; line-height: 1.35; overflow-wrap: anywhere; }
+h2 { font-size: 15px; }
+h3 { font-size: 13px; }
+.bar, .row, .actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.bar, .row { justify-content: space-between; }
+.row > :first-child { min-width: 0; }
+.row > :is(.chip, .button):last-child { flex: none; }
+main > .row:has(> h1) { margin-bottom: 12px; }
+.row > h1 { margin: 0; }
+.actions { flex-wrap: wrap; }
+.grow { flex: 1; }
+.muted, small, .hint { color: var(--muted); }
+.hint, small { font-size: 12px; }
+.card, details {
+  margin-bottom: 9px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: 0 1px 2px #29224b06;
+}
+.card p, details p { margin: 5px 0; }
+summary { cursor: pointer; font-weight: 700; overflow-wrap: anywhere; }
+summary small { font-weight: 500; }
+details[open] > summary { margin-bottom: 9px; }
+details[data-section]:not([open]):hover { border-color: #c8bdf5; }
+details[data-section] > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 25px;
+  list-style: none;
+}
+details[data-section] > summary::-webkit-details-marker { display: none; }
+details[data-section] > summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin: 0 3px 0 auto;
+  border: solid #746d94;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg) translateY(-2px);
+  flex: none;
+}
+details[data-section][open] > summary::after { transform: rotate(225deg) translate(-2px, -1px); }
+details[data-section] > summary > small { line-height: 1.3; }
+.step-title { display: inline-flex; align-items: center; gap: 8px; vertical-align: middle; }
+.step-title b {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 7px;
+  background: var(--soft);
+  color: var(--accent-deep);
+  font-size: 12px;
+  font-weight: 750;
+}
+details[open]:has(> summary .step-title) { border-color: #d2c8f7; }
+details[open] > summary .step-title b, .launch-card .step-title b { color: white; background: var(--accent); }
+.launch-card { border-color: #d2c8f7; }
+.stack { display: grid; gap: 7px; }
+.list { max-height: 186px; overflow: auto; overscroll-behavior: contain; scrollbar-color: #c8c2de transparent; scrollbar-width: thin; }
+.item { padding: 7px 0; border-bottom: 1px solid #ededf5; overflow-wrap: anywhere; }
+.item:last-child { border-bottom: 0; }
+.item label { display: flex; align-items: flex-start; gap: 7px; cursor: pointer; }
+.item label input { margin-top: 3px; }
+.item details { margin-top: 7px; margin-bottom: 0; background: #faf9ff; }
+.truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+fieldset { min-width: 0; margin: 6px 0; padding: 3px 8px 6px; border: 1px solid var(--line); border-radius: 8px; }
+legend { padding: 0 4px; color: var(--muted); font-size: 12px; font-weight: 650; }
+
+input:not([type=radio],[type=checkbox]), select, textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 35px;
+  padding: 6px 9px;
+  border: 1px solid #cacde0;
+  border-radius: 7px;
+  background: #fcfcff;
+}
+input::placeholder, textarea::placeholder { color: #6c7089; }
+input[type=file]::file-selector-button {
+  margin-inline-end: 8px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--soft);
+  color: var(--accent-deep);
+  cursor: pointer;
+}
+input:is([type=checkbox], [type=radio]) { width: 15px; height: 15px; flex: none; accent-color: var(--accent); }
+textarea { resize: vertical; }
+label.field[hidden] { display: none; }
+.field { display: grid; gap: 3px; margin: 7px 0; font-size: 13px; font-weight: 650; }
+.field :is(input, select, textarea) { font-size: 14px; font-weight: 400; }
+.check { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.check input { margin: 0; }
+.button {
+  min-height: 34px;
+  padding: 5px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 680;
+}
+.button:not(:disabled):hover { background: var(--accent-deep); border-color: var(--accent-deep); }
+.secondary { background: #f9f7ff; color: var(--accent-deep); border-color: #d9cef9; }
+.secondary:not(:disabled):hover, .subtle:not(:disabled):hover { background: var(--soft); color: var(--accent-deep); border-color: #cbbcf6; }
+.subtle { background: transparent; color: var(--accent-deep); border-color: transparent; }
+.full { width: 100%; min-height: 40px; }
+.chip {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 99px;
+  background: var(--soft);
+  color: var(--accent-deep);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.chip.warm { background: var(--warm); color: var(--warm-text); }
+.chip.success { background: var(--success); color: var(--success-text); }
+.chip.neutral { background: #eeeff5; color: #535870; }
+.stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 9px 0;
+}
+.stats div { padding: 8px 9px; border-radius: 7px; background: #f3f0ff; }
+.stats strong { display: block; color: var(--accent-deep); font-size: 22px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.meter { height: 8px; overflow: hidden; margin: 7px 0; border-radius: 99px; background: #e9e5fa; }
+.meter div { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #5338ba, #8a69ee); }
+.progress-card { padding: 13px; border-color: #d7cdf8; }
+.progress-caption { color: var(--muted); font-size: 12px; }
+.progress-caption strong { color: var(--accent-deep); font-size: 17px; font-variant-numeric: tabular-nums; }
+.attention-card { border-color: #ead4a9; background: #fffcf5; }
+.attention-card h2 { color: var(--warm-text); }
+.confirmation-toolbar { border-color: #d7cdf8; }
+.library-tabs {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 9px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #eeedf7;
+}
+.library-tabs .button { flex: 1; min-width: 0; }
+.library-tabs .secondary { border-color: transparent; background: transparent; }
+.task-meter { height: 4px; margin: 4px 0 8px; }
+.notice { color: var(--accent-deep); font-size: 12px; }
+.notice:empty { display: none; }
+.links { overflow-wrap: anywhere; }
+
+dialog {
+  width: min(360px, calc(100% - 24px));
+  max-height: calc(100dvh - 28px);
+  padding: 16px;
+  border: 1px solid #d5cef2;
+  border-radius: 13px;
+  background: #fff;
+  color: var(--text);
+  box-shadow: 0 18px 54px #21153944;
+}
+dialog::backdrop { background: #21153966; }
+.product-image { max-width: 100%; max-height: 110px; object-fit: contain; border: 1px solid var(--line); border-radius: 7px; }
+
+@media (max-width: 350px) {
+  nav { padding-inline: 4px; }
+  nav button { font-size: 11px; }
+  main { padding-inline: 9px; }
+  .card, details { padding-inline: 10px; }
+}
+.link-filter-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 5px 8px; }
+.link-filter-grid .field { margin: 0; }
+details[data-section="link-filters"] { margin: 8px 0; padding: 7px 9px; background: #faf9ff; }
+</style>
+<div class="panel">
+<header><div class="bar"><div class="brand"><span class="brand-mark" aria-hidden="true"></span>URLPut</div><span class="chip demo-label">模拟演示</span></div><nav id="nav" aria-label="插件导航"></nav></header>
+<main id="main"></main>
+</div>
+<dialog id="dialog" aria-labelledby="editor-title"></dialog>
+<script>
+const numbers = new Intl.NumberFormat('zh-CN');
+const n = value => numbers.format(value);
+const demoSites = Array.from({length:100},(_,i)=>({id:'site-'+(i+1),name:'brand-'+(i+1)+'.example',url:'https://brand-'+(i+1)+'.example/'}));
+const commonSiteTypes=['目录站','内容社区','工具站','博客'];
+const demoLinks = Array.from({length:1000},(_,i)=>({id:'row-'+(i+1),line:i+1,url:'https://channel-'+(i+1)+'.example/submit',observedRel:['Dofollow','Nofollow','Sponsored','UGC','未知'][i%5],dr:i%7===0?null:(i*13)%101,entryType:i%2===0?'directory':'resource',siteType:commonSiteTypes[i%commonSiteTypes.length],description:i%2===0?'收录产品官网和工具简介':'分享资源与使用心得',status:'active'}));
+const storageKey = 'urlput-panel-prototype-v2';
+let saved;
+try {saved=JSON.parse(localStorage.getItem(storageKey))}catch{}
+const sourceNames={paste:'直接粘贴',csv:'CSV 文件',excel:'Excel 工作表',txt:'TXT 文件'};
+let sites=(saved?.sites??demoSites).map(({archived,...site})=>({
+  ...site,name:new URL(site.url).hostname,deleted:Boolean(site.deleted??archived)
+}));
+let batches=saved?.batches??[];
+// Earlier read-only demos marked their first row as waiting for account confirmation.
+for(const item of batches){
+  if(item.mode==='analysis'&&!item.authDemo)item.manual=false;
+}
+let linkLists=saved?.linkLists??[{id:'initial',name:'示例外链清单',source:'csv',links:saved?.links??demoLinks}];
+let listId=saved?.listId??'initial';
+let taskQuery='',taskFilter='all',taskPageIndex=0,libraryTab='sites',libraryQuery='',editing='',batchName='';
+let batch=batches.find(item=>item.id===saved?.batchId)??batches.at(-1)??null;
+let picked=new Set(saved?.picked??[]), view='setup', query='', scope='', limit=1000, mode='analysis', notice='';
+let pendingSitesOnly=false, libraryFromSetup=false;
+const importDraft=()=>({text:'',filename:'',format:'txt',read:0});
+const imports={sites:importDraft(),links:importDraft()};
+let open=new Set(['sites']), model=saved?.model??{type:'system',endpoint:'http://127.0.0.1:11434/v1',name:''};
+const main = document.querySelector('#main'), nav = document.querySelector('#nav'), dialog=document.querySelector('#dialog');
+function persist(){try{localStorage.setItem(storageKey,JSON.stringify({linkSelections:Object.fromEntries([...linkSelections].map(([id,urls])=>[id,[...urls]])),model,sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts,pairLedger:[...pairLedger],templateCatalogVersion:2,contentTemplates,defaultTemplateIds,authAccounts}));return true}catch{return false}}
+const safe = value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+const iconPaths={
+  plus:'M12 5v14M5 12h14', tasks:'m3 7 2 2 4-5M12 7h9M3 15l2 2 4-5M12 15h9',
+  folder:'M3 6h7l2 2h9v11H3z', template:'M5 3h10l4 4v14H5zM8 11h8M8 15h6',
+  model:'M7 7h10v10H7zM9 3v4m6-4v4m-6 10v4m6-4v4M3 9h4m10 0h4M3 15h4m10 0h4',
+  key:'M14 4a5 5 0 1 1-3 9l-7 7H2v-4l7-7a5 5 0 0 1 5-5zM16 8h.01',
+  search:'M16 16l5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0z',
+  edit:'m4 15 10-10 4 4L8 19l-5 1zM12 7l4 4',
+  download:'M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4',
+  upload:'M12 16V4m-5 5 5-5 5 5M4 16v4h16v-4',
+  back:'M20 12H4m6-6-6 6 6 6', pause:'M8 5v14M16 5v14',
+  play:'m7 4 12 8-12 8z', stop:'M5 5h14v14H5z', check:'m4 12 5 5L20 6',
+  trash:'M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7',
+};
+function icon(name){
+  return '<svg class="ui-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="'+iconPaths[name]+'"/></svg>';
+}
+const navIcons={setup:'plus',tasks:'tasks',library:'folder',templates:'template',models:'model','auth-management':'key'};
+const actionIcons={
+  'new-content':'plus','new-auth-preset':'plus','new-auth-email':'plus',
+  'edit-content':'edit','edit-library':'edit','edit-auth-preset':'edit',
+  'delete-site':'trash','delete-content':'trash','confirm-delete-site':'trash','confirm-delete-content':'trash',
+  export:'download','export-link-list':'download','export-all-links':'download','download-site-columns':'download','download-link-columns':'download',
+  'download-import-sites':'download','download-import-links':'download',
+  'return-content':'back','return-auth':'back','return-setup':'back',tasks:'back',
+  resume:'play',pause:'pause',stop:'stop',resolve:'check','check-confirmation':'check',
+};
+function actionLabel(label,action){
+  const name=actionIcons[action];
+  return name?icon(name)+label:label;
+}
+const btn = (label,action,style='')=>'<button class="button '+style+'" data-action="'+action+'">'+actionLabel(label,action)+'</button>';
+const stepTitle = (number,label)=>'<span class="step-title"><b>'+number+'</b> '+label+'</span>';
+const detail = (id,title,body)=>'<details data-section="'+id+'" '+(open.has(id)?'open':'')+'><summary>'+title+'</summary>'+body+'</details>';
+const matchSites=()=>sites.filter(site=>!site.deleted&&matchesSite(site,query)&&(!pendingSitesOnly||siteCounts(site).pending>0));
+const selected=()=>sites.filter(site=>!site.deleted&&picked.has(site.id));
+const currentList=()=>linkLists.find(list=>list.id===listId)??linkLists[0];
+const linkSelections=new Map(Object.entries(saved?.linkSelections??{}).map(([id,urls])=>[id,new Set(urls)]));
+function chosenLinks(){
+  const list=currentList(), selection=linkSelections.get(list?.id);
+  return activeLinks(list).filter(link=>!selection||selection.has(link.url));
+}
+const perSite=()=>Math.min(chosenLinks().length,limit);
+const reviewLabels={new:'新增',existing:'已有',duplicate:'清单内重复',error:'有问题'};
+function checkedUrl(value,kind){
+  const raw=value.trim();
+  const address=kind==='sites'&&!/^[a-z][a-z\d+.-]*:/i.test(raw)?'https://'+raw:raw;
+  if(!/^https?:\/\//i.test(address))return;
+  try{
+    const url=new URL(address);
+    const host=url.hostname.replace(/\.$/,'');
+    if(!host.includes('.')||url.username||url.password||/\s/.test(raw))return;
+    url.hostname=host;
+    url.hash='';
+    return url;
+  }catch{}
+}
+const demoLinkFailures=new Map([
+  ['offline.example','访问不了：连接失败（模拟）'],
+  ['timeout.example','访问不了：请求超时（模拟）'],
+  ['closed.example','页面失效：入口已移除（模拟）'],
+]);
+function simulatedLinkIssue(url){return demoLinkFailures.get(url.hostname)}
+function csvRecords(value){
+  const text=value.replace(/^\uFEFF/,'');
+  const token=/"(?:[^"]|"")*"(?=,|\r|\n|$)|[^,"\r\n]+|[",\r\n]/gy;
+  const records=[];
+  let fields=[],field='',start=0,line=1,startLine=1,invalid=false;
+  const push=end=>{
+    const raw=text.slice(start,end);
+    if(raw.trim())records.push({line:startLine,raw,fields:[...fields,field],invalid});
+    fields=[];field='';invalid=false;
+  };
+  for(let match;(match=token.exec(text));){
+    const part=match[0],at=match.index;
+    if(part==='\r'||part==='\n'){
+      push(at);
+      if(part==='\r'&&text[at+1]==='\n')token.lastIndex++;
+      start=token.lastIndex;startLine=++line;
+    }else if(part===','){
+      fields.push(field);field='';
+    }else if(part==='"'){
+      invalid=true;field+=part;
+    }else if(part.startsWith('"')){
+      if(field)invalid=true;
+      field+=part.slice(1,-1).replaceAll('""','"');
+      line+=(part.match(/\r\n|\n|\r/g)??[]).length;
+    }else field+=part;
+  }
+  push(text.length);
+  return records;
+}
+const siteUrlColumns=['站点网址','推广站点网址','官网','url','网址','域名'];
+const csvKey=value=>value.trim().normalize('NFKC').toLowerCase();
+function siteImportRows(value){
+  const records=csvRecords(value);
+  const header=records[0];
+  if(!header)return [];
+  const headers=header.fields.map(csvKey);
+  const urlColumn=headers.findIndex(name=>siteUrlColumns.includes(name));
+  if(header.invalid||urlColumn===-1){
+    if(records.every(record=>record.fields.length===1))return records.map(record=>({...record,input:record.fields[0]}));
+    return records.map(record=>({...record,reason:'多列 CSV 需要「站点网址」表头，可下载导入模板。'}));
+  }
+  const mapping=headers.map(name=>profileFields.find(field=>csvKey(field.label)===name||csvKey(field.key)===name||
+    (field.aliases??[]).includes(name)));
+  return records.slice(1).map(record=>{
+    const profile={};
+    let reason=record.fields.length>headers.length?'资料列数超过表头，请检查 CSV 引号。':undefined;
+    mapping.forEach((field,index)=>{
+      const value=record.fields[index]?.trim();
+      if(!field||!value)return;
+      const parsed=profileValue(field,value);
+      if(parsed===undefined)reason='请检查'+field.label+'的格式或长度。';
+      else profile[field.key]=parsed;
+    });
+    return {...record,input:record.fields[urlColumn]??'',profile,reason};
+  });
+}
+
+const linkColumns=['外链 URL','网站类型','价格类别','样本链接属性','Ahrefs DR','描述'];
+const linkExample=['https://directory.example/submit','目录站','免费','Dofollow','50','替换为实际投稿页面'];
+function linkImportRows(value){
+  const records=csvRecords(value);
+  if(!records.length)return [];
+  const headers=records[0].fields.map(csvKey);
+  const urlIndex=headers.findIndex(name=>['外链 url','外链url','url','网址','域名','站点网址','外链网址'].includes(name));
+  if(urlIndex<0)return records.map(record=>record.fields.length===1?{...record,input:record.fields[0]}:
+    {...record,reason:'多列 CSV 需要「外链 URL」表头。'});
+  return records.slice(1).map(record=>{
+    const field=label=>record.fields[headers.indexOf(csvKey(label))]?.trim()??'';
+    const price=field('价格类别'),rel=field('样本链接属性'),rating=field('Ahrefs DR');
+    const observedRel=['Dofollow','Nofollow','Sponsored','UGC','未知'].find(item=>csvKey(item)===csvKey(rel));
+    let reason;
+    if(record.fields.length>headers.length)reason='数据列多于表头，请检查含逗号的字段是否已加引号。';
+    else if(price&&!priceTypes.includes(price))reason='价格类别请填免费、付费或价格未知。';
+    else if(rel&&!observedRel)reason='链接属性请填 Dofollow、Nofollow、Sponsored、UGC 或未知。';
+    else if(rating&&(!/^\d+(?:\.\d+)?$/.test(rating)||Number(rating)>100))reason='Ahrefs DR 请填 0 至 100 的数字，未知时留空。';
+    return {...record,input:record.fields[urlIndex]??'',reason,metadata:{
+      siteType:field('网站类型'),priceType:price,observedRel:observedRel??'未知',
+      dr:rating?Number(rating):null,description:field('描述')}};
+  });
+}
+
+function compareImport(value,kind,format){
+  const known=kind==='sites'?new Map(sites.map(site=>[new URL(site.url).hostname,site])):
+    new Map(linkLists.flatMap(list=>list.links.map(link=>[link.url,list])));
+  const seen=new Set(),rows=[];
+  const records=format==='csv'?(kind==='sites'?siteImportRows(value):linkImportRows(value)):
+    value.replace(/^\uFEFF/,'').split(/\r\n|\n|\r/).map((line,index)=>({line:index+1,raw:line,input:line.trim()}));
+  for(const record of records){
+    const {line,raw,profile}=record;
+    if(!raw.trim())continue;
+    if(record.reason||record.invalid){
+      rows.push({line,raw,status:'error',reason:record.reason??'CSV 引号格式有误。'});continue;
+    }
+    const input=record.input;
+    const url=checkedUrl(input,kind);
+    if(!url){
+      rows.push({line,raw,status:'error',reason:kind==='sites'?'请输入有效域名或 HTTP/HTTPS 站点网址。':'请输入完整的 HTTP/HTTPS 外链网址。'});
+      continue;
+    }
+    const key=kind==='sites'?url.hostname:url.href;
+    const failure=kind==='links'?simulatedLinkIssue(url):undefined;
+    if(failure){
+      rows.push({line,raw,status:'error',reason:failure});
+      continue;
+    }
+    const previous=known.get(key);
+    const status=seen.has(key)?'duplicate':previous&&!previous.deleted?'existing':'new';
+    seen.add(key);
+    rows.push({line,raw,url:url.href,key,previous,status,profile,metadata:record.metadata,
+      name:kind==='sites'?url.hostname:previous?.name??url.hostname,
+      reason:status==='duplicate'?'本次输入已有相同项':previous?.deleted?'可重新添加，保留原站点历史':status==='existing'?'已保存在清单':'可加入清单'});
+  }
+  return rows;
+}
+function reviewMarkup(kind){
+  const draft=imports[kind],label=kind==='sites'?'站点':'外链',rows=draft.rows;
+  const summary=rows?Object.entries(reviewLabels).map(([key,title])=>title+' '+n(rows.filter(row=>row.status===key).length)).join(' · '):'';
+  const preview=rows?'<p class="hint" role="status">'+summary+'</p>'+
+    '<div class="list" aria-label="'+label+'检查明细">'+rows.map(row=>'<div class="item"><div class="row"><strong>第 '+row.line+' 行</strong><span class="chip '+(row.status==='error'||row.status==='duplicate'?'warm':'')+'">'+reviewLabels[row.status]+'</span></div><div class="links">'+safe(row.raw)+'</div><small>'+safe(row.reason)+(kind==='sites'&&row.url?' · 站点名称 '+safe(row.name):'')+'</small></div>').join('')+'</div>':'';
+  const issues=rows?.filter(row=>row.status==='error')??[];
+  const imported=rows?.filter(row=>row.status==='new').length??0;
+  return detail('import-'+kind,icon('upload')+'录入或导入'+label,
+    '<label class="field">录入'+label+'（每行一个）<textarea id="input-'+kind+'" rows="3" placeholder="'+(kind==='sites'?'brand.example':'https://directory.example/submit')+'">'+safe(draft.text)+'</textarea></label>'+
+    '<label class="field">上传'+label+'文件<input id="file-'+kind+'" type="file" accept=".txt,.csv,text/plain,text/csv"></label>'+
+    '<p class="hint">'+(kind==='sites'?'站点名称取域名。用多列 CSV 导入站点资料，图片文件在站点编辑中上传。':'TXT 每行一个网址。CSV 只需填写外链 URL，其余列可留空。请替换模板中的示例行。')+(draft.filename?' · '+safe(draft.filename):'')+'</p>'+
+    (kind==='sites'?btn('下载站点资料 CSV 模板','download-site-columns','subtle'):btn('下载外链 CSV 模板','download-link-columns','subtle'))+
+    '<p class="hint">检查后自动导入新增有效项，已有和重复项会跳过。</p>'+
+    '<button class="button secondary" data-action="review-'+kind+'" '+(draft.loading||rows||!draft.text.trim()?'disabled':'')+'>检查'+label+'</button>'+
+    (draft.error?'<p class="hint" role="alert">'+safe(draft.error)+'</p>':'')+
+    (rows?'<p class="notice" role="status">已导入 '+n(imported)+' '+(kind==='sites'?'个站点':'条外链')+'</p>':'')+preview+
+    (issues.length?btn('下载未导入的行（CSV）','download-import-'+kind,'secondary'):''));
+}
+function checkAndImport(kind){
+  const draft=imports[kind];
+  if(draft.rows)return;
+  const rows=compareImport(draft.text,kind,draft.format);
+  if(!rows.length){draft.error='请先填写或上传有效的清单内容。';render();return}
+  const fresh=rows.filter(row=>row.status==='new');
+  if(kind==='sites'&&fresh.length){
+    const added=fresh.map(row=>{
+      const profile={...row.previous?.profile,...row.profile};
+      return {id:row.previous?.id??crypto.randomUUID(),name:row.name,url:row.url,profile,
+        profileVersion:(row.previous?.profileVersion??0)+(Object.keys(row.profile??{}).length?1:0)};
+    });
+    const restored=new Set(added.map(site=>site.id));
+    sites=[...sites.filter(site=>!restored.has(site.id)),...added];
+    if(libraryFromSetup){
+      for(const site of added)picked.add(site.id);
+      query='';pendingSitesOnly=false;
+    }
+  }
+  if(kind==='links'&&fresh.length){
+    const id=crypto.randomUUID();
+    if(libraryFromSetup)listId=id;
+    const name=draft.filename.replace(/\.[^.]+$/,'')||'外链清单 '+(linkLists.length+1);
+    linkLists=[...linkLists,{id,name,source:draft.filename?draft.format:'paste',
+      links:fresh.map(row=>({id:'row-'+row.line,line:row.line,url:row.url,...row.metadata,status:'active'}))}];
+  }
+  draft.rows=rows;
+  draft.error='';
+  libraryQuery='';
+  browseCounts.library=browseStep;
+  persist();
+  render();
+}
+
+function submittedForSite(site){
+  const urls=new Set();
+  if(site.id==='site-1'||site.id==='site-2'){
+    for(const link of demoLinks.slice(0,site.id==='site-1'?240:1000))urls.add(link.url);
+  }
+  for(const entry of pairLedger.values()){
+    if(entry.siteId===site.id&&entry.status==='done'&&entry.accepted)urls.add(entry.url);
+  }
+  for(const item of batches){
+    if(item.mode!=='execute'||item.daily?.sharedPairs)continue;
+    const index=item.sites.findIndex(entry=>entry.id===site.id);
+    if(index===-1)continue;
+    const start=index*item.links.length;
+    const end=item.daily?item.daily.positions[index]:Math.min(item.links.length,item.cursor-start);
+    for(let offset=0;offset<end;offset++){
+      const position=start+offset;
+      if(position===0&&item.manual&&!item.resolved)continue;
+      if(position%3!==2)urls.add(item.links[offset].url);
+    }
+  }
+  return urls;
+}
+function siteCounts(site,pool=activeLinks(currentList()),submitted=submittedForSite(site)){
+  const total=new Set(pool.map(link=>link.url));
+  const count=[...total].filter(url=>submitted.has(url)).length;
+  return {total:total.size,submitted:count,pending:total.size-count};
+}
+function selectedPending(){
+  const pool=chosenLinks().slice(0,limit);
+  if(!pool.length)return 0;
+  return selected().reduce((total,site)=>total+siteCounts(site,pool).pending,0);
+}
+
+const DAY=24*60*60*1000;
+let dailyLimit=10, recurring=true, limitSite='', overrides={};
+let clockShift=saved?.clockShift??0, attempts=saved?.attempts??[];
+const demoNow=()=>Date.now()+clockShift;
+function integerQuota(value){return Math.max(1,Math.min(1000,Math.floor(Number(value)||1)))}
+function limitsMarkup(){
+  if(mode!=='execute')return '';
+  const targets=selected();
+  const override=targets.find(site=>site.id===limitSite);
+  return '<section class="card"><h2>'+stepTitle(6,'提交频率')+'</h2>'+
+    '<label class="field">每个站点 24 小时内最多尝试提交几次<input id="daily-limit" type="number" min="1" max="1000" value="'+dailyLimit+'"></label>'+
+    '<label class="field">为某个站点单独设置上限（可选）<select id="limit-site"><option value="">选择站点</option>'+targets.map(site=>'<option value="'+safe(site.id)+'" '+(site.id===limitSite?'selected':'')+'>'+safe(site.name)+'</option>').join('')+'</select></label>'+
+    (override?'<label class="field">该站 24 小时尝试上限<input id="site-limit" type="number" min="1" max="1000" value="'+(Object.hasOwn(overrides,override.id)?overrides[override.id]:dailyLimit)+'"></label>':'')+
+    '<label class="check"><input type="checkbox" id="recurring" '+(recurring?'checked':'')+'>每天执行，自动续跑</label>'+
+    '<p class="hint">按滚动 24 小时统计，每站跨批次共享额度。达到上限后保留进度。设定合适的额度并遵守目标平台规则。</p></section>';
+}
+function budgetRemaining(item,siteId,now){
+  const effective=Math.min(item.daily.quotas[siteId],...batches.filter(other=>other.daily&&!other.stopped&&
+    other.cursor<other.sites.length*other.links.length&&Object.hasOwn(other.daily.quotas,siteId)).map(other=>other.daily.quotas[siteId]));
+  const used=attempts.reduce((sum,entry)=>sum+(entry.siteId===siteId&&now-entry.at<DAY?entry.count:0),0);
+  return Math.max(0,effective-used);
+}
+// The demo runs in one page. Claim synchronously before the async work yields.
+function pairKey(site,link){return JSON.stringify([site.id,checkedUrl(link.url,'links')?.href??link.url])}
+const pairLedger=new Map(saved?.pairLedger??[]);
+const pairFlights=new Map(), activeCycles=new Set();
+const simulatedResults=['模拟有效外链','模拟待审核','模拟入口已关闭'];
+for(const record of pairLedger.values()){
+  if(record.status==='processing'){
+    record.status='verify';record.result='上次处理未确认，等待核对提交结果';
+  }
+}
+function updateProgress(){
+  persist();
+  if(view==='progress'||view==='confirmations')render();
+  else{
+    renderNav();
+    if(view==='tasks'&&!dialog.open)document.querySelector('#task-rows').innerHTML=taskRows();
+  }
+}
+function canDispatch(item){return !item.paused&&!item.interrupted&&!item.stopped}
+function finishPair(item,index,link,reference){
+  if(reference)(item.daily.skipped[item.sites[index].id]??=[]).push(link.url);
+  item.daily.positions[index]++;
+  item.cursor++;
+  updateProgress();
+}
+async function handleSiteCycle(item,index,now,history,notes){
+  const daily=item.daily,site=item.sites[index];
+  let used=0;
+  while(canDispatch(item)&&daily.positions[index]<item.links.length){
+    const offset=daily.positions[index],link=item.links[offset],key=pairKey(site,link);
+    let current=pairLedger.get(key);
+    if(current?.status==='processing'){
+      await pairFlights.get(key);
+      if(!canDispatch(item))break;
+      current=pairLedger.get(key);
+    }
+    if(current?.status==='verify'){
+      ((daily.verify??={})[site.id]??=[]).push(key);
+      finishPair(item,index,link,false);continue;
+    }
+    if(current?.status==='done'||history.has(link.url)){
+      finishPair(item,index,link,current?.owner!==item.id);continue;
+    }
+    if(current?.status==='retry'&&current.retryAt>now){
+      notes.add('提交前临时失败，等待次日重试');break;
+    }
+    const content=chooseSubmissionContent(item.publication,site,link);
+    if(content===null){
+      ((daily.contentBlocked??={})[site.id]??=[]).push(link.url);
+      finishPair(item,index,link,false);continue;
+    }
+    if(!budgetRemaining(item,site.id,now)){notes.add('额度已用完');break}
+    if(index===0&&!daily.injectedFailure&&used===1&&offset+1<item.links.length){
+      daily.injectedFailure=true;
+      daily.retry={siteId:site.id,offset};
+      pairLedger.set(key,{siteId:site.id,url:link.url,status:'retry',owner:item.id,retryAt:now+DAY});
+      notes.add('提交前临时失败，等待次日重试');updateProgress();break;
+    }
+
+    const record={siteId:site.id,url:link.url,status:'processing',owner:item.id,
+      content};
+    pairLedger.set(key,record);
+    const existing=attempts.find(entry=>entry.siteId===site.id&&entry.at===now);
+    if(existing)existing.count++;
+    else attempts.push({siteId:site.id,count:1,at:now});
+    used++;
+    const flight=new Promise(resolve=>{
+      setTimeout(()=>{
+        const outcome=(index*item.links.length+offset)%simulatedResults.length;
+        Object.assign(record,{status:'done',accepted:outcome!==2,result:simulatedResults[outcome]});
+        finishPair(item,index,link,false);
+        resolve();
+      },daily.demoDelay??45);
+    });
+    pairFlights.set(key,flight);
+    updateProgress();
+    await flight;
+    pairFlights.delete(key);
+  }
+}
+async function processCycle(item){
+  const now=demoNow(),daily=item.daily;
+  if(activeCycles.has(item.id)||daily.nextAt>now)return;
+  if(daily.nextAt&&!daily.recurring&&!daily.allowed)return;
+  activeCycles.add(item.id);
+  daily.allowed=false;
+  daily.nextAt=0;
+  daily.retry=null;
+  attempts=attempts.filter(entry=>now-entry.at<DAY);
+  const notes=new Set();
+  const histories=item.sites.map(submittedForSite);
+  let siteIndex=0;
+  const worker=async()=>{
+    while(canDispatch(item)&&siteIndex<item.sites.length){
+      const index=siteIndex++;
+      await handleSiteCycle(item,index,now,histories[index],notes);
+    }
+  };
+  try{
+    await Promise.all(Array.from({length:Math.min(8,item.sites.length)},worker));
+    if(item.cursor<item.sites.length*item.links.length&&notes.size){
+      daily.nextAt=now+DAY;daily.reason=[...notes].join('；');
+    }else{daily.nextAt=0;daily.reason=''}
+  }finally{
+    activeCycles.delete(item.id);
+    updateProgress();
+  }
+}
+function cycleMarkup(item){
+  if(!item.daily)return '';
+  const daily=item.daily;
+  const status=item.stopped?'自动执行已关闭':daily.recurring?'每天执行':'单次执行';
+  return '<p class="hint">'+status+' · 每站 24 小时默认上限 '+daily.defaultQuota+' 次</p>'+
+    (daily.nextAt&&!item.stopped?'<p class="hint">'+safe(daily.reason)+'</p><p class="hint">下轮最早 · '+safe(new Date(daily.nextAt).toLocaleString('zh-CN'))+'</p>':'');
+}
+
+const templateCategories={
+  general:{label:'通用文案',title:'投稿标题',body:'投稿正文',fields:'标题、正文',
+    steps:'根据目标入口选择填写和发布流程。'},
+  directory:{label:'目录收录 · 站点简介',title:'产品名称文案',body:'关键描述（短简介）',fields:'产品名称、官网、关键描述、产品介绍、分类、产品图片',
+    steps:'核对收录分类与必填资料 → 填产品表单，官网写入独立字段 → 核对并提交。'},
+  resource:{label:'社区推荐 · 资源推荐',title:'推荐标题',body:'推荐理由与正文',fields:'板块、标题、推荐理由、正文链接',
+    steps:'核对板块是否允许推荐 → 写推荐理由并插入正文链接 → 预览帖子后发布。'},
+};
+const starterTemplates = [
+  {id:'intro',revision:1,category:'directory',name:'站点简介',title:'{{产品名称}}',body:'{{关键描述}}'},
+  {id:'resource',revision:1,category:'resource',name:'资源推荐',title:'资源分享：{{产品名称}}',body:'想推荐 {{产品名称}}。{{关键描述}}\n官网：{{站点网址}}'},
+  {id:'directory-brand',revision:1,category:'directory',name:'品牌与产品',title:'{{产品名称}}',body:'{{站点名称}} 的产品 {{产品名称}}。{{关键描述}}'},
+  {id:'directory-index',revision:1,category:'directory',name:'目录条目',title:'{{产品名称}}',body:'产品简介：{{关键描述}}\n官网域名：{{站点名称}}'},
+  {id:'resource-roundup',revision:1,category:'resource',name:'资源清单推荐',title:'资源清单补充 · {{产品名称}}',body:'给这份资源清单补充一项：{{产品名称}}。{{关键描述}}\n查看产品：{{站点网址}}'},
+  {id:'resource-discuss',revision:1,category:'resource',name:'社区讨论',title:'有人用过 {{产品名称}} 吗？',body:'{{关键描述}}\n产品页面在 {{站点网址}}。用过的朋友觉得它适合哪些场景？'},
+  {id:'general-brief',revision:1,category:'general',name:'一句话介绍',title:'{{产品名称}}',body:'{{关键描述}}'},
+  {id:'general-card',revision:1,category:'general',name:'产品资料卡',title:'{{产品名称}} · 产品资料',body:'产品：{{产品名称}}\n简介：{{关键描述}}\n官网：{{站点网址}}'},
+  {id:'general-guide',revision:1,category:'general',name:'官网导览',title:'了解 {{产品名称}}',body:'{{关键描述}}\n如需了解详情，可访问 {{站点名称}} 的产品页面：{{站点网址}}'},
+];
+let contentTemplates=(saved?.contentTemplates??starterTemplates).map(template=>{
+  if(template.category)return template;
+  const starter=starterTemplates.find(item=>item.id===template.id);
+  if(starter&&template.revision===1)return starter;
+  return {...template,category:starter?.category??'general'};
+});
+// Older libraries already had intro and resource. Keep their edits and deletions.
+if(saved?.contentTemplates && !saved.templateCatalogVersion){
+  const existingIds=new Set(contentTemplates.map(template=>template.id));
+  const additions=starterTemplates.filter(template=>
+    !['intro','resource'].includes(template.id)&&!existingIds.has(template.id));
+  contentTemplates.push(...additions);
+}
+const oldDefault=contentTemplates.find(template=>template.id===saved?.defaultTemplateId);
+let defaultTemplateIds=currentTemplateDefaults(saved?.defaultTemplateIds??(oldDefault?{[oldDefault.category]:oldDefault.id}:{}));
+function currentTemplateDefaults(previous){
+  const defaults={};
+  for(const template of contentTemplates){
+    if(defaults[template.category]===undefined||previous[template.category]===template.id){
+      defaults[template.category]=template.id;
+    }
+  }
+  return defaults;
+}
+function isDefaultTemplate(template){return defaultTemplateIds[template.category]===template.id}
+let contentStrategy='templates', pickedTemplates=null, editingTemplate='', templatesFromSetup=false;
+let templateQuery='',templatePageIndex=0;
+
+function chosenTemplates(){
+  const ids=pickedTemplates??new Set(Object.values(defaultTemplateIds));
+  return contentTemplates.filter(template=>ids.has(template.id));
+}
+function canStartBatch(){
+  return picked.size&&perSite()&&(mode!=='execute'||contentStrategy==='ai'||chosenTemplates().length);
+}
+function publicationSummary(strategy,templates=[]){
+  if(strategy==='ai')return 'AI 根据目标网页拟写';
+  const names=templates.map(template=>template.name).join('、')||'尚未选择模板';
+  return (strategy==='hybrid'?'AI 分析 + 模板':'仅用内容模板')+' · '+names;
+}
+const selectionHint=count=>count?'已选 '+count+' 份模板':'请至少选择一份模板才能启动。';
+function contentOptions(){
+  if(mode!=='execute')return '';
+  const selectedIds=new Set(chosenTemplates().map(template=>template.id));
+  const groups=Object.entries(templateCategories).map(([category,description])=>{
+    const templates=contentTemplates.filter(template=>template.category===category);
+    if(!templates.length&&category!=='general')return '';
+    return '<fieldset><legend>'+description.label+'</legend>'+
+      (templates.length?templates.map(template=>'<label class="check item"><input type="checkbox" data-content-id="'+safe(template.id)+'" '+
+        (selectedIds.has(template.id)?'checked':'')+'><span>'+safe(template.name)+(isDefaultTemplate(template)?' <span class="chip">新批次预选</span>':'')+
+        '</span></label>').join(''):'<p class="hint">暂无通用文案，可到模板管理新增。</p>')+'</fieldset>';
+  }).join('');
+  return '<section class="card"><h2>'+stepTitle(4,'投稿内容')+'</h2>'+
+    '<label class="field">内容来源<select id="content-strategy"><option value="templates" '+(contentStrategy==='templates'?'selected':'')+'>仅用内容模板</option>'+
+    '<option value="ai" '+(contentStrategy==='ai'?'selected':'')+'>AI 根据目标网页拟写</option>'+
+    '<option value="hybrid" '+(contentStrategy==='hybrid'?'selected':'')+'>AI 分析 + 模板</option></select></label>'+
+    (contentStrategy!=='ai'?'<p class="hint">'+(contentStrategy==='hybrid'?'勾选可用模板。系统选取一份匹配的模板，再由 AI 按投稿要求改写。':'可多选。每次从匹配的模板中随机选一份，缺少匹配时使用已选通用文案。')+'</p>'+
+      '<div class="list" aria-label="可选内容模板">'+groups+'</div><p class="hint" id="content-count">'+selectionHint(selectedIds.size)+'</p>':
+      '<p class="hint">AI 根据投稿页面和推广站点资料起草文案。演示使用示例草稿。</p>')+
+    (contentStrategy==='ai'?'':btn('管理内容模板','manage-content','secondary'))+'</section>';
+}
+function templateRows(){
+  const filtered=[...contentTemplates].reverse().filter(template=>matches(template.name+' '+template.title+' '+templateCategories[template.category].label,templateQuery));
+  templatePageIndex=Math.min(templatePageIndex,Math.max(0,Math.ceil(filtered.length/pageSize)-1));
+  if(!filtered.length)return '<p class="hint">没有匹配的模板。</p>';
+  return filtered.slice(templatePageIndex*pageSize,(templatePageIndex+1)*pageSize).map(template=>
+    '<div class="item"><div class="row"><strong>'+safe(template.name)+'</strong>'+
+    (isDefaultTemplate(template)?'<span class="chip">新批次预选</span>':'')+'</div>'+
+    '<p class="hint">'+safe(templateCategories[template.category].label)+' · '+safe(templateCategories[template.category].fields)+'</p>'+
+    '<p class="hint">'+safe(templateCategories[template.category].steps)+'</p><div class="actions">'+
+    entityButton('编辑','edit-content',template.id)+
+    (isDefaultTemplate(template)?'':entityButton('设为本类默认','default-content',template.id))+entityButton('删除','delete-content',template.id)+'</div></div>'
+  ).join('')+paging('template',filtered.length,templatePageIndex);
+}
+function templateSettings(){
+  return '<section class="card"><div class="row"><h1>内容模板</h1>'+btn('新增模板','new-content','secondary')+'</div>'+
+    '<p class="hint">已保存 '+n(contentTemplates.length)+' 份模板。每类可设一份默认模板，新建批次时自动勾选。</p>'+
+    '<label class="field"><span>'+icon('search')+'搜索模板</span><input id="template-search" value="'+safe(templateQuery)+'"></label>'+
+    '<div id="template-rows" aria-label="内容模板库">'+templateRows()+'</div></section>';
+}
+function editorCategoryLabels(category){
+  const detail=templateCategories[category];
+  document.querySelector('#editor-content-title-label').textContent=detail.title;
+  document.querySelector('#editor-content-body-label').textContent=detail.body;
+  document.querySelector('#editor-content-workflow').textContent=detail.fields+'。'+detail.steps;
+}
+function openTemplateEditor(template){
+  editingTemplate=template?.id??'';
+  const category=template?.category??'general';
+  dialog.innerHTML='<h2 id="editor-title">'+(editingTemplate?'编辑内容模板':'新增内容模板')+'</h2>'+
+    '<label class="field">模板名称<input id="content-name" maxlength="80" value="'+safe(template?.name)+'"></label>'+
+    '<label class="field">模板分类<select id="content-category">'+Object.entries(templateCategories).map(([key,detail])=>
+      '<option value="'+key+'" '+(key===category?'selected':'')+'>'+detail.label+'</option>').join('')+'</select></label>'+
+    '<p class="hint" id="editor-content-workflow"></p>'+
+    '<label class="field"><span id="editor-content-title-label"></span><input id="content-title" maxlength="180" value="'+safe(template?.title)+'"></label>'+
+    '<label class="field"><span id="editor-content-body-label"></span><textarea id="content-body" rows="5" maxlength="4000">'+safe(template?.body)+'</textarea></label>'+
+    '<p class="hint">可用变量：{{站点名称}}、{{站点网址}}、{{产品名称}}、{{关键描述}}。</p>'+
+    '<p role="status" class="notice" id="content-error"></p><div class="actions">'+btn('保存模板','save-content')+btn('取消','close-dialog','secondary')+'</div>';
+  editorCategoryLabels(category);
+  dialog.showModal();
+}
+function fillTemplateText(text,site){
+  const values={'站点名称':site.name,'站点网址':site.url,
+    '产品名称':site.profile?.productName??site.name,'关键描述':site.profile?.summary??'（待补关键描述）'};
+  return text.replace(/\{\{(站点名称|站点网址|产品名称|关键描述)\}\}/g,(_match,key)=>values[key]);
+}
+function simulatedEntryType(link){
+  return link.entryType??demoLinks.find(item=>item.url===link.url)?.entryType??'directory';
+}
+function chooseSubmissionContent(config,site,link){
+  if(!config)return;
+  const {strategy}=config;
+  const category=simulatedEntryType(link);
+  const directory=category==='directory';
+  const host=new URL(link.url).hostname;
+  const pageSummary='示例页面 '+host+'：'+(directory?'目录征集效率工具，要求简要介绍和官网链接。':'社区接受工具推荐帖，要求写明推荐理由。');
+  const draft={strategy,category};
+  if(strategy==='ai'){
+    draft.title=directory?(site.profile?.productName??site.name):'效率工具推荐：'+site.name;
+    draft.body=directory?(site.profile?.summary??'（待补关键描述）'):
+      '与社区读者分享这个工具：'+site.name+'。官网：'+site.url;
+    draft.pageSummary=pageSummary;
+  }else{
+    const matching=config.templates.filter(template=>template.category===category);
+    const compatible=matching.length?matching:config.templates.filter(template=>!template.category||template.category==='general');
+    const template=compatible[Math.floor(Math.random()*compatible.length)];
+    if(!template)return null;
+    const body=fillTemplateText(template.body,site);
+    Object.assign(draft,{templateId:template.id,templateName:template.name,revision:template.revision,
+      title:fillTemplateText(template.title,site),
+      body:strategy==='hybrid'?(directory?'按目录要求简要介绍：':'结合社区主题推荐：')+body:body});
+    if(strategy==='hybrid')draft.pageSummary=pageSummary;
+  }
+  draft.fields=directory?[
+    ['产品名称',draft.title],['官网',site.profile?.landingPage??site.url],['关键描述',draft.body],
+    ['产品介绍',site.profile?.description??'待补'],['分类',site.profile?.category??'待补'],['产品图片',String((site.profile?.images?.length??0)+(site.profile?.imageUrls?.length??0))+' 张'],
+  ]:[['板块','工具分享（示例）'],['推荐标题',draft.title],['推荐理由与正文',draft.body],['正文链接',site.profile?.landingPage??site.url]];
+  return draft;
+}
+function contentLabel(content){
+  if(content.strategy==='ai')return 'AI 网页拟写（模拟）';
+  const version=content.templateName+' · 第 '+content.revision+' 版';
+  return content.strategy==='hybrid'?'AI + 模板 · '+version:version;
+}
+
+const authDraft={google:true,savedCredentials:true,register:false,gmail:false,confirmPublish:true};
+const legacyAuthSites=sites.filter(site=>!site.deleted);
+const legacyMailboxes=[...new Set(legacyAuthSites.flatMap(site=>[site.profile?.loginEmail,site.authentication?.googleEmail]).filter(Boolean))];
+let authAccounts=saved?.authAccounts??{
+  emails:legacyMailboxes,email:legacyAuthSites.find(site=>site.profile?.loginEmail)?.profile.loginEmail??'',
+  googleEmail:legacyAuthSites.find(site=>site.authentication?.googleEmail)?.authentication.googleEmail??'',
+  presets:[],defaultPreset:'',
+};
+let authFromSetup=false,editingPreset='',googleSimulation='';
+const sessionPasswords=new Map();
+const authEmailOptions=selected=>'<option value="">请选择邮箱</option>'+authAccounts.emails.map(email=>
+  '<option value="'+safe(email)+'" '+(selected===email?'selected':'')+'>'+safe(email)+'</option>').join('');
+function authManagement(){
+  const simulated=authAccounts.googleEmail&&authAccounts.simulatedGoogleEmail===authAccounts.googleEmail;
+  const emails=authAccounts.emails.map(email=>'<div class="item row"><span class="links">'+safe(email)+'</span>'+
+    entityButton('移除','remove-auth-email',email)+'</div>').join('');
+  const passwords=authAccounts.presets.map(preset=>'<div class="item"><strong>'+safe(preset.name)+'</strong>'+
+    '<p class="hint">'+(sessionPasswords.has(preset.id)?'本次已填写密码':'本次尚未填写密码')+'</p><div class="actions">'+
+    entityButton('编辑','edit-auth-preset',preset.id)+entityButton('移除','remove-auth-preset',preset.id)+'</div></div>').join('');
+  return (authFromSetup?btn('返回新建批次','return-auth','subtle'):'')+
+    '<section class="card"><h1>默认登录设置</h1><p class="hint">选择后自动保存，新批次会使用这些默认项。</p><div class="actions">'+
+    btn('新增邮箱','new-auth-email','secondary')+btn('新增密码','new-auth-preset','secondary')+'</div>'+
+    '<label class="field">默认登录邮箱<select id="auth-default-email">'+authEmailOptions(authAccounts.email)+'</select></label>'+
+    '<label class="field">默认密码方案<select id="auth-default-preset"><option value="">手动选择或填写</option>'+
+    authAccounts.presets.map(preset=>'<option value="'+safe(preset.id)+'" '+(preset.id===authAccounts.defaultPreset?'selected':'')+'>'+safe(preset.name)+'</option>').join('')+'</select></label>'+
+    '<p class="hint">Chrome 已为该网站和账号保存密码时，优先使用已保存的密码。</p>'+
+    '<label class="field">默认 Google 邮箱<select id="auth-google-email">'+authEmailOptions(authAccounts.googleEmail)+'</select></label>'+
+    (authAccounts.googleEmail?btn('演示 Google 登录','simulate-google-auth','subtle'):'')+
+    (simulated?'<span class="chip success">演示已通过</span>':'')+'</section>'+
+    (emails||passwords?detail('auth-accounts','管理邮箱和密码',
+      (emails?'<h3>邮箱</h3>'+emails:'')+(passwords?'<h3>密码方案</h3>'+passwords:'')):'')+
+    '<p class="notice" role="status" id="auth-management-notice">'+safe(notice)+'</p>';
+}
+function openPasswordPreset(preset){
+  editingPreset=preset?.id??'';
+  dialog.innerHTML='<h2 id="editor-title">'+(preset?'编辑密码方案':'添加密码方案')+'</h2>'+
+    '<label class="field">方案名称<input id="preset-name" maxlength="60" value="'+safe(preset?.name)+'"></label>'+
+    '<label class="field">示例密码<input id="preset-secret" type="password" maxlength="256" autocomplete="off"></label>'+
+    '<p class="hint">仅填写示例密码，刷新后须重新输入。</p><p class="notice" role="status" id="preset-error"></p>'+
+    '<div class="actions">'+btn('保存密码方案','save-auth-preset')+btn('取消','close-dialog','secondary')+'</div>';
+  dialog.showModal();
+}
+function openGoogleSimulation(){
+  if(!authAccounts.googleEmail){
+    document.querySelector('#auth-management-notice').textContent='请先选择默认 Google 邮箱。';return;
+  }
+  googleSimulation=authAccounts.googleEmail;
+  dialog.innerHTML='<h2 id="editor-title">选择 Google 账号（模拟）</h2>'+
+    '<label class="field">本次模拟使用的账号<input readonly value="'+safe(googleSimulation)+'"></label>'+
+    '<p>继续后返回认证方式管理。正式流程在 Google 官方页面选择账号和确认授权。</p>'+
+    '<div class="actions">'+btn('用此账号继续（模拟）','finish-google-auth')+btn('取消','close-dialog','secondary')+'</div>';
+  dialog.showModal();
+}
+
+const authGuides={
+  google:{title:'Google 登录',action:'打开 Google 登录演示',hint:'使用目标站点的 Google 登录按钮。确认显示的是指定邮箱。'},
+  password:{title:'邮箱和密码',action:'打开邮箱登录演示',hint:'在目标站点填写邮箱和密码。可用 Chrome 密码管理器，也可手动输入。'},
+  manual:{title:'手动登录',action:'打开手动登录演示',hint:'在目标站点完成登录、二次验证或人机验证，再返回。'},
+  verify:{title:'邮箱验证',action:'打开邮箱验证演示',hint:'使用邮件中的验证链接，或在目标站点填写验证码。'},
+  save:{title:'保存站点密码',action:'处理密码保存',hint:'登录和邮箱验证已通过。可在 Chrome 密码管理器确认保存，供下次登录使用。'},
+  approval:{title:'发表前确认',action:'查看待确认内容',hint:'此任务需要用户批准后才进入下一步。'},
+};
+function authOptions(){
+  if(mode!=='execute')return '';
+  const checkbox=(id,label)=>'<label class="check"><input type="checkbox" data-auth-setting="'+id+'" '+(authDraft[id]?'checked':'')+'>'+label+'</label>';
+  return detail('auth',stepTitle(5,'认证与二次确认')+' <small>'+(authDraft.register?'允许新注册':'仅登录已有账号')+'</small>',
+    '<div class="stack">'+checkbox('google','允许使用目标站点的 Google 登录')+
+    checkbox('savedCredentials','允许复用 Chrome／Google 保存的站点密码')+
+    checkbox('register','允许注册新账号')+checkbox('gmail','允许使用已授权的 Gmail 检查验证邮件')+checkbox('confirmPublish','每条投稿都先让我确认，再提交')+'</div>'+
+    '<p class="hint">邮箱默认 '+safe(authAccounts.email||'未设置')+' · 密码 '+safe(authAccounts.presets.find(preset=>preset.id===authAccounts.defaultPreset)?.name??'手动选择')+'</p>'+
+    '<p class="hint">Google 默认 '+safe(authAccounts.googleEmail||'未设置')+'</p>'+
+    '<p class="hint">优先复用已核对的登录状态。第三方登录邮箱和 Google 默认账号在「认证方式」管理。选账号、同意授权和二次验证都由用户确认。</p>'+
+    '<p class="hint">可手动在目标站点输入账号密码或处理邮件验证。验证通过后，可在 Chrome 确认保存站点密码。批次不会保存密码或验证码。</p>'+btn('管理认证方式','manage-auth','secondary'));
+}
+function pendingConfirmations(item){
+  if(!canDispatch(item))return 0;
+  const auth=item.authDemo?.filter(row=>row.step!=='done'&&row.step!=='queued').length??0;
+  return auth+Number(item.manual&&!item.resolved||false)+missingContent(item);
+}
+const authStage=row=>['verify','save'].includes(row.step)?row.step:row.type;
+const authCanCheck=row=>row.type!=='approval'&&row.step!=='save';
+const targetLoginKey=(url,email)=>JSON.stringify([new URL(url).origin,email]);
+function authorizedSavedPassword(item,index,email){
+  if(item.authentication?.savedCredentials===false)return false;
+  const key=targetLoginKey(item.links[index].url,email);
+  return (item.demoSyncedPasswords??[]).includes(key)||(authAccounts.savedTargetLogins??[]).includes(key);
+}
+const activeAuthChecks=new Set();
+const pickedConfirmations=new Set();
+let authDialogTask;
+const confirmationKey=(item,index)=>item.id+':'+index;
+function pendingAuthEntries(){
+  return batches.filter(canDispatch).flatMap(item=>(item.authDemo??[]).flatMap((row,index)=>
+    row.step!=='done'&&row.step!=='queued'?[{item,row,index,key:confirmationKey(item,index)}]:[]));
+}
+function confirmationPage(){
+  const entries=pendingAuthEntries();
+  const eligible=entries.filter(entry=>authCanCheck(entry.row)&&!activeAuthChecks.has(entry.key));
+  const selected=eligible.filter(entry=>pickedConfirmations.has(entry.key)).length;
+  const other=batches.filter(item=>canDispatch(item)&&(item.manual&&!item.resolved||missingContent(item)));
+  return '<div class="row"><h1>待确认清单</h1>'+btn('返回任务','tasks','subtle')+'</div>'+
+    '<section class="card confirmation-toolbar"><p class="hint">在对应页面处理完成后，可单条检查或批量检查。发表授权和保存密码需单独确认。</p>'+
+    '<div class="actions"><button class="button secondary" data-action="select-confirmations" '+(!eligible.length?'disabled':'')+'>'+
+    (selected&&selected===eligible.length?'取消全选':'全选可检查项')+'</button>'+
+    '<button class="button" data-action="check-confirmations" '+(!selected?'disabled':'')+'>检查所选并继续（'+n(selected)+'）</button></div>'+
+    '<p class="notice" role="status">'+safe(notice)+'</p></section>'+
+    entries.map(({item,row,key,index})=>{
+      const guide=authGuides[authStage(row)];
+      const checking=activeAuthChecks.has(key);
+      return '<section class="card'+(authCanCheck(row)?'':' attention-card')+'"><div class="row"><h2>'+guide.title+'</h2>'+
+        (!authCanCheck(row)?'<span class="chip warm">'+(row.step==='save'?'单独确认':'单独授权')+'</span>':
+          '<label class="check"><input type="checkbox" data-confirmation="'+safe(key)+'" '+(pickedConfirmations.has(key)?'checked':'')+' '+(checking?'disabled':'')+'>选择</label>')+'</div>'+
+        '<p class="hint links">'+'批次 '+item.id+' · '+safe(item.name)+' · '+safe(item.sites[0].name)+' · '+safe(item.links[index].url)+'</p>'+
+        '<p class="hint">'+safe(guide.hint)+'</p>'+
+        (checking?'<p class="notice" role="status">正在核对…</p>':
+          '<div class="actions">'+entityButton(row.step==='save'?guide.action:row.type==='approval'?'查看并确认':'打开对应页面','open-confirmation',key)+
+          (authCanCheck(row)?entityButton('检查并继续','check-confirmation',key):'')+'</div>')+
+        (row.message?'<p class="notice" role="status">'+safe(row.message)+'</p>':'')+'</section>';
+    }).join('')+
+    other.map(item=>'<section class="card"><h2>'+safe(item.name||'批次 '+item.id)+'</h2><p>需人工核对账号或补齐投稿资料。</p>'+
+      entityButton('打开任务','open-task',item.id)+'</section>').join('')+
+    (!entries.length&&!other.length?'<section class="card"><p>当前没有待确认事项。</p></section>':'');
+}
+async function verifyAuthRow(item,index){
+  const row=item.authDemo[index],key=confirmationKey(item,index);
+  if(!canDispatch(item)||row.step==='done'||row.step==='save'||activeAuthChecks.has(key))return;
+  activeAuthChecks.add(key);
+  row.message='';
+  updateProgress();
+  await new Promise(resolve=>setTimeout(resolve,250));
+  activeAuthChecks.delete(key);
+  if(canDispatch(item)){
+    if(!row.ready){
+      row.message='尚未检测到已完成。请先打开对应页面处理，再回来检查。';
+    }else{
+      row.ready=false;
+      if(row.type==='password'&&row.step==='login'){
+        row.step='verify';row.message=row.autoFilled
+          ?'已复用 Chrome 中 Google 保存的站点密码，请继续完成邮箱验证。':'登录已核对，请继续完成邮箱验证。';
+      }else if(row.type==='password'&&row.step==='verify'&&row.passwordSource&&row.passwordSource!=='existing'){
+        row.step='save';row.message='邮箱验证通过。先确认是否保存密码，再继续任务。';
+      }else{
+        row.step='done';item.cursor++;
+      }
+    }
+  }
+  pickedConfirmations.delete(key);
+  updateProgress();
+}
+
+function authDemoRows(item){
+  if(!item.authDemo)return '';
+  return '<section class="card"><h2>第三方认证</h2><p class="hint">这里演示网站登录和邮箱验证。某条任务需要你操作时，其他任务会继续。</p>'+
+    item.authDemo.map((row,index)=>{
+      const guide=authGuides[row.type];
+      const checking=activeAuthChecks.has(item.id+':'+index);
+      const status=checking?'核对中':row.skipped?'已跳过':row.step==='done'?'已继续':row.step==='queued'?'排队中':row.step==='verify'?'待邮箱验证':row.step==='save'?'待保存密码':row.type==='approval'?'待确认':'需认证';
+      const waiting=row.step!=='done'&&row.step!=='queued';
+      const nextGuide=authGuides[authStage(row)];
+      return '<div class="item"><div class="row"><strong>'+safe(guide?.title??'无需登录')+'</strong><span class="chip '+(waiting?'warm':'')+'">'+status+'</span></div>'+
+        '<p class="hint links">'+safe(item.links[index].url)+'</p>'+
+        (waiting&&canDispatch(item)?'<p class="hint">'+safe(nextGuide.hint)+'</p>'+
+          (row.message?'<p class="notice" role="status">'+safe(row.message)+'</p>':'')+
+          (!checking?'<div class="actions">'+entityButton(nextGuide.action,'auth-open',index)+
+            (authCanCheck(row)?entityButton('已处理，检查并继续','auth-check',index):'')+'</div>':''):'')+'</div>';
+    }).join('')+'</section>';
+}
+function openAuthStep(item,index){
+  authDialogTask={item,index};
+  const task=item.authDemo[index],type=authStage(task);
+  const guide=authGuides[type];
+  const account=(type==='google'?(item.authentication?.googleEmail??authAccounts.googleEmail):(task.loginEmail??item.authentication?.email??authAccounts.email))||'publisher@brand-3.example';
+  let body='<p class="hint links">目标站点 · '+safe(new URL(item.links[index].url).hostname)+'</p>';
+  let actionLabel='已完成验证，检查结果';
+  if(type==='save'){
+    dialog.innerHTML='<h2 id="editor-title">保存到 Chrome 密码管理器（模拟）</h2>'+body+
+      '<p>登录邮箱 · '+safe(account)+'</p><p>确认保存后，下次登录同一站点和邮箱时可优先使用。</p>'+
+      '<p class="hint">此处只记录演示状态。正式保存由 Chrome 的密码提示处理。</p>'+
+      '<div class="actions">'+btn('保存到 Chrome（模拟）','auth-save-target-password')+
+      btn('暂不保存，继续','auth-decline-target-password','secondary')+'</div>';
+    dialog.showModal();return;
+  }
+  if(type==='google'){
+    body+='<p>指定的 Google 邮箱 · '+safe(account)+'</p>'+
+      '<p class="hint">在目标站点点「使用 Google 登录」。已有且身份匹配的会话可继续；需要选账号或授权时，请在 Google 页面确认。</p>';
+    actionLabel='模拟已确认账号并返回';
+  }else if(type==='password'){
+    const activePresets=authAccounts.presets.filter(preset=>sessionPasswords.has(preset.id));
+    const defaultPreset=item.authentication?.defaultPreset??authAccounts.defaultPreset;
+    const remembered=authorizedSavedPassword(item,index,account);
+    const defaultSource=remembered?'existing':activePresets.some(preset=>preset.id===defaultPreset)?defaultPreset:'manual';
+    body+='<p class="hint">以下仅演示目标站点表单。选择一种已知的密码来源。登录失败后转回人工处理。</p>'+
+      '<label class="field">登录邮箱<input id="auth-email" type="email" value="'+safe(account)+'"></label>'+
+      '<label class="field">密码来源<select id="auth-password-source">'+(item.authentication?.savedCredentials===false?'':'<option value="existing" '+
+      (remembered?'selected':'')+'>使用站点已保存密码（模拟）</option>')+
+      '<option value="manual" '+(defaultSource==='manual'?'selected':'')+'>手动填写</option>'+activePresets.map(preset=>
+      '<option value="'+safe(preset.id)+'" '+(defaultSource===preset.id?'selected':'')+'>'+safe(preset.name)+'</option>').join('')+'</select></label>'+
+      '<label class="field" id="auth-password-field" '+(defaultSource==='manual'?'':'hidden')+'>站点密码（仅演示）<input id="auth-password" type="password" autocomplete="off"></label>';
+    actionLabel='模拟填写并返回';
+  }else if(type==='manual'){
+    body+='<p>在目标站点完成登录或验证后返回。URLPut 重新读取页面，核对账号与原任务。</p>';
+    actionLabel='模拟手动完成并返回';
+  }else if(type==='approval'){
+    body+='<p>本次任务即将发布推荐。请在确认页面核对板块、正文和链接后再批准。</p>';
+    actionLabel='批准本次发表（模拟）';
+  }else{
+    body+='<p>收件邮箱 · '+safe(account)+'</p><p>可打开对应邮件的验证链接，也可把邮件验证码填回目标站点。</p>'+
+      '<p class="hint">Gmail 自动查信需另行授权。邮件匹配不唯一时，请手动处理。</p>';
+  }
+  dialog.innerHTML='<h2 id="editor-title">'+guide.title+'（模拟）</h2>'+body+
+    '<p id="auth-error" role="status"></p><div class="actions">'+entityButton(actionLabel,'auth-confirm',index)+
+    (type==='approval'?entityButton('跳过本条','auth-skip',index):entityButton('模拟完成，稍后统一检查','auth-mark-ready',index))+
+    (type==='password'?btn('模拟登录失败','auth-login-failed','subtle'):'')+
+    btn('稍后处理','close-dialog','subtle')+'</div>';
+  dialog.showModal();
+}
+
+const browseStep=5;
+const browseCounts={sites:browseStep,links:browseStep,library:browseStep};
+const priceTypes=['免费','付费','价格未知'];
+let relFilter='',drFloor='';
+let libraryPreviewId='',linkQuery='',linkType='',linkPrice='';
+const resetLinkBrowse=()=>{linkQuery='';linkType='';linkPrice='';relFilter='';drFloor='';browseCounts.links=browseStep};
+const demoPrices=new Map(demoLinks.map((link,index)=>[link.url,priceTypes[index%priceTypes.length]]));
+const priceType=link=>link.priceType||demoPrices.get(link.url)||'价格未知';
+const demoByUrl=new Map(demoLinks.map(link=>[link.url,link]));
+const websiteType=link=>link.siteType||demoByUrl.get(link.url)?.siteType||'未识别';
+const linkDescription=link=>link.description??demoByUrl.get(link.url)?.description??'';
+function matchesSite(site,term){
+  const profile=site.profile??{};
+  return matches([site.name,site.url,profile.productName,profile.category,profile.summary,
+    profile.description,profile.highlights,profile.keywords,profile.landingPage].join(' '),term);
+}
+function matchesLink(link,term){
+  return matches([link.url,websiteType(link),priceType(link),linkDescription(link)].join(' '),term);
+}
+const linkDomain=link=>new URL(link.url).hostname;
+const activeLinks=list=>(list?.links??[]).filter(link=>!link.status||link.status==='active');
+const previewList=()=>view==='library'?
+  linkLists.find(list=>list.id===libraryPreviewId)??linkLists[0]:currentList();
+function linkMetrics(link){
+  const sample=demoByUrl.get(link.url);
+  const dr=link.dr===undefined?sample?.dr:link.dr;
+  return {rel:link.observedRel??sample?.observedRel??'未知',dr:Number.isFinite(dr)&&dr>=0&&dr<=100?dr:null};
+}
+function browseData(kind){
+  if(kind==='sites')return matchSites();
+  if(kind==='library')return libraryItems();
+  return activeLinks(previewList()).filter(link=>{
+    const {rel,dr}=linkMetrics(link);
+    return (!relFilter||rel===relFilter)&&(!drFloor||(dr!==null&&dr>=Number(drFloor)))&&(!linkType||websiteType(link)===linkType)&&(!linkPrice||priceType(link)===linkPrice)&&matchesLink(link,linkQuery);
+  });
+}
+const browseLabels={sites:'推广站点可选列表',links:'活跃外链明细',library:'已保存清单'};
+function browseRow(kind,item){
+  if(kind==='library')return libraryOptionRow(item);
+  if(kind==='links'){
+    const {rel,dr}=linkMetrics(item);
+    const selection=linkSelections.get(currentList()?.id);
+    const checkbox=view==='setup'?'<input type="checkbox" data-link-url="'+safe(item.url)+'" aria-label="选择 '+safe(item.url)+'" '+(!selection||selection.has(item.url)?'checked':'')+'>':'';
+    return '<div class="item" role="listitem"><div class="row">'+checkbox+'<strong class="truncate grow">'+safe(linkDomain(item))+
+    '</strong><span class="chip">'+safe(websiteType(item))+' · '+safe(priceType(item))+'</span></div><small class="links">'+safe(item.url)+'</small><p class="hint">样本链接：'+safe(rel)+' · DR：'+(dr??'未知')+'</p>'+(linkDescription(item)?'<p class="hint">'+safe(linkDescription(item))+'</p>':'')+'</div>';
+  }
+  const counts=siteCounts(item);
+  return '<div class="item" role="listitem"><label><input type="checkbox" data-site="'+safe(item.id)+'" '+(picked.has(item.id)?'checked':'')+
+    '><span>'+safe(item.name)+'<small class="truncate">'+safe(item.url)+'</small><small>总外链 '+n(counts.total)+' · 已接收 '+n(counts.submitted)+
+    ' · 待接收 '+n(counts.pending)+'</small></span></label></div>';
+}
+function browseStatus(count,total){
+  return '已显示 '+n(count)+' / '+n(total)+' 条'+(count<total?' · 下滑加载更多':'');
+}
+function browseMarkup(kind){
+  const items=browseData(kind),count=Math.min(items.length,browseCounts[kind]);
+  const label=browseLabels[kind];
+  return '<div class="list" tabindex="0" role="list" data-browse="'+kind+'" aria-label="'+label+'">'+
+    (items.length?items.slice(0,count).map(item=>browseRow(kind,item)).join(''):'<p class="hint">没有匹配的记录。</p>')+'</div>'+
+    '<p class="hint" id="browse-status-'+kind+'" aria-live="polite">'+browseStatus(count,items.length)+'</p>';
+}
+function refreshBrowse(kind,reset=false){
+  if(kind==='links'){
+    const summary=main.querySelector('[data-section="link-filters"] > summary');
+    if(summary)summary.innerHTML=linkFilterSummary();
+  }
+  if(reset)browseCounts[kind]=browseStep;
+  const list=main.querySelector('[data-browse="'+kind+'"]');
+  if(!list)return;
+  const scroll=reset?0:list.scrollTop;
+  const items=browseData(kind),count=Math.min(items.length,browseCounts[kind]);
+  list.innerHTML=items.length?items.slice(0,count).map(item=>browseRow(kind,item)).join(''):'<p class="hint">没有匹配的记录。</p>';
+  list.scrollTop=scroll;
+  main.querySelector('#browse-status-'+kind).textContent=browseStatus(count,items.length);
+}
+function growBrowse(kind){
+  const list=main.querySelector('[data-browse="'+kind+'"]');
+  if(!list)return;
+  const items=browseData(kind),before=browseCounts[kind];
+  if(before>=items.length)return;
+  const count=Math.min(items.length,before+browseStep);
+  browseCounts[kind]=count;
+  list.insertAdjacentHTML('beforeend',items.slice(before,count).map(item=>browseRow(kind,item)).join(''));
+  main.querySelector('#browse-status-'+kind).textContent=browseStatus(count,items.length);
+}
+function linkFilterSummary(){
+  const values=[linkType,linkPrice,relFilter,drFloor?'DR ≥ '+drFloor:''].filter(Boolean);
+  return '筛选条件 <small>'+safe(values.join(' · ')||'不限')+'</small>';
+}
+function activeLinkPreview(){
+  const list=previewList();
+  if(!list)return '';
+  const types=[...new Set([...commonSiteTypes,...activeLinks(list).map(websiteType)])].sort();
+  return '<h3>活跃外链 · '+safe(list.name)+'</h3>'+
+    '<label class="field"><span>'+icon('search')+'搜索外链</span><input id="link-preview-query" placeholder="网址、域名、类别或描述" value="'+safe(linkQuery)+'"></label>'+
+    detail('link-filters',linkFilterSummary(),'<div class="link-filter-grid"><label class="field">网站类型<select id="link-preview-type"><option value="">全部类型</option>'+
+    types.map(type=>'<option value="'+safe(type)+'" '+(type===linkType?'selected':'')+'>'+safe(type)+'</option>').join('')+'</select></label>'+
+    '<label class="field">价格类别<select id="link-preview-price"><option value="">全部价格</option>'+
+    priceTypes.map(price=>'<option '+(price===linkPrice?'selected':'')+'>'+price+'</option>').join('')+'</select></label>'+
+    '<label class="field">样本链接属性<select id="rel-filter"><option value="">全部属性</option>'+
+    ['Dofollow','Nofollow','Sponsored','UGC','未知'].map(rel=>'<option '+(rel===relFilter?'selected':'')+'>'+rel+'</option>').join('')+'</select></label>'+
+    '<label class="field">最低 Ahrefs DR（0–100）<input id="dr-floor" type="number" min="0" max="100" placeholder="不限" value="'+safe(drFloor)+'"></label></div>'+
+    '<p class="hint">演示数据。链接属性参考同入口的历史样本，实际以发布页为准。设置最低 DR 后仅显示有评分的外链。</p>')+
+    (view==='setup'?'<div class="actions">'+btn('只选筛选结果','pick-filtered','secondary')+btn('清空外链选择','clear-links','subtle')+'</div>':'')+
+    browseMarkup('links');
+}
+
+function setup(){
+  return detail('sites',stepTitle(1,'推广站点')+' <small>已选 '+n(picked.size)+' / '+n(sites.filter(site=>!site.deleted).length)+'</small>',
+      '<p class="hint">按所选清单统计。平台已收件就算已接收，包括审核中的投稿。</p>'+
+      '<label class="field"><span>'+icon('search')+'搜索站点</span><input id="site-search" value="'+safe(query)+'" placeholder="网址、域名、类别或产品描述"></label>'+
+      '<label class="check"><input type="checkbox" id="pending-sites" '+(pendingSitesOnly?'checked':'')+'>只看有待接收外链的站点</label>'+
+      '<div class="actions" style="margin-top:6px">'+btn('全选搜索结果','select-all','secondary')+btn('清空选择','clear','subtle')+'</div>'+
+      browseMarkup('sites')+
+      btn('去清单补充站点','manage-sites','secondary'))+
+    detail('links',stepTitle(2,'外链清单')+' <small>'+n(chosenLinks().length)+' / '+n(activeLinks(currentList()).length)+' 条已选</small>',
+      activeLinkPreview()+btn('选择或补充外链清单','manage-links','secondary'))+
+    '<section class="card"><h2>'+stepTitle(3,'执行方式')+'</h2>'+
+    '<label class="field"><select aria-label="执行方式" id="mode" aria-describedby="mode-help"><option value="analysis">仅分析</option><option value="execute">分析后执行（模拟）</option></select></label>'+
+    '<p class="hint" id="mode-help">'+(mode==='analysis'?'只检查投稿入口和要求，不会提交。':
+      '先检查入口，再按额度模拟投稿。需要你操作时，到「任务」里处理待确认事项。')+'</p>'+
+    '</section>'+contentOptions()+authOptions()+limitsMarkup()+
+    '<section class="card"><h2>'+stepTitle(mode==='analysis'?4:7,'批次设置')+'</h2>'+
+    '<label class="field">批次名称（可选）<input id="batch-name" value="'+safe(batchName)+'"></label>'+
+    '<label class="field">每个站点最多处理几条外链<input id="limit" type="number" min="1" max="10000" value="'+safe(limit)+'"></label></section>'+
+    '<section class="card launch-card" aria-labelledby="launch-summary">'+
+    '<h2 id="launch-summary">'+stepTitle(mode==='analysis'?5:8,'启动前确认')+'</h2><p class="hint">执行方式 · '+(mode==='analysis'?'仅分析':'分析后执行（模拟）')+'</p>'+
+    (mode==='execute'?'<p class="hint" id="launch-content">投稿内容 · '+safe(publicationSummary(contentStrategy,chosenTemplates()))+'</p>':'')+
+    '<div class="stats"><div><strong id="selected-sites">'+n(picked.size)+'</strong><small>已选推广站点</small></div>'+
+    '<div><strong id="per-site">'+n(perSite())+'</strong><small>每站外链数</small></div>'+
+    '<div><strong id="combinations">'+n(picked.size*perSite())+'</strong><small>合计处理条数</small></div>'+
+    '<div><strong id="pending-combinations">'+n(selectedPending())+'</strong><small>待接收</small></div></div>'+
+    '<p class="hint">'+(mode==='analysis'?'每个站点和每条外链算一条。「待接收」表示尚未确认平台收件。本次只分析。':'「待接收」表示尚未确认平台收件。已尝试过同一平台的投稿会跳过。')+'</p>'+
+    '<button class="button full" data-action="start" '+(!canStartBatch()?'disabled':'')+'>'+(mode==='analysis'?'开始分析（模拟）':'开始分析并投稿（模拟）')+'</button><p class="notice" role="status">'+safe(notice)+'</p></section>';
+}
+function unverified(item,site){
+  const groups=site?[item.daily?.verify?.[site.id]??[]]:Object.values(item.daily?.verify??{});
+  return groups.reduce((sum,keys)=>sum+keys.filter(key=>pairLedger.get(key)?.status==='verify').length,0);
+}
+function missingContent(item,site){
+  const groups=site?[item.daily?.contentBlocked?.[site.id]??[]]:Object.values(item.daily?.contentBlocked??{});
+  return groups.reduce((count,urls)=>count+urls.length,0);
+}
+function metrics(site,batchItem=batch){
+  const width=batchItem.links.length, index=site?batchItem.sites.indexOf(site):-1;
+  const start=index<0?0:index*width;
+  const total=index<0?batchItem.sites.length*width:width;
+  // One deliberately held row belongs to the first site.
+  const held=batchItem.manual&&start===0?1:0;
+  const regular=index>=0&&batchItem.daily?batchItem.daily.positions[index]:Math.max(0,Math.min(total,batchItem.cursor-start));
+  const pending=held&&!batchItem.resolved?1:0;
+  const dealt=Math.max(0,regular-pending-unverified(batchItem,site)-missingContent(batchItem,site));
+  return {total,dealt,pending,percent:Math.floor(dealt*100/total)};
+}
+function sample(site){
+  const targets=site?[site]:batch.sites.slice(0,4);
+  return targets.flatMap(target=>batch.links.slice(0,5).map((link,offset)=>{
+    const index=batch.sites.indexOf(target)*batch.links.length+offset;
+    const auth=batch.authDemo?.[offset];
+    if(auth){
+      const status=auth.skipped?'已跳过':auth.step==='done'?'已处理':auth.step==='queued'?'排队中':'需人工';
+      const result=auth.step==='done'?(auth.skipped?'用户跳过':'确认通过，已继续（模拟）'):auth.step==='queued'?'等待执行':
+        auth.step==='verify'?'待邮箱验证':auth.step==='save'?'待保存密码':'待'+authGuides[auth.type].title;
+      return {target,link,status,result};
+    }
+    const pending=index===0&&batch.manual&&!batch.resolved;
+    const siteIndex=batch.sites.indexOf(target);
+    const complete=(batch.daily?offset<batch.daily.positions[siteIndex]:index<batch.cursor)&&!pending;
+    const skipped=batch.daily?.skipped[target.id]?.includes(link.url);
+    const shared=batch.mode==='execute'?pairLedger.get(pairKey(target,link)):undefined;
+    const sameWork=shared?.owner!==batch.id;
+    const waiting=shared?.status==='processing';
+    const retry=shared?.status==='retry'||batch.daily?.retry?.siteId===target.id&&batch.daily.retry.offset===offset;
+    const blocked=batch.daily?.contentBlocked?.[target.id]?.includes(link.url);
+    const status=blocked?'需人工':shared?.status==='verify'?'待核对提交结果':skipped?'已跳过':pending?'需人工':complete?'已处理':waiting?(sameWork?'等待另一批次的处理结果':'处理中'):retry?'待重试':'排队中';
+    const result=blocked?'缺少适用模板 · '+templateCategories[simulatedEntryType(link)].label:shared?.status==='verify'?shared.result:skipped?(shared?.result?'复用批次 '+shared.owner+' 的结果 · '+shared.result:'历史已提交'):
+      waiting?(sameWork?'批次 '+shared.owner+' 正在处理':'正在等待处理结果'):
+      retry?'提交前临时失败，等下一周期':pending?'等待核对账号':!complete?'等待继续':batch.mode==='analysis'?'仅分析 · 已检查入口':
+      shared?.result??simulatedResults[index%3];
+    return {target,link,status,result,content:shared?.content};
+  }));
+}
+function progress(){
+  if(!batch)return '<h1>任务进度</h1><section class="card"><p>还没有批次。</p>'+btn('创建批次','setup')+'</section>';
+  const site=batch.sites.find(site=>site.id===scope);
+  const m=metrics(site);
+  const [state,status]=batchStatus(batch);
+  const records=sample(site);
+  return '<div class="row"><h1>'+safe(batch.name||'批次 '+batch.id)+'</h1>'+btn('返回任务','tasks','subtle')+'</div><section class="card progress-card">'+
+    '<div class="row"><h2 class="chip '+statusTone(state)+'">'+status+'</h2><span class="chip neutral">'+(batch.mode==='analysis'?'仅分析':'模拟执行')+'</span></div>'+
+    cycleMarkup(batch)+
+    (batch.interrupted?'<p class="hint">本批次已中断。点击「继续」可从保存的进度恢复。</p>':'')+
+    '<p class="hint">'+n(batch.sites.length)+' 个推广站点 · 每站 '+n(batch.links.length)+' 条 · 按启动时的清单统计</p>'+
+    (batch.publication?'<p class="hint">投稿内容 · '+safe(publicationSummary(batch.publication.strategy,batch.publication.templates))+'</p>':'')+
+    (batch.listName?'<p class="hint">外链清单 · '+safe(batch.listName)+'</p>':'')+
+    '<label class="field">查看范围<select id="scope"><option value="">全部站点</option>'+batch.sites.map(site=>'<option value="'+safe(site.id)+'" '+(site.id===scope?'selected':'')+'>'+safe(site.name)+'</option>').join('')+'</select></label>'+
+    '<div class="meter" role="progressbar" aria-label="已处理比例" aria-valuenow="'+m.percent+'"><div style="width:'+m.percent+'%"></div></div>'+
+    '<div class="row progress-caption"><span>已处理 '+n(m.dealt)+' / '+n(m.total)+'</span><strong>'+m.percent+'%</strong></div>'+
+    (state!=='completed'?'<div class="actions" style="margin-top:7px">'+
+      (['paused','interrupted','stopped'].includes(state)?btn('继续','resume','secondary'):
+        state==='budget'?btn('模拟 24 小时后','next-cycle','secondary')+btn('暂停','pause','subtle'):
+        ['waiting','verification'].includes(state)?'':btn('暂停','pause','secondary')+(activeCycles.has(batch.id)?'':btn(batch.daily?'执行本轮':'推进一步','advance','subtle')))+
+      (['interrupted','stopped'].includes(state)?'':btn('中断','interrupt','subtle'))+
+      (state==='stopped'?'':btn('停止','stop','subtle'))+'</div>':'')+'</section>'+
+    authDemoRows(batch)+
+    (missingContent(batch,site)?'<section class="card attention-card"><h2>待人工 · 缺少适用模板</h2><p>'+n(missingContent(batch,site))+' 条。可新建批次选用对应模板。这些条目未占提交额度。</p></section>':'')+
+    (m.pending&&!['interrupted','stopped'].includes(state)?'<section class="card attention-card"><div class="row"><h2>人工待办</h2><span class="chip warm">1 条</span></div><p>'+safe(batch.sites[0].name)+' → '+safe(batch.links[0].url)+'</p><p class="hint">请核对这个站点的登录账号。其他任务会继续运行。</p>'+btn('已确认，恢复该条','resolve','secondary')+'</section>':'')+
+    detail('report','记录与导出 <small>· 示例记录</small>',
+      '<p class="hint">每条都保留推广站点、来源行和外链网址。</p>'+
+      '<div class="list">'+records.map(({target,link,status,result,content})=>'<div class="item"><div class="row"><strong>'+safe(target.name)+'</strong><span class="chip">'+status+'</span></div><small class="links">第 '+link.line+' 行 · '+safe(link.url)+'</small><p class="hint">'+safe(result)+'</p>'+
+      (content?'<details><summary>'+safe(contentLabel(content))+'</summary>'+(content.pageSummary?'<p class="hint">'+safe(content.pageSummary)+'</p>':'')+'<strong>'+safe(content.title)+'</strong><p class="links">'+safe(content.body)+'</p>'+
+        (content.category?'<p class="hint">'+safe(templateCategories[content.category].steps)+'</p>'+
+          '<ul>'+content.fields.map(([label,value])=>'<li>'+safe(label)+'：'+safe(value)+'</li>').join('')+'</ul>':'')+
+        (status==='已处理'&&content.pageSummary?entityButton('另存为内容模板','save-draft-template',pairKey(target,link)):'')+'</details>':'')+'</div>').join('')+'</div>'+
+      btn('导出演示样本 CSV','export','secondary')+'<p class="notice" role="status" id="export-notice"></p>');
+}
+const pageSize=8;
+function batchStatus(item){
+  const total=item.sites.length*item.links.length;
+  if(item.cursor===total&&(!item.manual||item.resolved)&&!unverified(item)&&!missingContent(item))return ['completed','已完成'];
+  if(item.stopped)return ['stopped','已停止'];
+  if(item.interrupted)return ['interrupted','已中断'];
+  if(item.paused)return ['paused','已暂停'];
+  if(item.authDemo?.every(row=>row.step!=='queued'))return ['waiting','待确认'];
+  if(item.cursor===total)return unverified(item)?['verification','待核对提交结果']:['waiting','待人工'];
+  if(item.daily?.nextAt&&(item.daily.nextAt>demoNow()||!item.daily.recurring&&!item.daily.allowed))return ['budget','等待下一轮'];
+  return ['running','执行中'];
+}
+function matches(value,term){return value.toLowerCase().includes(term.trim().toLowerCase())}
+function paging(type,count,index){
+  const pages=Math.max(1,Math.ceil(count/pageSize));
+  if(pages===1)return '';
+  return '<div class="row" style="margin-top:8px"><button class="button secondary" data-action="'+type+'-prev" '+(index===0?'disabled':'')+'>上一页</button><small>第 '+(index+1)+' / '+pages+' 页</small><button class="button secondary" data-action="'+type+'-next" '+(index+1>=pages?'disabled':'')+'>下一页</button></div>';
+}
+function statusTone(state){
+  if(state==='completed')return 'success';
+  if(['waiting','verification','budget'].includes(state))return 'warm';
+  return state==='running'?'':'neutral';
+}
+function taskRows(){
+  const filtered=[...batches].reverse().filter(item=>{
+    const [status]=batchStatus(item);
+    return (taskFilter==='all'||status===taskFilter||taskFilter==='confirmations'&&pendingConfirmations(item)>0)&&matches((item.name||'')+' 批次 '+item.id,taskQuery);
+  });
+  taskPageIndex=Math.min(taskPageIndex,Math.max(0,Math.ceil(filtered.length/pageSize)-1));
+  return filtered.length?'<div>'+filtered.slice(taskPageIndex*pageSize,(taskPageIndex+1)*pageSize).map(item=>{
+    const [status,label]=batchStatus(item);
+    const m=metrics(undefined,item);
+    return '<div class="item"><div class="row"><strong>'+safe(item.name||'批次 '+item.id)+'</strong><span class="chip '+statusTone(status)+'">'+label+'</span></div>'+
+      '<p class="hint">'+n(item.sites.length)+' 站 · '+n(m.dealt)+' / '+n(m.total)+' 条已处理</p>'+
+      '<div class="meter task-meter" aria-hidden="true"><div style="width:'+m.percent+'%"></div></div>'+
+      (pendingConfirmations(item)?'<p class="hint">待确认 '+pendingConfirmations(item)+' 条</p>':'')+
+      entityButton(status==='completed'?'查看结果':'查看进度','open-task',item.id)+'</div>';
+  }).join('')+'</div>'+paging('task',filtered.length,taskPageIndex):'<p class="hint">没有符合条件的批次。</p>';
+}
+function tasks(){
+  return '<section class="card"><label class="field"><span>'+icon('search')+'搜索批次</span><input id="task-search" placeholder="批次名称或编号" value="'+safe(taskQuery)+'"></label>'+
+    '<label class="field">任务状态<select id="task-filter">'+[['all','全部'],['running','执行中'],['waiting','待人工'],['confirmations','待确认'],['verification','待核对提交结果'],['paused','已暂停'],['interrupted','已中断'],['stopped','已停止'],['budget','等待下一轮'],['completed','已完成']].map(([id,label])=>'<option value="'+id+'" '+(id===taskFilter?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
+    '<div class="actions">'+btn('待确认清单','show-confirmations','secondary')+'</div>'+
+    '<div id="task-rows">'+taskRows()+'</div>'+(!batches.length?btn('载入历史任务示例','demo-history','secondary'):'')+'</section>'+
+    '<section class="card"><p class="hint">查看目标站登录、注册和邮箱验证如何衔接。</p>'+'<div class="actions">'+btn('运行认证流程演示','demo-auth','secondary')+
+      btn('演示复用 Google 保存的密码','demo-synced-password','secondary')+'</div></section>'+
+    '<section class="card"><p class="hint">两个示例任务使用同一推广站点和同一外链。</p>'+btn('运行并发去重演示','demo-concurrent','secondary')+'</section>';
+}
+const entityButton=(label,action,key)=>'<button class="button secondary" data-action="'+action+'" data-key="'+safe(key)+'">'+actionLabel(label,action)+'</button>';
+function libraryItems(){
+  const isSites=libraryTab==='sites';
+  if(isSites)return sites.filter(site=>!site.deleted&&matchesSite(site,libraryQuery));
+  return linkLists.filter(list=>!list.deleted&&(matches(list.name,libraryQuery)||
+    activeLinks(list).some(link=>matchesLink(link,libraryQuery))));
+}
+function libraryOptionRow(item){
+  const isSites=libraryTab==='sites';
+  return '<div class="item" role="listitem"><strong>'+safe(item.name)+'</strong><p class="hint truncate">'+
+    (isSites?safe(item.url):n(activeLinks(item).length)+' 条活跃 · '+safe(sourceNames[item.source]??'清单'))+'</p>'+
+    (isSites?'<p class="hint">'+(missingDirectoryProfile(item.profile).length?'投稿资料待补 '+missingDirectoryProfile(item.profile).length+' 项':'投稿资料已齐备')+'</p>':'')+
+    '<div class="actions">'+entityButton('查看／编辑','edit-library',item.id)+(isSites?entityButton('删除','delete-site',item.id):
+      entityButton('查看活跃外链','preview-library-links',item.id)+entityButton('导出 CSV','export-link-list',item.id))+
+    (libraryFromSetup?entityButton(isSites?'选中并返回':'使用并返回','use-library',item.id):'')+'</div></div>';
+}
+function library(){
+  const isSites=libraryTab==='sites';
+  return (libraryFromSetup?btn('返回新建批次','return-setup','subtle'):'')+
+    (libraryFromSetup?'<p class="hint" style="margin-bottom:8px">批次草稿已保留，补充后可直接返回。</p>':'')+
+    '<div class="library-tabs" role="group" aria-label="清单类型">'+btn('推广站点','library-sites',isSites?'':'secondary')+btn('外链清单','library-links',isSites?'secondary':'')+'</div>'+
+    reviewMarkup(libraryTab)+
+    '<section class="card"><label class="field"><span>'+icon('search')+'搜索'+(isSites?'站点':'清单')+'</span><input id="library-search" placeholder="名称、网址、域名、类别或描述" value="'+safe(libraryQuery)+'"></label>'+
+    (!isSites&&linkLists.length?'<div class="actions">'+btn('导出全部外链','export-all-links','secondary')+'</div>':'')+
+    browseMarkup('library')+'</section>'+(!isSites&&previewList()?'<section class="card" id="library-link-preview">'+activeLinkPreview()+'</section>':'')+'<p class="notice" role="status">'+safe(notice)+'</p>';
+}
+function returnToSetup(){
+  libraryFromSetup=false;view='setup';open.add(libraryTab);if(libraryTab==='links')resetLinkBrowse();persist();render();window.scrollTo(0,0);
+  main.querySelector('[data-action="manage-'+libraryTab+'"]')?.focus();
+}
+
+const profileFields=[
+  {key:'productName',label:'产品名称',max:100,required:true},
+  {key:'category',label:'行业／产品分类',max:100,required:true,aliases:['分类','行业','产品分类']},
+  {key:'language',label:'产品资料语言',max:35,required:true,placeholder:'例如 zh-CN 或 en',aliases:['语言']},
+  {key:'summary',label:'关键描述（短简介）',max:250,required:true,aliases:['关键描述','短简介']},
+  {key:'description',label:'产品介绍',max:3000,required:true,long:true},
+  {key:'highlights',label:'核心功能和亮点',max:1000,long:true},
+  {key:'keywords',label:'关键词',max:250},
+  {key:'author',label:'作者姓名',max:120},
+  {key:'company',label:'公司名称',max:150},
+  {key:'contactEmail',label:'联系邮箱',max:254,type:'email'},
+  {key:'loginEmail',label:'第三方登录邮箱',max:254,type:'email'},
+  {key:'imageUrls',label:'产品图片网址',max:16000,long:true,type:'urls',aliases:['图片网址','imageurl']},
+  {key:'logoUrl',label:'Logo 网址',max:8000,type:'url'},
+  {key:'landingPage',label:'优先推广的页面',max:8000,type:'url'},
+];
+let profileImages=[],profileImageRead=0,loadingProfileImages=false;
+const profileField=(key,profile)=>{
+  const field=profileFields.find(item=>item.key===key);
+  const id='profile-'+field.key;
+  const label=safe(field.label);
+  const value=safe(field.type==='urls'?(profile.imageUrls??(profile.imageUrl?[profile.imageUrl]:[])).join('\n'):profile[field.key]);
+  return '<label class="field">'+label+(field.required?' <small>目录投稿常用</small>':'')+
+    (field.long?'<textarea id="'+id+'" rows="3" maxlength="'+field.max+'">'+value+'</textarea>':
+      '<input id="'+id+'" type="'+(field.type??'text')+'" maxlength="'+field.max+'" value="'+value+'" placeholder="'+safe(field.placeholder)+'">')+'</label>';
+};
+function missingDirectoryProfile(profile={}){
+  const missing=profileFields.filter(field=>field.required&&!profile[field.key]).map(field=>field.label);
+  if(!profile.author&&!profile.company)missing.push('作者或公司');
+  if(!(profile.images?.length||profile.image||profile.imageUrls?.length||profile.imageUrl))missing.push('产品图片');
+  return missing;
+}
+function profileMarkup(site){
+  const profile=site.profile??{};
+  const field=key=>profileField(key,profile);
+  const missing=missingDirectoryProfile(profile);
+  return '<p class="hint">'+(missing.length?'目录投稿常用资料待补：'+safe(missing.join('、')):'目录投稿常用资料已齐备')+'</p>'+
+    '<details open><summary>产品资料</summary>'+['productName','category','language','summary','description','highlights','keywords'].map(field).join('')+'</details>'+
+    '<details><summary>作者或公司 <small>至少填一项</small></summary>'+['author','company','contactEmail'].map(field).join('')+'</details>'+
+    '<details><summary>图片和链接 <small>可上传多张或填写多个网址</small></summary>'+
+    '<label class="field">上传产品图片<input id="profile-image-file" type="file" multiple accept="image/png,image/jpeg,image/webp"></label>'+
+    '<div id="profile-image-preview">'+profileImagePreview()+'</div>'+
+    field('imageUrls')+'<p class="hint">每行一个网址，也可用分号分隔。</p>'+field('logoUrl')+field('landingPage')+'</details>';
+}
+function profileImagePreview(){
+  return profileImages.map((image,index)=>'<div class="actions"><img class="product-image" src="'+safe(image.data)+'" alt="产品图片预览">'+
+    '<small class="links">'+safe(image.name)+'</small>'+entityButton('移除图片','remove-profile-image',index)+'</div>').join('');
+}
+function profileValue(field,value){
+  if(value.length>field.max)return;
+  if(field.type==='email'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value))return;
+  if(field.type==='url')return checkedUrl(value,'links')?.href;
+  if(field.type==='urls'){
+    const lines=value.split(/[\r\n;；]+/).map(line=>line.trim()).filter(Boolean);
+    const urls=lines.map(line=>checkedUrl(line,'links')?.href);
+    return urls.length&&urls.every(Boolean)?[...new Set(urls)]:undefined;
+  }
+  return value;
+}
+function readProfile(error,existing){
+  const profile=existing?.loginEmail?{loginEmail:existing.loginEmail}:{};
+  for(const field of profileFields){
+    const input=document.querySelector('#profile-'+field.key);
+    if(!input)continue;
+    const value=input.value.trim();
+    if(!value)continue;
+    const parsed=profileValue(field,value);
+    if(parsed===undefined){
+      error.textContent='请检查'+field.label+'的格式。';
+      const group=input.closest('details');if(group)group.open=true;
+      return;
+    }
+    profile[field.key]=parsed;
+  }
+  if(profileImages.length)profile.images=[...profileImages];
+  return profile;
+}
+
+function openEditor(item){
+  const site=libraryTab==='sites';
+  editing=item.id;
+  profileImages=[...(item.profile?.images??(item.profile?.image?[item.profile.image]:[]))];
+  profileImageRead++;loadingProfileImages=false;
+  dialog.innerHTML='<h2 id="editor-title">'+(site?'维护推广站点':'维护外链清单')+'</h2>'+
+    (site?'<p class="hint">站点名称 · '+safe(item.name)+'</p><label class="field">站点网址<input id="edit-url" value="'+safe(item.url)+'"></label>'+profileMarkup(item):
+      '<label class="field">每行一个外链网址，可在网址后用空格添加描述<textarea id="edit-links" rows="6">'+safe(activeLinks(item).map(link=>[link.url,linkDescription(link)].filter(Boolean).join(' ')).join('\n'))+'</textarea></label>')+
+    '<p class="hint">'+(site?'可先保存已有资料，缺项会标出。修改用于后续批次。':'修改用于后续批次。已启动批次使用原清单。')+'</p><p role="status" id="editor-error"></p>'+
+    '<div class="actions">'+btn('保存修改','save-edit')+btn('关闭','close-dialog','secondary')+'</div>';
+  dialog.showModal();
+}
+
+function templatesPage(){
+  return (templatesFromSetup?'<div class="row" style="margin-bottom:8px">'+btn('返回新建批次','return-content','subtle')+'</div>':'')+templateSettings();
+}
+function modelsPage(){
+  const local=model.type==='local';
+  return '<section class="card"><fieldset><legend>模型来源</legend><div class="actions">'+
+    '<label class="check"><input type="radio" name="model-source" value="system" '+(!local?'checked':'')+'>系统自带</label>'+
+    '<label class="check"><input type="radio" name="model-source" value="local" '+(local?'checked':'')+'>本地模型</label></div></fieldset>'+
+    (local?'<label class="field">API 基础地址（必填）<input type="url" required id="endpoint" value="'+safe(model.endpoint)+'"></label>'+
+      '<label class="field">模型名称（必填）<input required id="model-name" placeholder="例如 qwen2.5:7b" value="'+safe(model.name)+'"></label>'+
+      '<label class="field">API 密钥（可选）<input type="password" autocomplete="off" id="model-key"></label>'+
+      '<p class="hint">使用 OpenAI 兼容接口。模型名称须与本地服务一致。仅在服务要求认证时填写密钥。</p>'+
+      btn('保存本地设置','save-model'):'<p class="hint">使用系统提供的模型，无需配置。</p>')+
+    '<p id="model-notice" class="notice" role="status">'+safe(notice)+'</p></section>';
+}
+function renderNav(){
+  const waiting=batches.reduce((sum,item)=>sum+pendingConfirmations(item),0);
+  nav.innerHTML=[['setup','新建批次'],['tasks','任务'],['library','清单'],['templates','内容模板'],['models','AI 模型'],['auth-management','认证方式']].map(([id,label])=>'<button data-action="'+id+'" '+((view===id||['progress','confirmations'].includes(view)&&id==='tasks')?'aria-current="page"':'')+(id==='tasks'&&waiting?' aria-description="'+n(waiting)+' 条待确认"':'')+'>'+icon(navIcons[id])+label+
+    (id==='tasks'&&waiting?' <span class="chip warm" aria-hidden="true">'+(waiting>99?'99+':n(waiting))+'</span>':'')+'</button>').join('');
+}
+function render(){
+  renderNav();
+  main.innerHTML={setup,tasks,library,progress,confirmations:confirmationPage,templates:templatesPage,models:modelsPage,'auth-management':authManagement}[view]();
+  if(view==='setup'){document.querySelector('#mode').value=mode}
+
+}
+function refreshLinkSelection(){
+  main.querySelector('[data-section="links"] summary small').textContent= n(chosenLinks().length)+' / '+n(activeLinks(currentList()).length)+' 条已选';
+  refreshSection('limit');
+}
+function refreshSection(id){
+  if(id==='sites'){
+    main.querySelector('[data-section="sites"] summary').innerHTML=stepTitle(1,'推广站点')+' <small>已选 '+n(picked.size)+' / '+n(sites.filter(site=>!site.deleted).length)+'</small>';
+    refreshBrowse('sites');
+  }
+  document.querySelector('#selected-sites').textContent=n(picked.size);
+  document.querySelector('#per-site').textContent=n(perSite());
+  document.querySelector('#combinations').textContent=n(picked.size*perSite());
+  document.querySelector('#pending-combinations').textContent=n(selectedPending());
+  main.querySelector('[data-action=start]').disabled=!canStartBatch();
+}
+function parseLines(value){
+  const urls=new Map();
+  for(const [index,line] of value.split(/\r?\n/).entries()){
+    try {
+      const [address,...words]=line.trim().split(/\s+/);
+      const url=new URL(address);
+      if(!['https:','http:'].includes(url.protocol)||url.username||url.password)continue;
+      url.hash='';
+      if(!urls.has(url.href))urls.set(url.href,{url:url.href,line:index+1,description:words.join(' ')});
+    }catch{}
+  }
+  return [...urls.values()];
+}
+function advance(targets=batches){
+  let changed=false;
+  for(const item of targets){
+    const total=item.sites.length*item.links.length;
+    if(item.paused||item.interrupted||item.stopped||item.cursor>=total)continue;
+    if(item.authDemo){
+      const openRows=item.authDemo.filter(row=>row.step==='queued');
+      for(const row of openRows){row.step='done';item.cursor++}
+      if(openRows.length)changed=true;
+      continue;
+    }
+    if(item.daily){void processCycle(item);continue}
+    item.manual=item.mode==='execute';
+    item.cursor=Math.min(total,item.cursor+Math.max(1,Math.ceil(total/5)));
+    changed=true;
+  }
+  if(changed)updateProgress()
+}
+function downloadCsv(rows,filename){
+  const csvCell=value=>{
+    const text=String(value);
+    const escaped=/^[=+@\-\t\r\n]/.test(text)?"'"+text:text;
+    return '"'+escaped.replaceAll('"','""')+'"';
+  };
+  const csv=rows.map(row=>row.map(csvCell).join(',')).join('\r\n');
+  const url=URL.createObjectURL(new Blob(['\uFEFF',csv],{type:'text/csv;charset=utf-8'}));
+  const anchor=document.createElement('a');anchor.href=url;anchor.download=filename;anchor.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function exportSample(){
+  const site=batch.sites.find(site=>site.id===scope);
+  const rows=[['推广站点','推广站点网址','外链 URL','外链来源行','状态','结论','执行方式','本条文案来源'],
+    ...sample(site).map(({target,link,status,result,content})=>[target.name,target.url,link.url,link.line,status,result,
+      batch.mode==='analysis'?'仅分析':'分析后执行（模拟）',content?contentLabel(content):''])];
+  downloadCsv(rows,'URLPut-批次-'+batch.id+'-演示记录.csv');
+  document.querySelector('#export-notice').textContent='已导出 '+(rows.length-1)+' 条演示记录。';
+}
+document.addEventListener('scroll',event=>{
+  const list=event.target;
+  const kind=list.dataset?.browse;
+  if(kind&&list.scrollHeight-list.clientHeight-list.scrollTop<=12)growBrowse(kind);
+},true);
+document.addEventListener('toggle',event=>{
+  const id=event.target.dataset?.section;
+  if(!id||!event.target.isConnected)return;
+  if(event.target.open)open.add(id);else open.delete(id);
+},true);
+document.addEventListener('input',event=>{
+  if(event.target.id.startsWith('input-')){
+    const kind=event.target.id.slice(6),draft=imports[kind];
+    draft.read++;draft.loading=false;
+    draft.text=event.target.value;draft.filename='';draft.format='txt';
+    if(draft.rows||draft.error){draft.rows=null;draft.error='';render();document.querySelector('#input-'+kind)?.focus()}
+    main.querySelector('[data-action=review-'+kind+']').disabled=!draft.text.trim();
+  }
+  if(event.target.id==='site-search'){query=event.target.value;refreshBrowse('sites',true)}
+  if(event.target.id==='dr-floor'){drFloor=event.target.value;refreshBrowse('links',true)}
+  if(event.target.id==='link-preview-query'){linkQuery=event.target.value;refreshBrowse('links',true)}
+  if(event.target.id==='template-search'){templateQuery=event.target.value;templatePageIndex=0;document.querySelector('#template-rows').innerHTML=templateRows()}
+  if(event.target.id==='task-search'){taskQuery=event.target.value;taskPageIndex=0;document.querySelector('#task-rows').innerHTML=taskRows()}
+  if(event.target.id==='library-search'){libraryQuery=event.target.value;refreshBrowse('library',true)}
+  if(event.target.id==='batch-name')batchName=event.target.value;
+  if(event.target.id==='limit'){limit=Math.max(0,Math.min(10000,Math.floor(Number(event.target.value)||0)));refreshSection('limit')}
+});
+document.addEventListener('change',event=>{
+  const input=event.target;
+  if(input.dataset.site){if(input.checked)picked.add(input.dataset.site);else picked.delete(input.dataset.site);persist();refreshSection('sites')}
+  if(input.id==='profile-image-file'&&input.files[0]){
+    const files=[...input.files],error=dialog.querySelector('#editor-error');
+    const read=++profileImageRead;
+    loadingProfileImages=false;
+    if(files.some(file=>!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>512_000)){
+      error.textContent='每张图片须为 512 KB 以内的 PNG、JPG 或 WebP。';input.value='';return;
+    }
+    loadingProfileImages=true;
+    const readImage=file=>new Promise((resolve,reject)=>{
+      const reader=new FileReader();
+      reader.onload=()=>resolve({name:file.name,data:reader.result});
+      reader.onerror=reject;
+      reader.readAsDataURL(file);
+    });
+    void Promise.all(files.map(readImage)).then(images=>{
+      if(!dialog.open||!input.isConnected||read!==profileImageRead)return;
+      const known=new Set(profileImages.map(image=>image.data));
+      for(const image of images){
+        if(known.has(image.data))continue;
+        known.add(image.data);profileImages.push(image);
+      }
+      dialog.querySelector('#profile-image-preview').innerHTML=profileImagePreview();
+      error.textContent='';
+    }).catch(()=>{if(input.isConnected&&read===profileImageRead)error.textContent='无法读取产品图片。'})
+      .finally(()=>{if(read===profileImageRead){loadingProfileImages=false;input.value=''}});
+  }
+  if(input.id==='pending-sites'){pendingSitesOnly=input.checked;refreshBrowse('sites',true)}
+  if(input.id.startsWith('file-')&&input.files[0]){
+    const kind=input.id.slice(5),draft=imports[kind],file=input.files[0];
+    const read=++draft.read;
+    if(!/\.(txt|csv)$/i.test(file.name)||file.size>2_000_000){
+      draft.loading=false;draft.error='请选择小于 2 MB 的 TXT 或 CSV 文件。';render();return;
+    }
+    draft.loading=true;
+    draft.error='';
+    main.querySelector('[data-action=review-'+kind+']').disabled=true;
+    void file.text().then(value=>{
+      if(read!==draft.read)return;
+      draft.loading=false;draft.rows=null;draft.text=value;draft.filename=file.name;
+      draft.format=file.name.toLowerCase().endsWith('.csv')?'csv':'txt';
+      if(view==='library'&&libraryTab===kind)render();
+    }).catch(()=>{
+      if(read!==draft.read)return;
+      draft.loading=false;draft.error='未能读取文件。';
+      if(view==='library'&&libraryTab===kind)render();
+    });
+  }
+  if(input.name==='model-source'){
+    model.type=input.value;
+    notice='';persist();render();return;
+  }
+  if(input.id==='task-filter'){taskFilter=input.value;taskPageIndex=0;render()}
+  if(input.id==='rel-filter'){relFilter=input.value;refreshBrowse('links',true)}
+  if(input.dataset.linkUrl){
+    const list=currentList();
+    const urls=linkSelections.get(list.id)??new Set(activeLinks(list).map(link=>link.url));
+    if(input.checked)urls.add(input.dataset.linkUrl);else urls.delete(input.dataset.linkUrl);
+    linkSelections.set(list.id,urls);persist();refreshLinkSelection();
+  }
+  if(input.id==='link-preview-price'){linkPrice=input.value;refreshBrowse('links',true)}
+  if(input.id==='link-preview-type'){linkType=input.value;refreshBrowse('links',true)}
+  if(input.id==='scope'){scope=input.value;render()}
+  if(input.dataset.confirmation){
+    if(input.checked)pickedConfirmations.add(input.dataset.confirmation);else pickedConfirmations.delete(input.dataset.confirmation);
+    render();
+  }
+  if(input.id==='auth-default-email'||input.id==='auth-google-email'){
+    if(input.id==='auth-default-email')authAccounts.email=input.value;
+    else{
+      if(authAccounts.googleEmail!==input.value)delete authAccounts.simulatedGoogleEmail;
+      authAccounts.googleEmail=input.value;
+    }
+    notice='邮箱设置已保存。';persist();render();
+  }
+  if(input.id==='auth-default-preset'){
+    authAccounts.defaultPreset=input.value;notice='默认密码方案已更新。';persist();render();
+  }
+  if(input.id==='auth-password-source'){
+    const field=dialog.querySelector('#auth-password-field');
+    field.hidden=input.value!=='manual';
+    if(field.hidden)field.querySelector('input').value='';
+  }
+  if(input.id==='content-category')editorCategoryLabels(input.value);
+  if(input.id==='content-strategy'){contentStrategy=input.value;notice='';render()}
+  if(input.dataset.contentId){
+    pickedTemplates??=new Set(Object.values(defaultTemplateIds));
+    if(input.checked)pickedTemplates.add(input.dataset.contentId);else pickedTemplates.delete(input.dataset.contentId);
+    document.querySelector('#content-count').textContent=selectionHint(pickedTemplates.size);
+    document.querySelector('#launch-content').textContent='投稿内容 · '+publicationSummary(contentStrategy,chosenTemplates());
+    main.querySelector('[data-action=start]').disabled=!canStartBatch();
+  }
+  if(input.dataset.authSetting){authDraft[input.dataset.authSetting]=input.checked;render()}
+  if(input.id==='mode'){mode=input.value;notice='';render()}
+  if(input.id==='daily-limit')dailyLimit=integerQuota(input.value);
+  if(input.id==='limit-site'){limitSite=input.value;render()}
+  if(input.id==='site-limit'&&limitSite)overrides[limitSite]=integerQuota(input.value);
+  if(input.id==='recurring')recurring=input.checked;
+});
+dialog.addEventListener('close',()=>{
+  for(const password of dialog.querySelectorAll('input[type=password]'))password.value='';
+});
+let lastTick=performance.now();
+document.addEventListener('click',event=>{
+  const control=event.target.closest('[data-action]');
+  const action=control?.dataset.action,key=control?.dataset.key;
+  if(!action)return;
+  if(['setup','tasks','library','templates','models','auth-management'].includes(action)){
+    if(view!==action&&action==='setup'){browseCounts.sites=browseStep;resetLinkBrowse()}
+    if(view!==action&&action==='library'){browseCounts.library=browseStep;resetLinkBrowse()}
+    libraryFromSetup=false;templatesFromSetup=false;authFromSetup=false;view=action;notice='';render();window.scrollTo(0,0);return;
+  }
+  if(action==='manage-auth'){
+    authFromSetup=true;view='auth-management';notice='';render();window.scrollTo(0,0);return;
+  }
+  if(action==='return-auth'){
+    authFromSetup=false;view='setup';notice='';render();main.querySelector('[data-action=manage-auth]')?.focus();return;
+  }
+  if(action==='new-auth-email'){
+    dialog.innerHTML='<h2 id="editor-title">新增邮箱</h2><label class="field">邮箱地址<input id="manage-login-email" type="email" maxlength="254" autocomplete="email" autofocus></label>'+
+      '<p class="notice" role="status" id="email-error"></p><div class="actions">'+btn('保存邮箱','add-auth-email')+btn('取消','close-dialog','secondary')+'</div>';
+    dialog.showModal();return;
+  }
+  if(action==='add-auth-email'){
+    const input=document.querySelector('#manage-login-email'),email=input.value.trim();
+    if(!email||!input.checkValidity()){
+      document.querySelector('#email-error').textContent='请输入有效邮箱。';return;
+    }
+    if(authAccounts.emails.some(item=>item.toLowerCase()===email.toLowerCase())){
+      document.querySelector('#email-error').textContent='这个邮箱已添加。';return;
+    }
+    authAccounts.emails.push(email);
+    authAccounts.email||=email;
+    notice='邮箱已添加。';dialog.close();persist();render();return;
+  }
+  if(action==='remove-auth-email'){
+    authAccounts.emails=authAccounts.emails.filter(email=>email!==key);
+    if(authAccounts.email===key)authAccounts.email=authAccounts.emails[0]??'';
+    if(authAccounts.googleEmail===key){authAccounts.googleEmail='';delete authAccounts.simulatedGoogleEmail}
+    notice='邮箱已移除。';persist();render();return;
+  }
+  if(action==='new-auth-preset'||action==='edit-auth-preset'){
+    openPasswordPreset(authAccounts.presets.find(preset=>preset.id===key));return;
+  }
+  if(action==='save-auth-preset'){
+    const name=document.querySelector('#preset-name').value.trim(),secret=document.querySelector('#preset-secret');
+    if(!name||!secret.value){
+      document.querySelector('#preset-error').textContent='请填写方案名称和示例密码。';return;
+    }
+    const id=editingPreset||crypto.randomUUID();
+    sessionPasswords.set(id,secret.value);secret.value='';
+    authAccounts.presets=[...authAccounts.presets.filter(preset=>preset.id!==id),{id,name}];
+    if(authAccounts.presets.length===1)authAccounts.defaultPreset=id;
+    notice='密码方案已保存。密码仅在本次页面会话保留。';
+    dialog.close();dialog.innerHTML='';persist();render();return;
+  }
+  if(action==='remove-auth-preset'){
+    authAccounts.presets=authAccounts.presets.filter(preset=>preset.id!==key);
+    sessionPasswords.delete(key);
+    if(authAccounts.defaultPreset===key)authAccounts.defaultPreset=authAccounts.presets[0]?.id??'';
+    notice='密码方案已移除。';persist();render();return;
+  }
+  if(action==='simulate-google-auth'){openGoogleSimulation();return}
+  if(action==='finish-google-auth'){
+    authAccounts.simulatedGoogleEmail=googleSimulation;
+    notice='演示 Google 登录通过。';
+    googleSimulation='';dialog.close();dialog.innerHTML='';persist();render();return;
+  }
+  if(action==='manage-content'){view='templates';templatesFromSetup=true;notice='';render();window.scrollTo(0,0);return}
+  if(action==='return-content'){view='setup';templatesFromSetup=false;notice='';render();main.querySelector('[data-action=manage-content]')?.focus();return}
+  if(action==='new-content'||action==='edit-content'){
+    openTemplateEditor(contentTemplates.find(template=>template.id===key));return;
+  }
+  if(action==='template-prev'||action==='template-next'){templatePageIndex+=action==='template-next'?1:-1;render();return}
+  if(action==='save-draft-template'){
+    const record=pairLedger.get(key),site=batch.sites.find(item=>item.id===record?.siteId);
+    if(!record?.content||!site)return;
+    const asTemplate=text=>text.replaceAll(site.url,'{{站点网址}}').replaceAll(site.name,'{{站点名称}}');
+    openTemplateEditor({name:'AI 投稿草稿',category:record.content.category,title:asTemplate(record.content.title),body:asTemplate(record.content.body)});
+    return;
+  }
+  if(action==='download-link-columns'){
+    downloadCsv([linkColumns,linkExample],'URLPut-外链导入模板.csv');return;
+  }
+  if(action==='download-site-columns'){
+    downloadCsv([['站点网址',...profileFields.map(field=>field.label)]],'URLPut-站点资料导入模板.csv');return;
+  }
+  if(action==='delete-content'){
+    const template=contentTemplates.find(item=>item.id===key);
+    if(!template)return;
+    dialog.innerHTML='<h2 id="editor-title">删除内容模板？</h2><p>'+safe(template.name)+'</p>'+
+      '<p>模板会从列表和新批次移除。已启动批次保留原版本。</p><div class="actions">'+
+      entityButton('确认删除','confirm-delete-content',template.id)+btn('取消','close-dialog','secondary')+'</div>';
+    dialog.showModal();return;
+  }
+  if(action==='confirm-delete-content'){
+    contentTemplates=contentTemplates.filter(template=>template.id!==key);
+    pickedTemplates?.delete(key);
+    defaultTemplateIds=currentTemplateDefaults(defaultTemplateIds);
+    dialog.close();persist();render();return;
+  }
+  if(action==='default-content'){
+    const template=contentTemplates.find(item=>item.id===key);
+    if(!template)return;
+    defaultTemplateIds[template.category]=template.id;
+    persist();render();return;
+  }
+  if(action==='save-content'){
+    const name=document.querySelector('#content-name').value.trim();
+    const title=document.querySelector('#content-title').value.trim();
+    const body=document.querySelector('#content-body').value.trim();
+    const category=document.querySelector('#content-category').value;
+    if(!name||!title||!body){
+      document.querySelector('#content-error').textContent='请填写模板名称、标题和正文。';return;
+    }
+    if(editingTemplate){
+      contentTemplates=contentTemplates.map(template=>template.id===editingTemplate&&
+        (template.name!==name||template.title!==title||template.body!==body||template.category!==category)?
+        {...template,name,title,body,category,revision:template.revision+1}:template);
+    }else{
+      contentTemplates=[...contentTemplates,{id:crypto.randomUUID(),revision:1,name,title,body,category}];
+      templateQuery='';templatePageIndex=0;
+      if(view==='progress')view='templates';
+    }
+    defaultTemplateIds=currentTemplateDefaults(defaultTemplateIds);
+    dialog.close();persist();render();return;
+  }
+  if(action==='return-setup'){notice='';returnToSetup();return}
+  if(action==='use-library'){
+    if(libraryTab==='sites'){picked.add(key);pendingSitesOnly=false;query=''}
+    else listId=key;
+    notice='已从清单带回所选'+(libraryTab==='sites'?'站点。':'外链。');
+    returnToSetup();return;
+  }
+  if(action.startsWith('review-')){checkAndImport(action.slice(7));return}
+  if(action.startsWith('download-import-')){
+    const kind=action.slice(16);
+    const issues=(imports[kind].rows??[]).filter(row=>row.status==='error');
+    if(issues.length)downloadCsv([['行号','原始内容','问题原因'],...issues.map(row=>[row.line,row.raw,row.reason])],
+      'URLPut-'+(kind==='sites'?'站点':'外链')+'导入问题.csv');
+    return;
+  }
+  if(action==='pick-filtered'||action==='clear-links'){
+    const links=action==='pick-filtered'?browseData('links'):[];
+    linkSelections.set(currentList().id,new Set(links.map(link=>link.url)));
+    persist();refreshBrowse('links');refreshLinkSelection();return;
+  }
+  if(action==='select-all'){for(const site of matchSites())picked.add(site.id);persist();refreshSection('sites');return}
+  if(action==='clear'){picked.clear();persist();refreshSection('sites');return}
+  if(action==='open-task'){batch=batches.find(item=>String(item.id)===key);scope='';view='progress';open.add('report')}
+  if(action==='demo-auth'||action==='demo-synced-password'){
+    const id=(batches.at(-1)?.id??0)+1;
+    const synced=action==='demo-synced-password';
+    const labels=synced?['password','password','google']:['google','password','manual','verify','approval','public'];
+    const origins=synced?['matched.example','other.example','google.example']:labels.map(type=>type+'.example');
+    const email=authAccounts.email||'publisher@brand-3.example';
+    batch={id,name:synced?'Google 已保存密码演示':'第三方认证演示',mode:'execute',sites:[selected()[0]??demoSites[2]],cursor:0,
+      authentication:{email,googleEmail:authAccounts.googleEmail,defaultPreset:authAccounts.defaultPreset,
+        savedCredentials:authDraft.savedCredentials},
+      links:origins.map((host,index)=>({line:index+1,url:'https://'+host+'/submit'})),
+      authDemo:labels.map(type=>({type,step:type==='public'?'queued':type==='verify'?'verify':'login'}))};
+    if(synced){
+      batch.demoSyncedPasswords=[targetLoginKey(batch.links[0].url,email)];
+    }
+    batches.push(batch);scope='';view='progress';open.add('report');lastTick=performance.now();
+    if(synced&&authorizedSavedPassword(batch,0,email)){
+      Object.assign(batch.authDemo[0],{ready:true,loginEmail:email,passwordSource:'existing',autoFilled:true});
+      void verifyAuthRow(batch,0);
+    }else updateProgress();
+    return;
+  }
+  if(action==='auth-open'){if(canDispatch(batch))openAuthStep(batch,Number(key));return}
+  if(action==='show-confirmations'){view='confirmations';notice='';render();window.scrollTo(0,0);return}
+  if(action==='open-confirmation'||action==='check-confirmation'){
+    const entry=pendingAuthEntries().find(entry=>entry.key===key);
+    if(!entry)return;
+    if(action==='open-confirmation')openAuthStep(entry.item,entry.index);
+    else if(authCanCheck(entry.row))void verifyAuthRow(entry.item,entry.index);
+    return;
+  }
+  if(action==='select-confirmations'||action==='check-confirmations'){
+    const eligible=pendingAuthEntries().filter(entry=>authCanCheck(entry.row)&&!activeAuthChecks.has(entry.key));
+    if(action==='select-confirmations'){
+      if(eligible.some(entry=>!pickedConfirmations.has(entry.key)))for(const entry of eligible)pickedConfirmations.add(entry.key);
+      else pickedConfirmations.clear();
+      render();
+    }else{
+      const chosen=eligible.filter(entry=>pickedConfirmations.has(entry.key));
+      if(!chosen.length)return;
+      notice='正在检查 '+chosen.length+' 条。';
+      void Promise.all(chosen.map(({item,index})=>verifyAuthRow(item,index))).then(()=>{
+        if(view==='confirmations'){
+          notice='已检查 '+chosen.length+' 条。未通过核对的条目仍在清单中。';render();
+        }
+      });
+    }
+    return;
+  }
+  if(action==='auth-save-target-password'||action==='auth-decline-target-password'){
+    const {item,index}=authDialogTask;
+    const row=item.authDemo[index];
+    if(!canDispatch(item)||row.step!=='save')return;
+    if(action==='auth-save-target-password'){
+      const key=targetLoginKey(item.links[index].url,row.loginEmail);
+      const saved=authAccounts.savedTargetLogins??=[];
+      if(!saved.includes(key))saved.push(key);
+    }
+    row.step='done';row.message='';item.cursor++;
+    dialog.close();dialog.innerHTML='';authDialogTask=undefined;updateProgress();return;
+  }
+  if(action==='auth-login-failed'){
+    const {item,index}=authDialogTask;
+    const row=item.authDemo[index];
+    row.ready=false;
+    row.message='登录未通过，请核对账号或手动选择另一套已知密码。';
+    dialog.close();dialog.innerHTML='';authDialogTask=undefined;updateProgress();return;
+  }
+  if(action==='auth-check'){void verifyAuthRow(batch,Number(key));return}
+  if(action==='auth-skip'||action==='auth-confirm'||action==='auth-mark-ready'){
+    const {item,index}=authDialogTask;
+    if(!canDispatch(item))return;
+    const row=item.authDemo[index];
+    if(action==='auth-skip'){
+      row.step='done';row.skipped=true;item.cursor++;
+    }else{
+      if(row.type==='password'&&row.step==='login'){
+        const email=dialog.querySelector('#auth-email'),password=dialog.querySelector('#auth-password');
+        const source=dialog.querySelector('#auth-password-source').value;
+        if(!email.value||!email.checkValidity()||(source==='manual'?!password.value:source!=='existing'&&!sessionPasswords.has(source))){
+          dialog.querySelector('#auth-error').textContent='请输入示例邮箱和密码。';return;
+        }
+        row.loginEmail=email.value.trim();row.passwordSource=source;
+        email.value='';password.value='';
+      }
+      row.ready=true;
+      if(action==='auth-mark-ready')row.message='已记录模拟页面完成信号，可以统一检查。';
+    }
+    dialog.close();dialog.innerHTML='';authDialogTask=undefined;
+    if(action==='auth-confirm')void verifyAuthRow(item,index);
+    else updateProgress();
+    return;
+  }
+  if(action==='demo-concurrent'){
+    const id=(batches.at(-1)?.id??0)+1;
+    const site=demoSites[2],link={id:'demo-overlap-'+id,line:1,url:'https://concurrent-'+id+'.example/submit'};
+    const created=['去重演示 A','去重演示 B'].map((name,index)=>({
+      id:id+index,name,sites:[site],links:[link],mode:'execute',cursor:0,
+      daily:{sharedPairs:true,defaultQuota:10,recurring:true,quotas:{[site.id]:10},positions:[0],skipped:{},nextAt:0,
+        allowed:false,injectedFailure:false,demoDelay:1000}
+    }));
+    batches.push(...created);
+    batch=created[1];scope='';view='progress';open.add('report');
+    lastTick=performance.now();
+    advance(created);render();return;
+  }
+  if(action==='demo-history'){
+    const examples=[['品牌目录回访',5,false,false],['社区测试批次',2,true,false],['海外目录检查',2,false,true]];
+    batches=examples.map(([name,cursor,paused,interrupted],index)=>({id:index+1,name,sites:demoSites.slice(0,1),links:demoLinks.slice(0,5),
+      mode:'analysis',cursor,paused,interrupted,manual:cursor>0,resolved:cursor===5}));
+  }
+  if(action==='task-prev'||action==='task-next'){taskPageIndex+=action==='task-next'?1:-1}
+  if(action==='preview-library-links'){
+    libraryPreviewId=key;resetLinkBrowse();render();main.querySelector('#library-link-preview').scrollIntoView({block:'nearest'});return;
+  }
+  if(['manage-sites','manage-links','library-sites','library-links'].includes(action)){
+    const fromSetup=action.startsWith('manage-');
+    view='library';libraryTab=action.endsWith('sites')?'sites':'links';libraryQuery='';browseCounts.library=browseStep;resetLinkBrowse();
+    if(fromSetup){
+      libraryFromSetup=true;
+      open.add('import-'+libraryTab);
+      notice='';render();window.scrollTo(0,0);return;
+    }
+  }
+  const records=libraryTab==='sites'?sites:linkLists;
+  if(action==='export-link-list'||action==='export-all-links'){
+    const lists=action==='export-all-links'?linkLists:linkLists.filter(list=>list.id===key);
+    if(!lists.length)return;
+    const rows=lists.flatMap(list=>activeLinks(list).map(link=>[list.name,sourceNames[list.source]??'',link.line,link.url,linkDomain(link),websiteType(link)]));
+    const label=(action==='export-all-links'?'全部外链清单':lists[0].name).replace(/[\\/:*?"<>|]/g,'_');
+    downloadCsv([['外链清单','来源类型','来源行','外链 URL','网站域名','网站类型'],...rows],'URLPut-'+label+'.csv');
+    return;
+  }
+  if(action==='remove-profile-image'){
+    profileImages.splice(Number(key),1);
+    dialog.querySelector('#profile-image-preview').innerHTML=profileImagePreview();
+    return;
+  }
+  if(action==='edit-library'){openEditor(records.find(item=>item.id===key));return}
+  if(action==='delete-site'){
+    const site=sites.find(item=>item.id===key&&!item.deleted);
+    if(!site)return;
+    dialog.innerHTML='<h2 id="editor-title">删除推广站点？</h2><p>'+safe(site.name)+'</p>'+
+      '<p>该站点将从清单和新批次选项移除。已启动批次仍按原清单执行，可在任务页单独停止。</p>'+
+      '<div class="actions">'+entityButton('确认删除','confirm-delete-site',site.id)+btn('取消','close-dialog','secondary')+'</div>';
+    dialog.showModal();return;
+  }
+  if(action==='confirm-delete-site'){
+    sites=sites.map(site=>site.id===key?{...site,deleted:true}:site);
+    picked.delete(key);
+    if(limitSite===key)limitSite='';
+    dialog.close();
+    notice='站点已删除。历史批次仍可查看。';
+    persist();render();return;
+  }
+  if(action==='close-dialog'){dialog.close();dialog.innerHTML='';return}
+  if(action==='save-edit'){
+    const isSite=libraryTab==='sites';
+    const site=isSite?sites.find(item=>item.id===editing):undefined;
+    const name=site?.name;
+    const rows=isSite?[]:parseLines(document.querySelector('#edit-links').value);
+    const url=isSite?checkedUrl(document.querySelector('#edit-url').value,'sites'):undefined;
+    if(isSite&&(!url||url.hostname!==name)){
+      document.querySelector('#editor-error').textContent='请输入同域名的有效网址。更换域名请添加新站点。';return;
+    }
+    if(!isSite&&rows.some(row=>simulatedLinkIssue(new URL(row.url)))){
+      document.querySelector('#editor-error').textContent='有些外链无法打开或已失效。请在「录入或导入外链」里点击「检查外链」，查看具体网址。';return;
+    }
+    if(!isSite&&!rows.length){
+      document.querySelector('#editor-error').textContent='请填写有效外链网址。';return;
+    }
+    if(isSite){
+      if(loadingProfileImages){document.querySelector('#editor-error').textContent='正在读取图片，请稍候。';return}
+      const profile=readProfile(document.querySelector('#editor-error'),site.profile);
+      if(!profile)return;
+      const sameProfile=JSON.stringify(site.profile??{})===JSON.stringify(profile);
+      const previousSites=sites;
+      sites=sites.map(item=>item.id===editing?{...item,url:url.href,profile,
+        profileVersion:(item.profileVersion??0)+(sameProfile?0:1)}:item);
+      if(!persist()){
+        sites=previousSites;
+        document.querySelector('#editor-error').textContent='浏览器存储空间不足，请减少上传图片或改填图片网址。';
+        return;
+      }
+    }
+    else linkLists=linkLists.map(list=>{
+      if(list.id!==editing)return list;
+      const visible=activeLinks(list);
+      if(rows.length===visible.length&&rows.every((row,index)=>row.url===visible[index].url&&row.description===linkDescription(visible[index])))return list;
+      const previous=new Map(list.links.map(link=>[link.url,link]));
+      const edited=new Set(rows.map(row=>row.url));
+      const inactive=list.links.filter(link=>link.status&&link.status!=='active'&&!edited.has(link.url));
+      const links=rows.map(row=>({...row,...previous.get(row.url),description:row.description,id:previous.get(row.url)?.id??crypto.randomUUID(),status:'active'}));
+      return {...list,links:[...inactive,...links]};
+    });
+    dialog.close();
+  }
+  if(action==='start'&&canStartBatch()){
+    const list=currentList();
+    batch={id:(batches.at(-1)?.id??0)+1,name:batchName.trim(),listName:list.name,sites:selected(),links:chosenLinks().slice(0,limit),mode,source:list.source,
+      cursor:0,paused:false,interrupted:false,manual:false,resolved:false};batchName='';
+    if(mode==='execute'){
+      batch.authentication={...authDraft,email:authAccounts.email,googleEmail:authAccounts.googleEmail,
+        defaultPreset:authAccounts.defaultPreset};
+      batch.publication=contentStrategy==='ai'?{strategy:'ai'}:
+        {strategy:contentStrategy,templates:chosenTemplates().map(template=>({...template}))};
+      batch.daily={sharedPairs:true,defaultQuota:dailyLimit,recurring,quotas:Object.fromEntries(batch.sites.map(site=>[site.id,Object.hasOwn(overrides,site.id)?overrides[site.id]:dailyLimit])),
+        positions:batch.sites.map(()=>0),skipped:{},nextAt:0,reason:'',allowed:false,injectedFailure:false};
+    }
+    batches.push(batch);
+    pickedTemplates=null;contentStrategy='templates';
+    scope='';view='progress';lastTick=performance.now();open.add('report');
+  }
+  if(action==='advance'){lastTick=performance.now();advance([batch]);return}
+  if(action==='pause'){batch.paused=true;lastTick=performance.now()}
+  if(action==='resume'){batch.paused=false;batch.interrupted=false;batch.stopped=false;lastTick=performance.now()}
+  if(action==='next-cycle'){
+    clockShift+=DAY;
+    if(batch.daily)batch.daily.allowed=true;
+    lastTick=performance.now();advance();return;
+  }
+  if(action==='stop'){
+    dialog.innerHTML='<h2 id="editor-title">停止当前批次？</h2><p>停止后关闭自动执行并保留结果。手动继续可重新启用原有周期。</p><div class="actions">'+btn('确认停止','confirm-stop')+btn('返回','close-dialog','secondary')+'</div>';
+    dialog.showModal();return;
+  }
+  if(action==='confirm-stop'){batch.stopped=true;batch.paused=false;batch.interrupted=false;dialog.close()}
+  if(action==='interrupt'){
+    dialog.innerHTML='<h2 id="editor-title">中断当前批次？</h2><p>停止该批次并保留已经处理的记录。以后可以从保存的进度继续。</p><div class="actions">'+btn('确认中断','confirm-interrupt')+btn('返回','close-dialog','secondary')+'</div>';
+    dialog.showModal();return;
+  }
+  if(action==='confirm-interrupt'){batch.interrupted=true;batch.paused=false;dialog.close()}
+  if(action==='resolve')batch.resolved=true;
+  if(action==='export'){exportSample();return}
+  if(action==='save-model'){
+    const endpoint=document.querySelector('#endpoint'),name=document.querySelector('#model-name');
+    if(!endpoint.reportValidity()||!name.reportValidity())return;
+    if(!/^https?:$/.test(new URL(endpoint.value).protocol)||!name.value.trim()){
+      document.querySelector('#model-notice').textContent='请填写 HTTP 或 HTTPS 地址及模型名称。';return;
+    }
+    model.endpoint=endpoint.value.trim();model.name=name.value.trim();
+    notice=persist()?'已保存本地设置。演示密钥仅用于本次填写。':'保存失败，请重试。';render();return;
+  }
+  notice='';persist();render();
+});
+setInterval(()=>{if(performance.now()-lastTick>=4500){lastTick=performance.now();advance()}},300);
+render();
+</script>
+</html>

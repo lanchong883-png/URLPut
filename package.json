@@ -2,7 +2,29 @@
   "name": "urlput",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "test": "node --test"
+    "dev:api": "node --env-file-if-exists=.env apps/api/src/main.ts",
+    "dev:extension": "npm run dev -w @urlput/extension",
+    "build": "npm run build -w @urlput/extension",
+    "check": "npm run prepare:wxt -w @urlput/extension && tsc --noEmit",
+    "test": "node --test",
+    "test:extension": "node scripts/extension-smoke.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@wxt-dev/module-react": "^1.2.2",
+    "playwright": "^1.65.1",
+    "typescript": "^7.0.2",
+    "wxt": "^0.21.5"
   }
 }

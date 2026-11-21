@@ -1,0 +1,1 @@
+{"name":"@urlput/api","private":true,"type":"module","dependencies":{"@electric-sql/pglite":"^0.5.17","@fastify/cors":"^11.4.3","@urlput/contracts":"*","@urlput/import":"*","drizzle-orm":"^0.45.4","fastify":"^5.12.8","jose":"^6.2.18","pg":"^8.23.1","zod":"^4.6.7"}}
