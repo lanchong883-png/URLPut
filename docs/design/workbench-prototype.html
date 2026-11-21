@@ -282,7 +282,10 @@ for(const record of pairLedger.values()){
 function updateProgress(){
   persist();
   if(view==='progress')render();
-  if(view==='tasks'&&!dialog.open)document.querySelector('#task-rows').innerHTML=taskRows();
+  else{
+    renderNav();
+    if(view==='tasks'&&!dialog.open)document.querySelector('#task-rows').innerHTML=taskRows();
+  }
 }
 function canDispatch(item){return !item.paused&&!item.interrupted&&!item.stopped}
 function finishPair(item,index,link,reference){
@@ -524,6 +527,78 @@ function contentLabel(content){
   return content.strategy==='hybrid'?'AI + 模板 · '+version:version;
 }
 
+const authDraft={google:true,savedCredentials:true,register:false,gmail:false,confirmPublish:true};
+const authGuides={
+  google:{title:'Google 登录',action:'打开 Google 登录演示',hint:'使用目标站点的 Google 登录按钮。确认显示的是指定邮箱。'},
+  password:{title:'邮箱和密码',action:'打开邮箱登录演示',hint:'在目标站点填写邮箱和密码。可用 Chrome 密码管理器，也可手动输入。'},
+  manual:{title:'手动登录',action:'打开手动登录演示',hint:'在目标站点完成登录、二次验证或人机验证，再返回。'},
+  verify:{title:'邮箱验证',action:'打开邮箱验证演示',hint:'使用邮件中的验证链接，或在目标站点填写验证码。'},
+  approval:{title:'发表前确认',action:'查看待确认内容',hint:'此任务需要用户批准后才进入下一步。'},
+};
+function authOptions(){
+  if(mode!=='execute')return '';
+  const checkbox=(id,label)=>'<label class="check"><input type="checkbox" data-auth-setting="'+id+'" '+(authDraft[id]?'checked':'')+'>'+label+'</label>';
+  return detail('auth','认证与二次确认 <small>· '+(authDraft.register?'允许新注册':'仅登录已有账号')+'</small>',
+    '<div class="stack">'+checkbox('google','允许使用目标站点的 Google 登录')+
+    checkbox('savedCredentials','允许使用 Chrome 保存的账号密码')+
+    checkbox('register','允许注册新账号')+checkbox('gmail','允许使用已授权的 Gmail 检查验证邮件')+checkbox('confirmPublish','正式发表前需要我确认')+'</div>'+
+    '<p class="hint">优先复用已核对的登录状态。第三方登录邮箱在推广站点资料里填写。选账号、同意授权和二次验证都由用户确认。</p>'+
+    '<p class="hint">可手动在目标站点输入账号密码或处理邮件验证。批次不会保存密码或验证码。</p>');
+}
+function pendingConfirmations(item){
+  if(!canDispatch(item))return 0;
+  const auth=item.authDemo?.filter(row=>row.step!=='done'&&row.step!=='queued').length??0;
+  return auth+Number(item.manual&&!item.resolved||false)+missingContent(item);
+}
+const activeAuthChecks=new Set();
+function authDemoRows(item){
+  if(!item.authDemo)return '';
+  return '<section class="card"><h2>第三方认证</h2><p class="hint">模拟目标页面和邮箱验证。一个入口等待时，其他入口可继续。</p>'+
+    item.authDemo.map((row,index)=>{
+      const guide=authGuides[row.type];
+      const checking=activeAuthChecks.has(item.id+':'+index);
+      const status=checking?'核对中':row.skipped?'已跳过':row.step==='done'?'已继续':row.step==='queued'?'排队中':row.step==='verify'?'待邮箱验证':row.type==='approval'?'待确认':'需认证';
+      const waiting=row.step!=='done'&&row.step!=='queued';
+      const nextGuide=row.step==='verify'?authGuides.verify:guide;
+      return '<div class="item"><div class="row"><strong>'+safe(guide?.title??'无需登录')+'</strong><span class="chip '+(waiting?'warm':'')+'">'+status+'</span></div>'+
+        '<p class="hint links">'+safe(item.links[index].url)+'</p>'+
+        (waiting&&canDispatch(item)?'<p class="hint">'+safe(nextGuide.hint)+'</p>'+
+          (row.message?'<p class="notice" role="status">'+safe(row.message)+'</p>':'')+
+          (!checking?'<div class="actions">'+entityButton(nextGuide.action,'auth-open',index)+
+            (row.type==='approval'?'':entityButton('已处理，检查并继续','auth-check',index))+'</div>':''):'')+'</div>';
+    }).join('')+'</section>';
+}
+function openAuthStep(index){
+  const task=batch.authDemo[index],type=task.step==='verify'?'verify':task.type;
+  const guide=authGuides[type],site=batch.sites[0];
+  const account=site.profile?.loginEmail??'publisher@brand-3.example';
+  let body='<p class="hint links">目标站点 · '+safe(new URL(batch.links[index].url).hostname)+'</p>';
+  let actionLabel='已完成验证，检查结果';
+  if(type==='google'){
+    body+='<p>指定的 Google 邮箱 · '+safe(account)+'</p>'+
+      '<p class="hint">在目标站点点「使用 Google 登录」。已有且身份匹配的会话可继续；需要选账号或授权时，请在 Google 页面确认。</p>';
+    actionLabel='模拟已确认账号并返回';
+  }else if(type==='password'){
+    body+='<p class="hint">以下输入仅演示目标站点的表单。请使用示例资料。</p>'+
+      '<label class="field">登录邮箱<input id="auth-email" type="email" value="'+safe(account)+'"></label>'+
+      '<label class="field">站点密码（仅演示）<input id="auth-password" type="password" autocomplete="off"></label>';
+    actionLabel='模拟填写并返回';
+  }else if(type==='manual'){
+    body+='<p>在目标站点完成登录或验证后返回。URLPut 重新读取页面，核对账号与原任务。</p>';
+    actionLabel='模拟手动完成并返回';
+  }else if(type==='approval'){
+    body+='<p>本次任务即将发布推荐。请在确认页面核对板块、正文和链接后再批准。</p>';
+    actionLabel='批准本次发表（模拟）';
+  }else{
+    body+='<p>收件邮箱 · '+safe(account)+'</p><p>可打开对应邮件的验证链接，也可把邮件验证码填回目标站点。</p>'+
+      '<p class="hint">Gmail 自动查信需另行授权。邮件匹配不唯一时，请手动处理。</p>';
+  }
+  dialog.innerHTML='<h2 id="editor-title">'+guide.title+'（模拟）</h2>'+body+
+    '<p id="auth-error" role="status"></p><div class="actions">'+entityButton(actionLabel,'auth-confirm',index)+
+    (type==='approval'?entityButton('跳过本条','auth-skip',index):'')+btn('稍后处理','close-dialog','subtle')+'</div>';
+  dialog.showModal();
+}
+
 function setup(){
   const visible=matchSites();
   const selectors=visible.slice(0,20).map(site=>{const counts=siteCounts(site);return '<div class="item"><label><input type="checkbox" data-site="'+safe(site.id)+'" '+(picked.has(site.id)?'checked':'')+'><span>'+safe(site.name)+'<small class="truncate">'+safe(site.url)+'</small><small>总外链 '+n(counts.total)+' · 已提交 '+n(counts.submitted)+' · 待提交 '+n(counts.pending)+'</small></span></label></div>'}).join('');
@@ -543,7 +618,7 @@ function setup(){
     '<div class="stats"><div><strong id="per-site">'+n(perSite())+'</strong><small>每站候选</small></div><div><strong id="combinations">'+n(picked.size*perSite())+'</strong><small>站点 × 外链组合</small></div></div><p class="hint">其中待提交 <strong id="pending-combinations">'+n(selectedPending())+'</strong> 条</p>'+
     '<p class="hint">每个已选推广站点都用同一份外链清单。历史投稿和同平台跳过会影响实际尝试数。</p>'+
     '<label class="field">执行方式<select id="mode"><option value="analysis">仅分析</option><option value="execute">分析后执行（模拟）</option></select></label>'+
-    '</section>'+contentOptions()+limitsMarkup()+'<section class="card">'+
+    '</section>'+contentOptions()+authOptions()+limitsMarkup()+'<section class="card">'+
     '<button class="button full" data-action="start" '+(!canStartBatch()?'disabled':'')+'>启动模拟批次</button><p class="notice" role="status">'+safe(notice)+'</p></section>';
 }
 function unverified(item,site){
@@ -569,6 +644,13 @@ function sample(site){
   const targets=site?[site]:batch.sites.slice(0,4);
   return targets.flatMap(target=>batch.links.slice(0,5).map((link,offset)=>{
     const index=batch.sites.indexOf(target)*batch.links.length+offset;
+    const auth=batch.authDemo?.[offset];
+    if(auth){
+      const status=auth.skipped?'已跳过':auth.step==='done'?'已处理':auth.step==='queued'?'排队中':'需人工';
+      const result=auth.step==='done'?(auth.skipped?'用户跳过':'确认通过，已继续（模拟）'):auth.step==='queued'?'等待执行':
+        auth.step==='verify'?'待邮箱验证':'待'+authGuides[auth.type].title;
+      return {target,link,status,result};
+    }
     const pending=index===0&&batch.manual&&!batch.resolved;
     const siteIndex=batch.sites.indexOf(target);
     const complete=(batch.daily?offset<batch.daily.positions[siteIndex]:index<batch.cursor)&&!pending;
@@ -609,6 +691,7 @@ function progress(){
         ['waiting','verification'].includes(state)?'':btn('暂停','pause','secondary')+(activeCycles.has(batch.id)?'':btn(batch.daily?'执行本轮':'推进一步','advance','subtle')))+
       (['interrupted','stopped'].includes(state)?'':btn('中断','interrupt','subtle'))+
       (state==='stopped'?'':btn('停止','stop','subtle'))+'</div>':'')+'</section>'+
+    authDemoRows(batch)+
     (missingContent(batch,site)?'<section class="card"><h2>待人工 · 缺少适用模板</h2><p>'+n(missingContent(batch,site))+' 条。可新建批次选用对应模板。这些条目未占提交额度。</p></section>':'')+
     (m.pending&&!['interrupted','stopped'].includes(state)?'<section class="card"><div class="row"><h2>人工待办</h2><span class="chip warm">1 条</span></div><p>'+safe(batch.sites[0].name)+' → '+safe(batch.links[0].url)+'</p><p class="hint">核对站点专用账号。其他组合继续运行。</p>'+btn('已确认，恢复该条','resolve','secondary')+'</section>':'')+
     detail('report','记录与导出 <small>· 当前范围抽样</small>',
@@ -627,6 +710,7 @@ function batchStatus(item){
   if(item.stopped)return ['stopped','已停止'];
   if(item.interrupted)return ['interrupted','已中断'];
   if(item.paused)return ['paused','已暂停'];
+  if(item.authDemo?.every(row=>row.step!=='queued'))return ['waiting','待确认'];
   if(item.cursor===total)return unverified(item)?['verification','待核验']:['waiting','待人工'];
   if(item.daily?.nextAt&&(item.daily.nextAt>demoNow()||!item.daily.recurring&&!item.daily.allowed))return ['budget','待下轮'];
   return ['running','执行中'];
@@ -640,7 +724,7 @@ function paging(type,count,index){
 function taskRows(){
   const filtered=[...batches].reverse().filter(item=>{
     const [status]=batchStatus(item);
-    return (taskFilter==='all'||status===taskFilter)&&matches((item.name||'')+' 批次 '+item.id,taskQuery);
+    return (taskFilter==='all'||status===taskFilter||taskFilter==='confirmations'&&pendingConfirmations(item)>0)&&matches((item.name||'')+' 批次 '+item.id,taskQuery);
   });
   taskPageIndex=Math.min(taskPageIndex,Math.max(0,Math.ceil(filtered.length/pageSize)-1));
   return filtered.length?'<div>'+filtered.slice(taskPageIndex*pageSize,(taskPageIndex+1)*pageSize).map(item=>{
@@ -648,13 +732,16 @@ function taskRows(){
     const m=metrics(undefined,item);
     return '<div class="item"><div class="row"><strong>'+safe(item.name||'批次 '+item.id)+'</strong><span class="chip '+(status==='waiting'||status==='interrupted'?'warm':'')+'">'+label+'</span></div>'+
       '<p class="hint">'+n(item.sites.length)+' 站 · '+n(m.dealt)+' / '+n(m.total)+' 条已处理</p>'+
+      (pendingConfirmations(item)?'<p class="hint">待确认 '+pendingConfirmations(item)+' 条</p>':'')+
       entityButton(status==='completed'?'查看结果':'查看进度','open-task',item.id)+'</div>';
   }).join('')+'</div>'+paging('task',filtered.length,taskPageIndex):'<p class="hint">没有符合条件的批次。</p>';
 }
 function tasks(){
   return '<h1>任务</h1><section class="card"><label class="field">搜索批次<input id="task-search" placeholder="批次名称或编号" value="'+safe(taskQuery)+'"></label>'+
-    '<label class="field">任务状态<select id="task-filter">'+[['all','全部'],['running','执行中'],['waiting','待人工'],['verification','待核验'],['paused','已暂停'],['interrupted','已中断'],['stopped','已停止'],['budget','待下轮'],['completed','已完成']].map(([id,label])=>'<option value="'+id+'" '+(id===taskFilter?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
+    '<label class="field">任务状态<select id="task-filter">'+[['all','全部'],['running','执行中'],['waiting','待人工'],['confirmations','待确认'],['verification','待核验'],['paused','已暂停'],['interrupted','已中断'],['stopped','已停止'],['budget','待下轮'],['completed','已完成']].map(([id,label])=>'<option value="'+id+'" '+(id===taskFilter?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
+    (batches.some(item=>pendingConfirmations(item))?'<div class="actions">'+btn('只看待确认','show-confirmations','secondary')+'</div>':'')+
     '<div id="task-rows">'+taskRows()+'</div>'+(!batches.length?btn('载入历史任务示例','demo-history','secondary'):'')+'</section>'+
+    '<section class="card"><p class="hint">查看目标站登录、注册和邮箱验证如何衔接。</p>'+btn('运行认证流程演示','demo-auth','secondary')+'</section>'+
     '<section class="card"><p class="hint">两个示例任务使用同一推广站点和同一外链。</p>'+btn('运行并发去重演示','demo-concurrent','secondary')+'</section>';
 }
 const entityButton=(label,action,key)=>'<button class="button secondary" data-action="'+action+'" data-key="'+safe(key)+'">'+label+'</button>';
@@ -696,6 +783,7 @@ const profileFields=[
   {key:'author',label:'作者姓名',max:120},
   {key:'company',label:'公司名称',max:150},
   {key:'contactEmail',label:'联系邮箱',max:254,type:'email'},
+  {key:'loginEmail',label:'第三方登录邮箱',max:254,type:'email'},
   {key:'imageUrls',label:'产品图片网址',max:16000,long:true,type:'urls',aliases:['图片网址','imageurl']},
   {key:'logoUrl',label:'Logo 网址',max:8000,type:'url'},
   {key:'landingPage',label:'优先推广的页面',max:8000,type:'url'},
@@ -722,7 +810,7 @@ function profileMarkup(site){
   const missing=missingDirectoryProfile(profile);
   return '<p class="hint">'+(missing.length?'目录投稿常用资料待补：'+safe(missing.join('、')):'目录投稿常用资料已齐备')+'</p>'+
     '<details open><summary>产品资料</summary>'+['productName','category','language','summary','description','highlights','keywords'].map(field).join('')+'</details>'+
-    '<details><summary>作者或公司 <small>至少填一项</small></summary>'+['author','company','contactEmail'].map(field).join('')+'</details>'+
+    '<details><summary>作者或公司 <small>至少填一项</small></summary>'+['author','company','contactEmail','loginEmail'].map(field).join('')+'</details>'+
     '<details><summary>图片和链接 <small>可上传多张或填写多个网址</small></summary>'+
     '<label class="field">上传产品图片<input id="profile-image-file" type="file" multiple accept="image/png,image/jpeg,image/webp"></label>'+
     '<div id="profile-image-preview">'+profileImagePreview()+'</div>'+
@@ -780,8 +868,13 @@ function templatesPage(){
 function modelsPage(){
   return '<h1>AI 模型</h1><section class="card"><label class="field">服务类型<select id="model-type"><option value="local">本地模型</option><option value="custom">自建模型服务</option></select></label><label class="field">API 地址<input id="endpoint" value="'+safe(model.endpoint)+'"></label><label class="field">模型名<input id="model-name" value="'+safe(model.name)+'"></label><div class="actions"><label class="check"><input id="model-analysis" type="checkbox" '+(model.analysis?'checked':'')+'>AI 分析</label><label class="check"><input id="model-writing" type="checkbox" '+(model.writing?'checked':'')+'>AI 文案</label></div><p class="hint">只演示配置，页面不会发起模型请求。</p>'+btn('模拟保存','save-model','secondary')+'<p class="notice" role="status">'+safe(notice)+'</p></section>';
 }
+function renderNav(){
+  const waiting=batches.reduce((sum,item)=>sum+pendingConfirmations(item),0);
+  nav.innerHTML=[['setup','新建批次'],['tasks','任务'],['library','清单'],['templates','内容模板'],['models','AI 模型']].map(([id,label])=>'<button data-action="'+id+'" '+((view===id||view==='progress'&&id==='tasks')?'aria-current="page"':'')+(id==='tasks'&&waiting?' aria-description="'+n(waiting)+' 条待确认"':'')+'>'+label+
+    (id==='tasks'&&waiting?' <span class="chip warm" aria-hidden="true">'+n(waiting)+'</span>':'')+'</button>').join('');
+}
 function render(){
-  nav.innerHTML=[['setup','新建批次'],['tasks','任务'],['library','清单'],['templates','内容模板'],['models','AI 模型']].map(([id,label])=>'<button data-action="'+id+'" '+((view===id||view==='progress'&&id==='tasks')?'aria-current="page"':'')+'>'+label+'</button>').join('');
+  renderNav();
   main.innerHTML={setup,tasks,library,progress,templates:templatesPage,models:modelsPage}[view]();
   if(view==='setup'){document.querySelector('#mode').value=mode}
   if(view==='models')document.querySelector('#model-type').value=model.type;
@@ -824,6 +917,12 @@ function advance(targets=batches){
   for(const item of targets){
     const total=item.sites.length*item.links.length;
     if(item.paused||item.interrupted||item.stopped||item.cursor>=total)continue;
+    if(item.authDemo){
+      const openRows=item.authDemo.filter(row=>row.step==='queued');
+      for(const row of openRows){row.step='done';item.cursor++}
+      if(openRows.length)changed=true;
+      continue;
+    }
     if(item.daily){void processCycle(item);continue}
     item.manual=true;
     item.cursor=Math.min(total,item.cursor+Math.max(1,Math.ceil(total/5)));
@@ -930,11 +1029,16 @@ document.addEventListener('change',event=>{
     document.querySelector('#content-count').textContent='已选 '+pickedTemplates.size+' 份模板';
     main.querySelector('[data-action=start]').disabled=!canStartBatch();
   }
+  if(input.dataset.authSetting){authDraft[input.dataset.authSetting]=input.checked;render()}
   if(input.id==='mode'){mode=input.value;render()}
   if(input.id==='daily-limit')dailyLimit=integerQuota(input.value);
   if(input.id==='limit-site'){limitSite=input.value;render()}
   if(input.id==='site-limit'&&limitSite)overrides[limitSite]=integerQuota(input.value);
   if(input.id==='recurring')recurring=input.checked;
+});
+dialog.addEventListener('close',()=>{
+  const password=dialog.querySelector('#auth-password');
+  if(password)password.value='';
 });
 let lastTick=performance.now();
 document.addEventListener('click',event=>{
@@ -1018,6 +1122,59 @@ document.addEventListener('click',event=>{
   if(action==='select-all'){for(const site of matchSites())picked.add(site.id);persist();refreshSection('sites');return}
   if(action==='clear'){picked.clear();persist();refreshSection('sites');return}
   if(action==='open-task'){batch=batches.find(item=>String(item.id)===key);scope='';view='progress';open.add('report')}
+  if(action==='demo-auth'){
+    const id=(batches.at(-1)?.id??0)+1;
+    const labels=['google','password','manual','verify','approval','public'];
+    batch={id,name:'第三方认证演示',mode:'execute',sites:[demoSites[2]],cursor:0,
+      links:labels.map((type,index)=>({line:index+1,url:'https://'+type+'.example/submit'})),
+      authDemo:labels.map(type=>({type,step:type==='public'?'queued':type==='verify'?'verify':'login'}))};
+    batches.push(batch);scope='';view='progress';open.add('report');lastTick=performance.now();
+    updateProgress();return;
+  }
+  if(action==='auth-open'){
+    if(canDispatch(batch))openAuthStep(Number(key));
+    return;
+  }
+  if(action==='show-confirmations'){taskFilter='confirmations';taskPageIndex=0;render();return}
+  if(action==='auth-check'){
+    const item=batch,index=Number(key),row=item.authDemo[index],checkKey=item.id+':'+index;
+    if(activeAuthChecks.has(checkKey))return;
+    activeAuthChecks.add(checkKey);row.message='';render();
+    setTimeout(()=>{
+      activeAuthChecks.delete(checkKey);
+      row.message='尚未检测到已完成。请先打开对应页面处理，再回来检查。';
+      updateProgress();
+    },250);
+    return;
+  }
+  if(action==='auth-skip'){
+    if(!canDispatch(batch))return;
+    const row=batch.authDemo[Number(key)];
+    row.step='done';row.skipped=true;batch.cursor++;
+    dialog.close();dialog.innerHTML='';updateProgress();return;
+  }
+  if(action==='auth-confirm'){
+    if(!canDispatch(batch))return;
+    const index=Number(key),item=batch,row=item.authDemo[index];
+    if(row.type==='password'&&row.step==='login'){
+      const email=dialog.querySelector('#auth-email'),password=dialog.querySelector('#auth-password');
+      if(!email.value||!email.checkValidity()||!password.value){
+        dialog.querySelector('#auth-error').textContent='请输入示例邮箱和密码。';return;
+      }
+      email.value='';password.value='';
+      row.step='verify';row.message='';
+    }else{
+      const checkKey=item.id+':'+index;
+      activeAuthChecks.add(checkKey);
+      setTimeout(()=>{
+        activeAuthChecks.delete(checkKey);
+        if(canDispatch(item)){row.step='done';row.message='';item.cursor++}
+        updateProgress();
+      },250);
+    }
+    dialog.close();dialog.innerHTML='';
+    updateProgress();return;
+  }
   if(action==='demo-concurrent'){
     const id=(batches.at(-1)?.id??0)+1;
     const site=demoSites[2],link={id:'demo-overlap-'+id,line:1,url:'https://concurrent-'+id+'.example/submit'};
@@ -1080,7 +1237,7 @@ document.addEventListener('click',event=>{
     notice='站点已删除。历史批次仍可查看。';
     persist();render();return;
   }
-  if(action==='close-dialog'){dialog.close();return}
+  if(action==='close-dialog'){dialog.close();dialog.innerHTML='';return}
   if(action==='save-edit'){
     const isSite=libraryTab==='sites';
     const site=isSite?sites.find(item=>item.id===editing):undefined;
@@ -1122,6 +1279,7 @@ document.addEventListener('click',event=>{
     batch={id:(batches.at(-1)?.id??0)+1,name:batchName.trim(),listName:list.name,sites:selected(),links:list.links.slice(0,perSite()),mode,source:list.source,
       cursor:0,paused:false,interrupted:false,manual:false,resolved:false};batchName='';
     if(mode==='execute'){
+      batch.authentication={...authDraft};
       batch.publication=contentStrategy==='ai'?{strategy:'ai'}:
         {strategy:contentStrategy,templates:chosenTemplates().map(template=>({...template}))};
       batch.daily={sharedPairs:true,defaultQuota:dailyLimit,recurring,quotas:Object.fromEntries(batch.sites.map(site=>[site.id,Object.hasOwn(overrides,site.id)?overrides[site.id]:dailyLimit])),
