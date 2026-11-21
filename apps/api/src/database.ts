@@ -38,8 +38,10 @@ export function postgresDatabase(connectionString: string): Database {
 }
 
 export async function migrate(db: Database) {
-  const initial = await readFile(new URL('../migrations/001-initial.sql', import.meta.url), 'utf8');
-  await db.migrate(initial);
+  for (const file of ['001-initial.sql', '002-form-templates.sql', '003-link-catalog.sql']) {
+    const migration = await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8');
+    await db.migrate(migration);
+  }
 }
 
 export async function seedLocal(db: Database) {

@@ -26,3 +26,6 @@ export const workspaceSchema = z.object({
 });
 
 export type Workspace = z.infer<typeof workspaceSchema>;
+
+export { formTemplateLookupSchema, formTemplateSaveSchema } from './form-templates.ts';
+export type { FormTemplateBinding, FormTemplateLookup } from './form-templates.ts';

@@ -6,6 +6,8 @@ import { z } from 'zod';
 import { importBatchSchema } from '@urlput/contracts';
 import { buildLedger, type LedgerRow } from '@urlput/import';
 import type { Database } from './database.ts';
+import { registerFormTemplates } from './form-templates.ts';
+import { registerLinkCatalog } from './link-catalog.ts';
 
 const siteParams = z.object({ workspaceId: z.uuid(), siteId: z.uuid() });
 const batchParams = siteParams.extend({ batchId: z.uuid() });
@@ -45,6 +47,10 @@ export function createApp(
       }
       identities.set(request, subject);
     });
+
+    const subjectOf = (request: FastifyRequest) => identities.get(request)!;
+    registerFormTemplates(api, db, subjectOf);
+    registerLinkCatalog(api, db, subjectOf);
 
     api.get('/workspaces', async request => {
       const subject = identities.get(request)!;

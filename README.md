@@ -40,8 +40,22 @@ npm run test:extension
 
 ## PostgreSQL 与认证接线
 
-Fastify API 支持 PostgreSQL 与 Supabase 签名访问令牌。部署时设置服务端 `DATABASE_URL`、`SUPABASE_URL` 和 `EXTENSION_ORIGIN`（例如对应固定扩展 ID 的 `chrome-extension://…`），并省略 `--local`。数据表按 `apps/api/migrations/001-initial.sql` 初始化。工作空间、推广站点和成员关系目前由管理员初始化，成员 `subject` 使用 Supabase 用户 UUID。
+Fastify API 支持 PostgreSQL 与 Supabase 签名访问令牌。部署时设置服务端 `DATABASE_URL`、`SUPABASE_URL` 和 `EXTENSION_ORIGIN`（例如对应固定扩展 ID 的 `chrome-extension://…`），并省略 `--local`。数据表按 `apps/api/migrations/` 中的 SQL 初始化。工作空间、推广站点和成员关系目前由管理员初始化，成员 `subject` 使用 Supabase 用户 UUID。
 
 扩展构建读取 `VITE_API_URL`、`VITE_SUPABASE_URL` 和 `VITE_SUPABASE_PUBLIC_KEY`，其中后者必须是可发布的客户端公钥。Supabase 邮件模板使用验证码 `{{ .Token }}`，管理员先创建用户。生产身份服务和 Postgres 部署仍需在目标环境联调。
+
+## 外链知识库 API
+
+以下路径以 `/api/workspaces/:workspaceId` 为前缀，要求工作空间成员身份。
+
+| 方法与路径 | 用途 |
+| --- | --- |
+| `POST /form-templates` | 保存已验证表单的字段映射，返回模板版本。 |
+| `POST /form-templates/lookup` | 用页面 URL、入口类型、语言及表单摘要匹配模板，未命中时返回 `template: null`。 |
+| `POST /link-catalog/observations` | 回传外链 URL、检查时间 `observedAt`、状态 `active` 或 `inactive` 和可选原因。 |
+| `GET /link-catalog` | 分页读取最近 30 天内确认可用的外链。 |
+| `GET /link-catalog/recheck` | 分页读取至少 7 天没有新检查结果的外链。 |
+
+读取清单支持 `limit` 和 `offset`。清单通过检查回传更新，定时执行器尚待接入。
 
 [产品需求](docs/requirements/product-requirements.md) · [技术架构](docs/architecture/technical-architecture.md)
