@@ -309,7 +309,7 @@ dialog::backdrop { background: #21153966; }
 const numbers = new Intl.NumberFormat('zh-CN');
 const n = value => numbers.format(value);
 const demoSites = Array.from({length:100},(_,i)=>({id:'site-'+(i+1),name:'brand-'+(i+1)+'.example',url:'https://brand-'+(i+1)+'.example/'}));
-const demoLinks = Array.from({length:1000},(_,i)=>({id:'row-'+(i+1),line:i+1,url:'https://channel-'+(i+1)+'.example/submit',entryType:i%2===0?'directory':'resource',siteType:i%2===0?'目录站':'内容社区',description:i%2===0?'收录产品官网和工具简介':'分享资源与使用心得',status:'active'}));
+const demoLinks = Array.from({length:1000},(_,i)=>({id:'row-'+(i+1),line:i+1,url:'https://channel-'+(i+1)+'.example/submit',observedRel:['Dofollow','Nofollow','Sponsored','UGC','未知'][i%5],dr:i%7===0?null:(i*13)%101,entryType:i%2===0?'directory':'resource',siteType:i%2===0?'目录站':'内容社区',description:i%2===0?'收录产品官网和工具简介':'分享资源与使用心得',status:'active'}));
 const storageKey = 'urlput-panel-prototype-v2';
 let saved;
 try {saved=JSON.parse(localStorage.getItem(storageKey))}catch{}
@@ -328,7 +328,7 @@ const importDraft=()=>({text:'',filename:'',format:'txt',read:0});
 const imports={sites:importDraft(),links:importDraft()};
 let open=new Set(['sites']), model=saved?.model??{type:'system',endpoint:'http://127.0.0.1:11434/v1',name:''};
 const main = document.querySelector('#main'), nav = document.querySelector('#nav'), dialog=document.querySelector('#dialog');
-function persist(){try{localStorage.setItem(storageKey,JSON.stringify({model,sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts,pairLedger:[...pairLedger],templateCatalogVersion:2,contentTemplates,defaultTemplateIds,authAccounts}));return true}catch{return false}}
+function persist(){try{localStorage.setItem(storageKey,JSON.stringify({linkSelections:Object.fromEntries([...linkSelections].map(([id,urls])=>[id,[...urls]])),model,sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts,pairLedger:[...pairLedger],templateCatalogVersion:2,contentTemplates,defaultTemplateIds,authAccounts}));return true}catch{return false}}
 const safe = value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const iconPaths={
   plus:'M12 5v14M5 12h14', tasks:'m3 7 2 2 4-5M12 7h9M3 15l2 2 4-5M12 15h9',
@@ -366,7 +366,12 @@ const detail = (id,title,body)=>'<details data-section="'+id+'" '+(open.has(id)?
 const matchSites=()=>sites.filter(site=>!site.deleted&&matchesSite(site,query)&&(!pendingSitesOnly||siteCounts(site).pending>0));
 const selected=()=>sites.filter(site=>!site.deleted&&picked.has(site.id));
 const currentList=()=>linkLists.find(list=>list.id===listId)??linkLists[0];
-const perSite=()=>Math.min(activeLinks(currentList()).length,limit);
+const linkSelections=new Map(Object.entries(saved?.linkSelections??{}).map(([id,urls])=>[id,new Set(urls)]));
+function chosenLinks(){
+  const list=currentList(), selection=linkSelections.get(list?.id);
+  return activeLinks(list).filter(link=>!selection||selection.has(link.url));
+}
+const perSite=()=>Math.min(chosenLinks().length,limit);
 const reviewLabels={new:'新增',existing:'已有',duplicate:'清单内重复',error:'有问题'};
 function checkedUrl(value,kind){
   const raw=value.trim();
@@ -561,7 +566,7 @@ function siteCounts(site,pool=activeLinks(currentList()),submitted=submittedForS
   return {total:total.size,submitted:count,pending:total.size-count};
 }
 function selectedPending(){
-  const pool=activeLinks(currentList()).slice(0,perSite());
+  const pool=chosenLinks().slice(0,limit);
   if(!pool.length)return 0;
   return selected().reduce((total,site)=>total+siteCounts(site,pool).pending,0);
 }
@@ -1083,8 +1088,9 @@ function openAuthStep(item,index){
 const browseStep=5;
 const browseCounts={sites:browseStep,links:browseStep,library:browseStep};
 const priceTypes=['免费','付费','价格未知'];
+let relFilter='',drFloor='';
 let libraryPreviewId='',linkQuery='',linkType='',linkPrice='';
-const resetLinkBrowse=()=>{linkQuery='';linkType='';linkPrice='';browseCounts.links=browseStep};
+const resetLinkBrowse=()=>{linkQuery='';linkType='';linkPrice='';relFilter='';drFloor='';browseCounts.links=browseStep};
 const demoPrices=new Map(demoLinks.map((link,index)=>[link.url,priceTypes[index%priceTypes.length]]));
 const priceType=link=>link.priceType||demoPrices.get(link.url)||'价格未知';
 const demoByUrl=new Map(demoLinks.map(link=>[link.url,link]));
@@ -1102,17 +1108,29 @@ const linkDomain=link=>new URL(link.url).hostname;
 const activeLinks=list=>(list?.links??[]).filter(link=>!link.status||link.status==='active');
 const previewList=()=>view==='library'?
   linkLists.find(list=>list.id===libraryPreviewId)??linkLists[0]:currentList();
+function linkMetrics(link){
+  const sample=demoByUrl.get(link.url);
+  const dr=link.dr===undefined?sample?.dr:link.dr;
+  return {rel:link.observedRel??sample?.observedRel??'未知',dr:Number.isFinite(dr)&&dr>=0&&dr<=100?dr:null};
+}
 function browseData(kind){
   if(kind==='sites')return matchSites();
   if(kind==='library')return libraryItems();
-  return activeLinks(previewList()).filter(link=>
-    (!linkType||websiteType(link)===linkType)&&(!linkPrice||priceType(link)===linkPrice)&&matchesLink(link,linkQuery));
+  return activeLinks(previewList()).filter(link=>{
+    const {rel,dr}=linkMetrics(link);
+    return (!relFilter||rel===relFilter)&&(!drFloor||(dr!==null&&dr>=Number(drFloor)))&&(!linkType||websiteType(link)===linkType)&&(!linkPrice||priceType(link)===linkPrice)&&matchesLink(link,linkQuery);
+  });
 }
 const browseLabels={sites:'推广站点可选列表',links:'活跃外链明细',library:'已保存清单'};
 function browseRow(kind,item){
   if(kind==='library')return libraryOptionRow(item);
-  if(kind==='links')return '<div class="item" role="listitem"><div class="row"><strong class="truncate">'+safe(linkDomain(item))+
-    '</strong><span class="chip">'+safe(websiteType(item))+' · '+safe(priceType(item))+'</span></div><small class="links">'+safe(item.url)+'</small>'+(linkDescription(item)?'<p class="hint">'+safe(linkDescription(item))+'</p>':'')+'</div>';
+  if(kind==='links'){
+    const {rel,dr}=linkMetrics(item);
+    const selection=linkSelections.get(currentList()?.id);
+    const checkbox=view==='setup'?'<input type="checkbox" data-link-url="'+safe(item.url)+'" aria-label="选择 '+safe(item.url)+'" '+(!selection||selection.has(item.url)?'checked':'')+'>':'';
+    return '<div class="item" role="listitem"><div class="row">'+checkbox+'<strong class="truncate grow">'+safe(linkDomain(item))+
+    '</strong><span class="chip">'+safe(websiteType(item))+' · '+safe(priceType(item))+'</span></div><small class="links">'+safe(item.url)+'</small><p class="hint">样本链接：'+safe(rel)+' · DR：'+(dr??'未知')+'</p>'+(linkDescription(item)?'<p class="hint">'+safe(linkDescription(item))+'</p>':'')+'</div>';
+  }
   const counts=siteCounts(item);
   return '<div class="item" role="listitem"><label><input type="checkbox" data-site="'+safe(item.id)+'" '+(picked.has(item.id)?'checked':'')+
     '><span>'+safe(item.name)+'<small class="truncate">'+safe(item.url)+'</small><small>总外链 '+n(counts.total)+' · 已接收 '+n(counts.submitted)+
@@ -1158,7 +1176,12 @@ function activeLinkPreview(){
     types.map(type=>'<option value="'+safe(type)+'" '+(type===linkType?'selected':'')+'>'+safe(type)+'</option>').join('')+'</select></label>'+
     '<label class="field">价格类别<select id="link-preview-price"><option value="">全部价格</option>'+
     priceTypes.map(price=>'<option '+(price===linkPrice?'selected':'')+'>'+price+'</option>').join('')+'</select></label>'+
-    browseMarkup('links')+(view==='setup'?'<p class="hint">筛选方便你查找外链。批次仍从整份清单中选取可用外链。</p>':'');
+    '<label class="field">样本链接属性<select id="rel-filter"><option value="">全部属性</option>'+
+    ['Dofollow','Nofollow','Sponsored','UGC','未知'].map(rel=>'<option '+(rel===relFilter?'selected':'')+'>'+rel+'</option>').join('')+'</select></label>'+
+    '<label class="field">最低 Ahrefs DR（0–100）<input id="dr-floor" type="number" min="0" max="100" placeholder="不限" value="'+safe(drFloor)+'"></label>'+
+    '<p class="hint">演示数据。链接属性参考同入口的历史样本，实际以发布页为准。设置最低 DR 后仅显示有评分的外链。</p>'+
+    (view==='setup'?'<div class="actions">'+btn('只选筛选结果','pick-filtered','secondary')+btn('清空外链选择','clear-links','subtle')+'</div>':'')+
+    browseMarkup('links');
 }
 
 function setup(){
@@ -1169,7 +1192,7 @@ function setup(){
       '<div class="actions" style="margin-top:6px">'+btn('全选搜索结果','select-all','secondary')+btn('清空选择','clear','subtle')+'</div>'+
       browseMarkup('sites')+
       btn('去清单补充站点','manage-sites','secondary'))+
-    detail('links',stepTitle(2,'外链清单')+' <small>'+n(activeLinks(currentList()).length)+' 条可用外链</small>',
+    detail('links',stepTitle(2,'外链清单')+' <small>'+n(chosenLinks().length)+' / '+n(activeLinks(currentList()).length)+' 条已选</small>',
       activeLinkPreview()+btn('选择或补充外链清单','manage-links','secondary'))+
     '<section class="card"><h2>'+stepTitle(3,'执行方式')+'</h2>'+
     '<label class="field">执行方式<select id="mode" aria-describedby="mode-help"><option value="analysis">仅分析</option><option value="execute">分析后执行（模拟）</option></select></label>'+
@@ -1466,6 +1489,10 @@ function render(){
   if(view==='setup'){document.querySelector('#mode').value=mode}
 
 }
+function refreshLinkSelection(){
+  main.querySelector('[data-section="links"] summary small').textContent= n(chosenLinks().length)+' / '+n(activeLinks(currentList()).length)+' 条已选';
+  refreshSection('limit');
+}
 function refreshSection(id){
   if(id==='sites'){
     main.querySelector('[data-section="sites"] summary').innerHTML=stepTitle(1,'推广站点')+' <small>已选 '+n(picked.size)+' / '+n(sites.filter(site=>!site.deleted).length)+'</small>';
@@ -1545,6 +1572,7 @@ document.addEventListener('input',event=>{
     main.querySelector('[data-action=review-'+kind+']').disabled=!draft.text.trim();
   }
   if(event.target.id==='site-search'){query=event.target.value;refreshBrowse('sites',true)}
+  if(event.target.id==='dr-floor'){drFloor=event.target.value;refreshBrowse('links',true)}
   if(event.target.id==='link-preview-query'){linkQuery=event.target.value;refreshBrowse('links',true)}
   if(event.target.id==='template-search'){templateQuery=event.target.value;templatePageIndex=0;document.querySelector('#template-rows').innerHTML=templateRows()}
   if(event.target.id==='task-search'){taskQuery=event.target.value;taskPageIndex=0;document.querySelector('#task-rows').innerHTML=taskRows()}
@@ -1607,6 +1635,13 @@ document.addEventListener('change',event=>{
     notice='';persist();render();return;
   }
   if(input.id==='task-filter'){taskFilter=input.value;taskPageIndex=0;render()}
+  if(input.id==='rel-filter'){relFilter=input.value;refreshBrowse('links',true)}
+  if(input.dataset.linkUrl){
+    const list=currentList();
+    const urls=linkSelections.get(list.id)??new Set(activeLinks(list).map(link=>link.url));
+    if(input.checked)urls.add(input.dataset.linkUrl);else urls.delete(input.dataset.linkUrl);
+    linkSelections.set(list.id,urls);persist();refreshLinkSelection();
+  }
   if(input.id==='link-preview-price'){linkPrice=input.value;refreshBrowse('links',true)}
   if(input.id==='link-preview-type'){linkType=input.value;refreshBrowse('links',true)}
   if(input.id==='scope'){scope=input.value;render()}
@@ -1784,6 +1819,11 @@ document.addEventListener('click',event=>{
     if(issues.length)downloadCsv([['行号','原始内容','问题原因'],...issues.map(row=>[row.line,row.raw,row.reason])],
       'URLPut-'+(kind==='sites'?'站点':'外链')+'导入问题.csv');
     return;
+  }
+  if(action==='pick-filtered'||action==='clear-links'){
+    const links=action==='pick-filtered'?browseData('links'):[];
+    linkSelections.set(currentList().id,new Set(links.map(link=>link.url)));
+    persist();refreshBrowse('links');refreshLinkSelection();return;
   }
   if(action==='select-all'){for(const site of matchSites())picked.add(site.id);persist();refreshSection('sites');return}
   if(action==='clear'){picked.clear();persist();refreshSection('sites');return}
@@ -1986,7 +2026,7 @@ document.addEventListener('click',event=>{
   }
   if(action==='start'&&canStartBatch()){
     const list=currentList();
-    batch={id:(batches.at(-1)?.id??0)+1,name:batchName.trim(),listName:list.name,sites:selected(),links:activeLinks(list).slice(0,perSite()),mode,source:list.source,
+    batch={id:(batches.at(-1)?.id??0)+1,name:batchName.trim(),listName:list.name,sites:selected(),links:chosenLinks().slice(0,limit),mode,source:list.source,
       cursor:0,paused:false,interrupted:false,manual:false,resolved:false};batchName='';
     if(mode==='execute'){
       batch.authentication={...authDraft,email:authAccounts.email,googleEmail:authAccounts.googleEmail,
