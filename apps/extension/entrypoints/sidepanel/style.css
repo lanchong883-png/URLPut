@@ -1,0 +1,104 @@
+:root {
+  background: #e9e9f3;
+  color: #20233a;
+  --line: #e1e3ef;
+  --accent: #4e36b5;
+}
+
+.side-panel {
+  max-width: 392px;
+  min-height: 100vh;
+  margin: auto;
+  border-inline: 1px solid #dddded;
+  background: #f5f5fb;
+}
+
+.panel-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+
+.panel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px 10px;
+}
+
+.panel-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -.055em;
+}
+
+.panel-brand span {
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  border-radius: 8px;
+  background: var(--accent);
+}
+
+.panel-brand span::before {
+  content: '';
+  width: 13px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 0 2px 2px;
+  transform: translateY(-2px) rotate(-45deg);
+}
+
+.open-workbench { padding: .3rem .55rem; font-size: .8rem; }
+
+.panel-header nav {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 2px;
+  padding-inline: 4px;
+}
+
+.panel-header nav button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 7px 7px 0 0;
+  border-bottom: 3px solid transparent;
+  padding: 3px 0 1px;
+  background: transparent;
+  color: #5e637b;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.panel-header nav button[aria-current] {
+  border-bottom-color: #6244d3;
+  color: #392589;
+  background: #f2efff;
+}
+
+.panel-header svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin: 0 auto 2px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.panel-content { padding: 12px; }
+.panel-content h1 { font-size: 1.25rem; margin: .2rem 0 .8rem; }
+.panel-content .card { padding: .8rem; min-width: 0; }
+.panel-content .controls > label { flex: 1 1 8rem; }
+.panel-content .table table { min-width: 38rem; }
+.panel-content .table th { white-space: nowrap; }
+.panel-content .stack { overflow-wrap: anywhere; }
