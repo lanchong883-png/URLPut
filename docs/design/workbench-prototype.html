@@ -39,7 +39,7 @@ let pendingSitesOnly=false, libraryFromSetup=false;
 const imports={sites:{text:'',filename:'',format:'txt'},links:{text:'',filename:'',format:'txt',name:''}};
 let open=new Set(['sites']), model={type:'local',endpoint:'http://127.0.0.1:11434/v1',name:'',analysis:false,writing:false};
 const main = document.querySelector('#main'), nav = document.querySelector('#nav'), dialog=document.querySelector('#dialog');
-function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts,pairLedger:[...pairLedger]}))}catch{}}
+function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts,pairLedger:[...pairLedger],contentTemplates,defaultTemplateId}))}catch{}}
 const safe = value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const btn = (label,action,style='')=>'<button class="button '+style+'" data-action="'+action+'">'+label+'</button>';
 const detail = (id,title,body)=>'<details data-section="'+id+'" '+(open.has(id)?'open':'')+'><summary>'+title+'</summary>'+body+'</details>';
@@ -209,7 +209,8 @@ async function handleSiteCycle(item,index,now,history,notes){
       notes.add('提交前临时失败，等待次日重试');updateProgress();break;
     }
 
-    const record={siteId:site.id,url:link.url,status:'processing',owner:item.id};
+    const record={siteId:site.id,url:link.url,status:'processing',owner:item.id,
+      content:chooseSubmissionContent(item.publication,site,link)};
     pairLedger.set(key,record);
     const existing=attempts.find(entry=>entry.siteId===site.id&&entry.at===now);
     if(existing)existing.count++;
@@ -265,6 +266,76 @@ function cycleMarkup(item){
     (daily.nextAt&&!item.stopped?'<p class="hint">'+safe(daily.reason)+'</p><p class="hint">下轮最早 · '+safe(new Date(daily.nextAt).toLocaleString('zh-CN'))+'</p>':'');
 }
 
+const starterTemplates = [
+  {id:'intro',revision:1,name:'站点简介',title:'了解 {{站点名称}}',body:'{{站点名称}} 提供易上手的工具。访问 {{站点网址}} 了解详情。'},
+  {id:'resource',revision:1,name:'资源推荐',title:'推荐资源：{{站点名称}}',body:'分享一个实用资源：{{站点名称}}（{{站点网址}}）。'},
+];
+let contentTemplates=saved?.contentTemplates??starterTemplates;
+let defaultTemplateId=saved?.defaultTemplateId??'intro';
+let contentStrategy='templates', pickedTemplates=null, editingTemplate='', settingsFromSetup=false;
+
+function chosenTemplates(){
+  const ids=pickedTemplates??new Set([defaultTemplateId]);
+  return contentTemplates.filter(template=>ids.has(template.id));
+}
+function canStartBatch(){
+  return picked.size&&perSite()&&(mode!=='execute'||contentStrategy==='ai'||chosenTemplates().length);
+}
+function contentOptions(){
+  if(mode!=='execute')return '';
+  const selectedIds=new Set(chosenTemplates().map(template=>template.id));
+  const choices=contentTemplates.map(template=>
+    '<label class="check item"><input type="checkbox" data-content-id="'+safe(template.id)+'" '+(selectedIds.has(template.id)?'checked':'')+'>'+
+    '<span>'+safe(template.name)+(template.id===defaultTemplateId?' <span class="chip">默认</span>':'')+'</span></label>'
+  ).join('');
+  return '<section class="card"><h2>投稿内容</h2>'+
+    '<label class="field">内容来源<select id="content-strategy"><option value="templates" '+(contentStrategy==='templates'?'selected':'')+'>从内容模板选择</option>'+
+    '<option value="ai" '+(contentStrategy==='ai'?'selected':'')+'>AI 根据目标网页拟写</option></select></label>'+
+    (contentStrategy==='templates'?'<p class="hint">可以多选。每条外链从选中的模板随机取一份，记录使用的版本。</p>'+
+      '<div class="list" aria-label="可选内容模板">'+choices+'</div><p class="hint" id="content-count">已选 '+selectedIds.size+' 份模板</p>':
+      '<p class="hint">AI 用目标网页的主题和要求拟写。原型生成示例预览。正式执行遇到模型不可用或网页信息不足时，转人工处理。</p>')+
+    btn('管理内容模板','manage-content','secondary')+'</section>';
+}
+function templateSettings(){
+  return '<section class="card"><div class="row"><h2>内容模板</h2>'+btn('新增模板','new-content','secondary')+'</div>'+
+    '<p class="hint">新建执行批次时预选默认模板。可在批次中另选或多选。</p>'+
+    '<div class="list" aria-label="内容模板库">'+contentTemplates.map(template=>
+      '<div class="item"><div class="row"><strong>'+safe(template.name)+'</strong>'+
+      (template.id===defaultTemplateId?'<span class="chip">默认</span>':'')+'</div>'+
+      '<p class="hint truncate">'+safe(template.title)+'</p><div class="actions">'+
+      entityButton('编辑','edit-content',template.id)+
+      (template.id===defaultTemplateId?'':entityButton('设为默认','default-content',template.id))+'</div></div>').join('')+'</div></section>';
+}
+function openTemplateEditor(template){
+  editingTemplate=template?.id??'';
+  dialog.innerHTML='<h2 id="editor-title">'+(template?'编辑内容模板':'新增内容模板')+'</h2>'+
+    '<label class="field">模板名称<input id="content-name" maxlength="80" value="'+safe(template?.name)+'"></label>'+
+    '<label class="field">投稿标题<input id="content-title" maxlength="180" value="'+safe(template?.title)+'"></label>'+
+    '<label class="field">投稿正文<textarea id="content-body" rows="5" maxlength="4000">'+safe(template?.body)+'</textarea></label>'+
+    '<p class="hint">可用变量：{{站点名称}}、{{站点网址}}。每条任务用对应站点的资料替换。</p>'+
+    '<p role="status" class="notice" id="content-error"></p><div class="actions">'+btn('保存模板','save-content')+btn('取消','close-dialog','secondary')+'</div>';
+  dialog.showModal();
+}
+function fillTemplateText(text,site){
+  const values={'站点名称':site.name,'站点网址':site.url};
+  return text.replace(/\{\{(站点名称|站点网址)\}\}/g,(_match,key)=>values[key]);
+}
+function chooseSubmissionContent(config,site,link){
+  if(!config)return;
+  if(config.strategy==='ai'){
+    const host=new URL(link.url).hostname;
+    return {strategy:'ai',title:'效率工具推荐：'+site.name,
+      pageSummary:'示例页面 '+host+'：目录征集效率工具，要求简要介绍和官网链接。',
+      body:'与目录读者分享一个效率工具：'+site.name+'。可在 '+site.url+' 查看该站提供的功能。'};
+  }
+  const template=config.templates[Math.floor(Math.random()*config.templates.length)];
+  return {strategy:'templates',templateId:template.id,templateName:template.name,revision:template.revision,
+    title:fillTemplateText(template.title,site),body:fillTemplateText(template.body,site)};
+}
+function contentLabel(content){
+  return content.strategy==='ai'?'AI 网页拟写（模拟）':content.templateName+' · 第 '+content.revision+' 版';
+}
+
 function setup(){
   const visible=matchSites();
   const selectors=visible.slice(0,20).map(site=>{const counts=siteCounts(site);return '<div class="item"><label><input type="checkbox" data-site="'+safe(site.id)+'" '+(picked.has(site.id)?'checked':'')+'><span>'+safe(site.name)+'<small class="truncate">'+safe(site.url)+'</small><small>总外链 '+n(counts.total)+' · 已提交 '+n(counts.submitted)+' · 待提交 '+n(counts.pending)+'</small></span></label></div>'}).join('');
@@ -284,8 +355,8 @@ function setup(){
     '<div class="stats"><div><strong id="per-site">'+n(perSite())+'</strong><small>每站候选</small></div><div><strong id="combinations">'+n(picked.size*perSite())+'</strong><small>站点 × 外链组合</small></div></div><p class="hint">其中待提交 <strong id="pending-combinations">'+n(selectedPending())+'</strong> 条</p>'+
     '<p class="hint">每个已选推广站点都用同一份外链清单。历史投稿和同平台跳过会影响实际尝试数。</p>'+
     '<label class="field">执行方式<select id="mode"><option value="analysis">仅分析</option><option value="execute">分析后执行（模拟）</option></select></label>'+
-    '</section>'+limitsMarkup()+'<section class="card">'+
-    '<button class="button full" data-action="start" '+(!picked.size||!perSite()?'disabled':'')+'>启动模拟批次</button><p class="notice" role="status">'+safe(notice)+'</p></section>';
+    '</section>'+contentOptions()+limitsMarkup()+'<section class="card">'+
+    '<button class="button full" data-action="start" '+(!canStartBatch()?'disabled':'')+'>启动模拟批次</button><p class="notice" role="status">'+safe(notice)+'</p></section>';
 }
 function unverified(item,site){
   const groups=site?[item.daily?.verify?.[site.id]??[]]:Object.values(item.daily?.verify??{});
@@ -319,7 +390,7 @@ function sample(site){
       waiting?(sameWork?'批次 '+shared.owner+' 正在处理':'正在等待处理结果'):
       retry?'提交前临时失败，等下一周期':pending?'等待核对账号':!complete?'等待继续':batch.mode==='analysis'?'仅分析 · 已检查入口':
       shared?.result??simulatedResults[index%3];
-    return {target,link,status,result};
+    return {target,link,status,result,content:shared?.content};
   }));
 }
 function progress(){
@@ -333,6 +404,8 @@ function progress(){
     cycleMarkup(batch)+
     (batch.interrupted?'<p class="hint">本批次已停止。继续时从保存的进度恢复。</p>':'')+
     '<p class="hint">'+n(batch.sites.length)+' 个推广站点 · 每站 '+n(batch.links.length)+' 条 · 批次快照</p>'+
+    (batch.publication?'<p class="hint">投稿内容 · '+(batch.publication.strategy==='ai'?'AI 网页拟写（模拟）':
+      safe(batch.publication.templates.map(template=>template.name).join('、'))+(batch.publication.templates.length>1?'（逐条随机）':''))+'</p>':'')+
     (batch.listName?'<p class="hint">外链清单 · '+safe(batch.listName)+'</p>':'')+
     '<label class="field">查看范围<select id="scope"><option value="">全部站点</option>'+batch.sites.map(site=>'<option value="'+safe(site.id)+'" '+(site.id===scope?'selected':'')+'>'+safe(site.name)+'</option>').join('')+'</select></label>'+
     '<div class="meter" role="progressbar" aria-label="已处理比例" aria-valuenow="'+m.percent+'"><div style="width:'+m.percent+'%"></div></div>'+
@@ -346,7 +419,8 @@ function progress(){
     (m.pending&&!['interrupted','stopped'].includes(state)?'<section class="card"><div class="row"><h2>人工待办</h2><span class="chip warm">1 条</span></div><p>'+safe(batch.sites[0].name)+' → '+safe(batch.links[0].url)+'</p><p class="hint">核对站点专用账号。其他组合继续运行。</p>'+btn('已确认，恢复该条','resolve','secondary')+'</section>':'')+
     detail('report','记录与导出 <small>· 当前范围抽样</small>',
       '<p class="hint">每条都保留推广站点、来源行和外链网址。</p>'+
-      '<div class="list">'+records.map(({target,link,status,result})=>'<div class="item"><div class="row"><strong>'+safe(target.name)+'</strong><span class="chip">'+status+'</span></div><small class="links">第 '+link.line+' 行 · '+safe(link.url)+'</small><p class="hint">'+safe(result)+'</p></div>').join('')+'</div>'+
+      '<div class="list">'+records.map(({target,link,status,result,content})=>'<div class="item"><div class="row"><strong>'+safe(target.name)+'</strong><span class="chip">'+status+'</span></div><small class="links">第 '+link.line+' 行 · '+safe(link.url)+'</small><p class="hint">'+safe(result)+'</p>'+
+      (content?'<details><summary>'+safe(contentLabel(content))+'</summary>'+(content.pageSummary?'<p class="hint">'+safe(content.pageSummary)+'</p>':'')+'<strong>'+safe(content.title)+'</strong><p class="links">'+safe(content.body)+'</p></details>':'')+'</div>').join('')+'</div>'+
       btn('导出演示样本 CSV','export','secondary')+'<p class="notice" role="status" id="export-notice"></p>');
 }
 const pageSize=8;
@@ -424,7 +498,8 @@ function openEditor(item){
 }
 
 function settings(){
-  return '<h1>设置</h1><section class="card"><h2>AI 模型</h2><label class="field">服务类型<select id="model-type"><option value="local">本地模型</option><option value="custom">自建模型服务</option></select></label><label class="field">API 地址<input id="endpoint" value="'+safe(model.endpoint)+'"></label><label class="field">模型名<input id="model-name" value="'+safe(model.name)+'"></label><div class="actions"><label class="check"><input id="model-analysis" type="checkbox" '+(model.analysis?'checked':'')+'>AI 分析</label><label class="check"><input id="model-writing" type="checkbox" '+(model.writing?'checked':'')+'>AI 文案</label></div><p class="hint">只演示配置，页面不会发起模型请求。</p>'+btn('模拟保存','save-model','secondary')+'<p class="notice" role="status">'+safe(notice)+'</p></section>';
+  return '<div class="row"><h1>设置</h1>'+(settingsFromSetup?btn('返回新建批次','return-content','subtle'):'')+'</div>'+
+    templateSettings()+'<section class="card"><h2>AI 模型</h2><label class="field">服务类型<select id="model-type"><option value="local">本地模型</option><option value="custom">自建模型服务</option></select></label><label class="field">API 地址<input id="endpoint" value="'+safe(model.endpoint)+'"></label><label class="field">模型名<input id="model-name" value="'+safe(model.name)+'"></label><div class="actions"><label class="check"><input id="model-analysis" type="checkbox" '+(model.analysis?'checked':'')+'>AI 分析</label><label class="check"><input id="model-writing" type="checkbox" '+(model.writing?'checked':'')+'>AI 文案</label></div><p class="hint">只演示配置，页面不会发起模型请求。</p>'+btn('模拟保存','save-model','secondary')+'<p class="notice" role="status">'+safe(notice)+'</p></section>';
 }
 function render(){
   nav.innerHTML=[['setup','新建批次'],['tasks','任务'],['library','清单']].map(([id,label])=>'<button data-action="'+id+'" '+((view===id||view==='progress'&&id==='tasks')?'aria-current="page"':'')+'>'+label+'</button>').join('');
@@ -451,7 +526,7 @@ function refreshSection(id){
   document.querySelector('#per-site').textContent=n(perSite());
   document.querySelector('#combinations').textContent=n(picked.size*perSite());
   document.querySelector('#pending-combinations').textContent=n(selectedPending());
-  main.querySelector('[data-action=start]').disabled=!picked.size||!perSite();
+  main.querySelector('[data-action=start]').disabled=!canStartBatch();
 }
 function parseLines(value){
   const urls=new Map();
@@ -528,6 +603,13 @@ document.addEventListener('change',event=>{
   if(input.id==='task-filter'){taskFilter=input.value;taskPageIndex=0;render()}
   if(input.id==='shared-list'){listId=input.value;persist();render()}
   if(input.id==='scope'){scope=input.value;render()}
+  if(input.id==='content-strategy'){contentStrategy=input.value;render()}
+  if(input.dataset.contentId){
+    pickedTemplates??=new Set([defaultTemplateId]);
+    if(input.checked)pickedTemplates.add(input.dataset.contentId);else pickedTemplates.delete(input.dataset.contentId);
+    document.querySelector('#content-count').textContent='已选 '+pickedTemplates.size+' 份模板';
+    main.querySelector('[data-action=start]').disabled=!canStartBatch();
+  }
   if(input.id==='mode'){mode=input.value;render()}
   if(input.id==='daily-limit')dailyLimit=integerQuota(input.value);
   if(input.id==='limit-site'){limitSite=input.value;render()}
@@ -540,7 +622,27 @@ document.addEventListener('click',event=>{
   const action=control?.dataset.action,key=control?.dataset.key;
   if(!action)return;
   if(['setup','tasks','library','settings'].includes(action)){
-    libraryFromSetup=false;view=action;notice='';render();window.scrollTo(0,0);return;
+    libraryFromSetup=false;settingsFromSetup=false;view=action;notice='';render();window.scrollTo(0,0);return;
+  }
+  if(action==='manage-content'){view='settings';settingsFromSetup=true;notice='';render();window.scrollTo(0,0);return}
+  if(action==='return-content'){view='setup';settingsFromSetup=false;notice='';render();main.querySelector('[data-action=manage-content]')?.focus();return}
+  if(action==='new-content'||action==='edit-content'){
+    openTemplateEditor(contentTemplates.find(template=>template.id===key));return;
+  }
+  if(action==='default-content'){defaultTemplateId=key;persist();render();return}
+  if(action==='save-content'){
+    const name=document.querySelector('#content-name').value.trim();
+    const title=document.querySelector('#content-title').value.trim();
+    const body=document.querySelector('#content-body').value.trim();
+    if(!name||!title||!body){
+      document.querySelector('#content-error').textContent='请填写模板名称、标题和正文。';return;
+    }
+    if(editingTemplate){
+      contentTemplates=contentTemplates.map(template=>template.id===editingTemplate&&
+        (template.name!==name||template.title!==title||template.body!==body)?
+        {...template,name,title,body,revision:template.revision+1}:template);
+    }else contentTemplates=[...contentTemplates,{id:crypto.randomUUID(),revision:1,name,title,body}];
+    dialog.close();persist();render();return;
   }
   if(action==='return-setup'){notice='';returnToSetup();return}
   if(action==='use-library'){
@@ -655,15 +757,18 @@ document.addEventListener('click',event=>{
     });
     dialog.close();
   }
-  if(action==='start'&&picked.size&&perSite()){
+  if(action==='start'&&canStartBatch()){
     const list=currentList();
     batch={id:(batches.at(-1)?.id??0)+1,name:batchName.trim(),listName:list.name,sites:selected(),links:list.links.slice(0,perSite()),mode,source:list.source,
       cursor:0,paused:false,interrupted:false,manual:false,resolved:false};batchName='';
     if(mode==='execute'){
+      batch.publication=contentStrategy==='ai'?{strategy:'ai'}:
+        {strategy:'templates',templates:chosenTemplates().map(template=>({...template}))};
       batch.daily={sharedPairs:true,defaultQuota:dailyLimit,recurring,quotas:Object.fromEntries(batch.sites.map(site=>[site.id,Object.hasOwn(overrides,site.id)?overrides[site.id]:dailyLimit])),
         positions:batch.sites.map(()=>0),skipped:{},nextAt:0,reason:'',allowed:false,injectedFailure:false};
     }
     batches.push(batch);
+    pickedTemplates=null;contentStrategy='templates';
     scope='';view='progress';lastTick=performance.now();open.add('report');
   }
   if(action==='advance'){lastTick=performance.now();advance([batch]);return}
