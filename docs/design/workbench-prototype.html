@@ -97,6 +97,9 @@ nav button {
   font-weight: 650;
   white-space: nowrap;
 }
+.ui-icon { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: -.16em; }
+.button .ui-icon, .field .ui-icon { margin-right: 5px; }
+nav .ui-icon { display: block; width: 16px; height: 16px; margin: 0 auto 2px; }
 nav button:hover { background: #f7f5ff; color: var(--accent); }
 nav button[aria-current] { background: #f2efff; color: var(--accent-deep); }
 nav button[aria-current]::after {
@@ -369,7 +372,37 @@ let open=new Set(['sites']), model={type:'local',endpoint:'http://127.0.0.1:1143
 const main = document.querySelector('#main'), nav = document.querySelector('#nav'), dialog=document.querySelector('#dialog');
 function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts,pairLedger:[...pairLedger],contentTemplates,defaultTemplateIds,authAccounts}));return true}catch{return false}}
 const safe = value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
-const btn = (label,action,style='')=>'<button class="button '+style+'" data-action="'+action+'">'+label+'</button>';
+const iconPaths={
+  plus:'M12 5v14M5 12h14', tasks:'m3 7 2 2 4-5M12 7h9M3 15l2 2 4-5M12 15h9',
+  folder:'M3 6h7l2 2h9v11H3z', template:'M5 3h10l4 4v14H5zM8 11h8M8 15h6',
+  model:'M7 7h10v10H7zM9 3v4m6-4v4m-6 10v4m6-4v4M3 9h4m10 0h4M3 15h4m10 0h4',
+  key:'M14 4a5 5 0 1 1-3 9l-7 7H2v-4l7-7a5 5 0 0 1 5-5zM16 8h.01',
+  search:'M16 16l5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0z',
+  edit:'m4 15 10-10 4 4L8 19l-5 1zM12 7l4 4',
+  download:'M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4',
+  upload:'M12 16V4m-5 5 5-5 5 5M4 16v4h16v-4',
+  back:'M20 12H4m6-6-6 6 6 6', pause:'M8 5v14M16 5v14',
+  play:'m7 4 12 8-12 8z', stop:'M5 5h14v14H5z', check:'m4 12 5 5L20 6',
+  trash:'M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7',
+};
+function icon(name){
+  return '<svg class="ui-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="'+iconPaths[name]+'"/></svg>';
+}
+const navIcons={setup:'plus',tasks:'tasks',library:'folder',templates:'template',models:'model','auth-management':'key'};
+const actionIcons={
+  'new-content':'plus','new-auth-preset':'plus','add-auth-email':'plus',
+  'edit-content':'edit','edit-library':'edit','edit-auth-preset':'edit',
+  'delete-site':'trash','delete-content':'trash','confirm-delete-site':'trash','confirm-delete-content':'trash',
+  export:'download','export-link-list':'download','export-all-links':'download','download-site-columns':'download',
+  'download-import-sites':'download','download-import-links':'download',
+  'return-content':'back','return-auth':'back','return-setup':'back',tasks:'back',
+  resume:'play',pause:'pause',stop:'stop',resolve:'check','check-confirmation':'check',
+};
+function actionLabel(label,action){
+  const name=actionIcons[action];
+  return name?icon(name)+label:label;
+}
+const btn = (label,action,style='')=>'<button class="button '+style+'" data-action="'+action+'">'+actionLabel(label,action)+'</button>';
 const stepTitle = (number,label)=>'<span class="step-title"><b>'+number+'</b> '+label+'</span>';
 const pageBanner = title=>'<div class="page-banner"><h1>'+title+'</h1><span class="banner-mark" aria-hidden="true"></span></div>';
 const detail = (id,title,body)=>'<details data-section="'+id+'" '+(open.has(id)?'open':'')+'><summary>'+title+'</summary>'+body+'</details>';
@@ -498,7 +531,7 @@ function reviewMarkup(kind){
     '<div class="list" aria-label="'+label+'检查明细">'+rows.map(row=>'<div class="item"><div class="row"><strong>第 '+row.line+' 行</strong><span class="chip '+(row.status==='error'||row.status==='duplicate'?'warm':'')+'">'+reviewLabels[row.status]+'</span></div><div class="links">'+safe(row.raw)+'</div><small>'+safe(row.reason)+(kind==='sites'&&row.url?' · 站点名称 '+safe(row.name):'')+'</small></div>').join('')+'</div>':'';
   const issues=rows?.filter(row=>row.status==='error')??[];
   const imported=rows?.filter(row=>row.status==='new').length??0;
-  return detail('import-'+kind,'录入或导入'+label,
+  return detail('import-'+kind,icon('upload')+'录入或导入'+label,
     '<label class="field">录入'+label+'（每行一个）<textarea id="input-'+kind+'" rows="3" placeholder="'+(kind==='sites'?'brand.example':'https://directory.example/submit')+'">'+safe(draft.text)+'</textarea></label>'+
     '<label class="field">上传'+label+'文件<input id="file-'+kind+'" type="file" accept=".txt,.csv,text/plain,text/csv"></label>'+
     '<p class="hint">'+(kind==='sites'?'站点名称取域名。用多列 CSV 导入站点资料，图片文件在站点编辑中上传。':'TXT 或单列 CSV。可用 offline.example 或 timeout.example 演示访问失败。')+(draft.filename?' · '+safe(draft.filename):'')+'</p>'+
@@ -791,7 +824,7 @@ function templateRows(){
 function templateSettings(){
   return '<section class="card"><div class="row"><h1>内容模板</h1>'+btn('新增模板','new-content','secondary')+'</div>'+
     '<p class="hint">已保存 '+n(contentTemplates.length)+' 份模板。每类可设一份默认模板，新建批次时自动勾选。</p>'+
-    '<label class="field">搜索模板<input id="template-search" value="'+safe(templateQuery)+'"></label>'+
+    '<label class="field"><span>'+icon('search')+'搜索模板</span><input id="template-search" value="'+safe(templateQuery)+'"></label>'+
     '<div id="template-rows" aria-label="内容模板库">'+templateRows()+'</div></section>';
 }
 function editorCategoryLabels(category){
@@ -1104,7 +1137,7 @@ function browseRow(kind,item){
   const counts=siteCounts(item);
   return '<div class="item" role="listitem"><label><input type="checkbox" data-site="'+safe(item.id)+'" '+(picked.has(item.id)?'checked':'')+
     '><span>'+safe(item.name)+'<small class="truncate">'+safe(item.url)+'</small><small>总外链 '+n(counts.total)+' · 已接收 '+n(counts.submitted)+
-    ' · 尚无接收记录 '+n(counts.pending)+'</small></span></label></div>';
+    ' · 待接收 '+n(counts.pending)+'</small></span></label></div>';
 }
 function browseStatus(count,total){
   return '已显示 '+n(count)+' / '+n(total)+' 条'+(count<total?' · 下滑加载更多':'');
@@ -1141,7 +1174,7 @@ function activeLinkPreview(){
   if(!list)return '';
   const types=[...new Set(activeLinks(list).map(websiteType))].sort();
   return '<h3>活跃外链 · '+safe(list.name)+'</h3>'+
-    '<label class="field">搜索域名或外链网址<input id="link-preview-query" value="'+safe(linkQuery)+'"></label>'+
+    '<label class="field"><span>'+icon('search')+'搜索域名或外链网址</span><input id="link-preview-query" value="'+safe(linkQuery)+'"></label>'+
     '<label class="field">网站类型<select id="link-preview-type"><option value="">全部类型</option>'+
     types.map(type=>'<option value="'+safe(type)+'" '+(type===linkType?'selected':'')+'>'+safe(type)+'</option>').join('')+'</select></label>'+
     browseMarkup('links')+(view==='setup'?'<p class="hint">筛选方便你查找外链。批次仍从整份清单中选取可用外链。</p>':'');
@@ -1150,9 +1183,9 @@ function activeLinkPreview(){
 function setup(){
   return pageBanner('新建批次')+
     detail('sites',stepTitle(1,'推广站点')+' <small>已选 '+n(picked.size)+' / '+n(sites.filter(site=>!site.deleted).length)+'</small>',
-      '<p class="hint">以下按所选外链清单统计。平台已接收的投稿包含正在审核的记录。</p>'+
-      '<label class="field">搜索站点<input id="site-search" value="'+safe(query)+'" placeholder="名称或域名"></label>'+
-      '<label class="check"><input type="checkbox" id="pending-sites" '+(pendingSitesOnly?'checked':'')+'>只看还有外链未被平台接收的站点</label>'+
+      '<p class="hint">按所选清单统计。平台已收件就算已接收，包括审核中的投稿。</p>'+
+      '<label class="field"><span>'+icon('search')+'搜索站点</span><input id="site-search" value="'+safe(query)+'" placeholder="名称或域名"></label>'+
+      '<label class="check"><input type="checkbox" id="pending-sites" '+(pendingSitesOnly?'checked':'')+'>只看有待接收外链的站点</label>'+
       '<div class="actions" style="margin-top:6px">'+btn('全选搜索结果','select-all','secondary')+btn('清空选择','clear','subtle')+'</div>'+
       browseMarkup('sites')+
       btn('去清单补充站点','manage-sites','secondary'))+
@@ -1172,8 +1205,8 @@ function setup(){
     '<div class="stats"><div><strong id="selected-sites">'+n(picked.size)+'</strong><small>已选推广站点</small></div>'+
     '<div><strong id="per-site">'+n(perSite())+'</strong><small>每站外链数</small></div>'+
     '<div><strong id="combinations">'+n(picked.size*perSite())+'</strong><small>合计处理条数</small></div>'+
-    '<div><strong id="pending-combinations">'+n(selectedPending())+'</strong><small>尚无接收记录</small></div></div>'+
-    '<p class="hint">'+(mode==='analysis'?'每个站点和每条外链算一条。本次只检查投稿要求，不会提交。':'每个站点和每条外链算一条。已被平台接收或已尝试过同一平台的投稿会跳过。')+'</p>'+
+    '<div><strong id="pending-combinations">'+n(selectedPending())+'</strong><small>待接收</small></div></div>'+
+    '<p class="hint">'+(mode==='analysis'?'每个站点和每条外链算一条。「待接收」表示尚未确认平台收件。本次只分析。':'「待接收」表示尚未确认平台收件。已尝试过同一平台的投稿会跳过。')+'</p>'+
     '<button class="button full" data-action="start" '+(!canStartBatch()?'disabled':'')+'>启动模拟批次</button><p class="notice" role="status">'+safe(notice)+'</p></section>';
 }
 function unverified(item,site){
@@ -1298,7 +1331,7 @@ function taskRows(){
   }).join('')+'</div>'+paging('task',filtered.length,taskPageIndex):'<p class="hint">没有符合条件的批次。</p>';
 }
 function tasks(){
-  return pageBanner('任务')+'<section class="card"><label class="field">搜索批次<input id="task-search" placeholder="批次名称或编号" value="'+safe(taskQuery)+'"></label>'+
+  return pageBanner('任务')+'<section class="card"><label class="field"><span>'+icon('search')+'搜索批次</span><input id="task-search" placeholder="批次名称或编号" value="'+safe(taskQuery)+'"></label>'+
     '<label class="field">任务状态<select id="task-filter">'+[['all','全部'],['running','执行中'],['waiting','待人工'],['confirmations','待确认'],['verification','待核对提交结果'],['paused','已暂停'],['interrupted','已中断'],['stopped','已停止'],['budget','等待下一轮'],['completed','已完成']].map(([id,label])=>'<option value="'+id+'" '+(id===taskFilter?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
     '<div class="actions">'+btn('待确认清单','show-confirmations','secondary')+'</div>'+
     '<div id="task-rows">'+taskRows()+'</div>'+(!batches.length?btn('载入历史任务示例','demo-history','secondary'):'')+'</section>'+
@@ -1306,7 +1339,7 @@ function tasks(){
       btn('演示复用 Google 保存的密码','demo-synced-password','secondary')+'</div></section>'+
     '<section class="card"><p class="hint">两个示例任务使用同一推广站点和同一外链。</p>'+btn('运行并发去重演示','demo-concurrent','secondary')+'</section>';
 }
-const entityButton=(label,action,key)=>'<button class="button secondary" data-action="'+action+'" data-key="'+safe(key)+'">'+label+'</button>';
+const entityButton=(label,action,key)=>'<button class="button secondary" data-action="'+action+'" data-key="'+safe(key)+'">'+actionLabel(label,action)+'</button>';
 function libraryItems(){
   const isSites=libraryTab==='sites';
   return (isSites?sites:linkLists).filter(item=>!item.deleted&&matches(item.name+' '+(isSites?item.url:''),libraryQuery));
@@ -1326,7 +1359,7 @@ function library(){
     (libraryFromSetup?'<p class="hint" style="margin-bottom:8px">批次草稿已保留，补充后可直接返回。</p>':'')+
     '<div class="library-tabs" role="group" aria-label="清单类型">'+btn('推广站点','library-sites',isSites?'':'secondary')+btn('外链清单','library-links',isSites?'secondary':'')+'</div>'+
     reviewMarkup(libraryTab)+
-    '<section class="card"><label class="field">搜索'+(isSites?'站点':'清单')+'<input id="library-search" value="'+safe(libraryQuery)+'"></label>'+
+    '<section class="card"><label class="field"><span>'+icon('search')+'搜索'+(isSites?'站点':'清单')+'</span><input id="library-search" value="'+safe(libraryQuery)+'"></label>'+
     (!isSites&&linkLists.length?'<div class="actions">'+btn('导出全部外链','export-all-links','secondary')+'</div>':'')+
     browseMarkup('library')+'</section>'+(!isSites&&previewList()?'<section class="card" id="library-link-preview">'+activeLinkPreview()+'</section>':'')+'<p class="notice" role="status">'+safe(notice)+'</p>';
 }
@@ -1434,7 +1467,7 @@ function modelsPage(){
 }
 function renderNav(){
   const waiting=batches.reduce((sum,item)=>sum+pendingConfirmations(item),0);
-  nav.innerHTML=[['setup','新建批次'],['tasks','任务'],['library','清单'],['templates','内容模板'],['models','AI 模型'],['auth-management','认证方式']].map(([id,label])=>'<button data-action="'+id+'" '+((view===id||['progress','confirmations'].includes(view)&&id==='tasks')?'aria-current="page"':'')+(id==='tasks'&&waiting?' aria-description="'+n(waiting)+' 条待确认"':'')+'>'+label+
+  nav.innerHTML=[['setup','新建批次'],['tasks','任务'],['library','清单'],['templates','内容模板'],['models','AI 模型'],['auth-management','认证方式']].map(([id,label])=>'<button data-action="'+id+'" '+((view===id||['progress','confirmations'].includes(view)&&id==='tasks')?'aria-current="page"':'')+(id==='tasks'&&waiting?' aria-description="'+n(waiting)+' 条待确认"':'')+'>'+icon(navIcons[id])+label+
     (id==='tasks'&&waiting?' <span class="chip warm" aria-hidden="true">'+(waiting>99?'99+':n(waiting))+'</span>':'')+'</button>').join('');
 }
 function render(){
