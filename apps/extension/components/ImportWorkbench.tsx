@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { importBatchSchema, MAX_IMPORT_BYTES, type ImportBatch, type Workspace } from '@urlput/contracts';
-import { buildLedger, mapRows, readTable, type ColumnMapping, type Delimiter, type LedgerRow } from '@urlput/import';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { importBatchSchema, MAX_IMPORT_BYTES, MAX_IMPORT_REQUEST_BYTES, type ImportBatch, type Workspace } from '@urlput/contracts';
+import { buildLedger, mapRows, readTable, readTextRows, type ColumnMapping, type Delimiter, type LedgerRow } from '@urlput/import';
 import { auth, request, requestConfiguredAccess, type Batch, type BatchSummary } from '../lib/api';
 import { LinkCatalog } from './LinkCatalog';
 import { downloadLedger, reportCells, reportColumns, type ReportSite } from '../lib/report';
@@ -46,6 +46,9 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
   const [siteId, setSite] = useState('');
   const [text, setText] = useState('');
   const [filename, setFilename] = useState<string>();
+  const fileRevision = useRef(0);
+  const [readingFile, setReadingFile] = useState(false);
+  const plainText = filename?.toLowerCase().endsWith('.txt') ?? false;
   const [delimiter, setDelimiter] = useState<Delimiter>(',');
   const [header, setHeader] = useState(true);
   const [mapping, setMapping] = useState<ColumnMapping>(defaultMapping);
@@ -92,9 +95,11 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
   }, [path]);
 
   const parsed = useMemo(() => {
-    try { return { table: readTable(text, delimiter), error: '' }; }
-    catch (error) { return { table: [], error: message(error) }; }
-  }, [text, delimiter]);
+    try {
+      return plainText ? { table: [], textRows: readTextRows(text), error: '' }
+        : { table: readTable(text, delimiter), error: '' };
+    } catch (error) { return { table: [], error: message(error) }; }
+  }, [text, delimiter, plainText]);
 
   const columns = useMemo(() => {
     const width = parsed.table.reduce((max, row) => Math.max(max, row.cells.length), 0);
@@ -103,6 +108,8 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
   }, [parsed.table, header]);
 
   function updateText(value: string, source?: string) {
+    fileRevision.current++;
+    setReadingFile(false);
     setText(value);
     setFilename(source);
     if (source !== filename) setMapping(defaultMapping);
@@ -113,13 +120,36 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
     setHeader(/(?:^|[,;\t])\s*"?(?:url|网址|候选网址|链接|website)"?\s*(?:[,;\t]|$)/i.test(first));
   }
 
+  async function readFile(file: File) {
+    const revision = ++fileRevision.current;
+    setPreview(undefined);
+    setError('');
+    setReadingFile(true);
+    try {
+      if (file.size > MAX_IMPORT_BYTES) throw new Error('文件超过 2 MB，请拆分后导入。');
+      const value = file.name.toLowerCase().endsWith('.txt')
+        ? new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer())
+        : await file.text();
+      if (revision === fileRevision.current) updateText(value, file.name);
+    } catch (error) {
+      if (revision === fileRevision.current) {
+        updateText('');
+        setError(error instanceof TypeError ? '文件不是有效的 UTF-8 文本，请转换后重试。' : message(error));
+      }
+    }
+  }
+
   function createPreview() {
     const result = importBatchSchema.safeParse({
-      requestId: crypto.randomUUID(), source: filename ? 'csv' : 'paste', filename,
-      rows: mapRows(parsed.table, mapping, header),
+      requestId: crypto.randomUUID(), source: plainText ? 'txt' : filename ? 'csv' : 'paste', filename,
+      rows: parsed.textRows ?? mapRows(parsed.table, mapping, header),
     });
     if (!result.success) {
       setError('请输入至少一条数据，每批最多 5,000 行。请检查是否选择了正确的表头和列。');
+      return;
+    }
+    if (new TextEncoder().encode(JSON.stringify(result.data)).length > MAX_IMPORT_REQUEST_BYTES) {
+      setError('导入记录超过请求大小限制，请拆分后导入。');
       return;
     }
     setError('');
@@ -219,21 +249,20 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
       <div hidden={library !== 'sites'}>
         <section className="card stack">
           <h2>导入候选网址</h2>
-          <label>CSV 文件<input type="file" accept=".csv,text/csv" disabled={busy} onChange={event => {
+          <label>CSV 或 TXT 文件<input type="file" accept=".csv,.txt,text/csv,text/plain" disabled={busy} onChange={event => {
             const file = event.target.files?.[0];
             event.target.value = '';
-            if (!file) return;
-            if (file.size > MAX_IMPORT_BYTES) { setError('文件超过 2 MB，请拆分后导入。'); return; }
-            void file.text().then(value => updateText(value, file.name)).catch(error => setError(message(error)));
+            if (file) void readFile(file);
           }} /></label>
+          {readingFile && <p role="status">正在读取文件…</p>}
           {filename && <div>来源文件：{filename}</div>}
           <label>或粘贴表格及网址<textarea value={text} disabled={busy} rows={5} placeholder={'URL,投稿入口\nhttps://example.org'} onChange={event => updateText(event.target.value)} /></label>
-          <div className="controls">
+          {!plainText && <div className="controls">
             <label>分隔符<select value={delimiter} disabled={busy} onChange={event => { setDelimiter(event.target.value as Delimiter); setPreview(undefined); }}>
               <option value=",">逗号</option><option value=";">分号</option><option value={'\t'}>制表符</option>
             </select></label>
             <label className="inline"><input type="checkbox" checked={header} disabled={busy} onChange={event => { setHeader(event.target.checked); setPreview(undefined); }} /> 首行是表头</label>
-          </div>
+          </div>}
           {parsed.error && <div className="error" role="alert">{parsed.error}</div>}
           {!!columns.length && <div className="controls">
             {(Object.keys(fields) as Array<keyof ColumnMapping>).map(field => <label key={field}>{fields[field]}
@@ -247,7 +276,7 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
               </select>
             </label>)}
           </div>}
-          <button disabled={busy || !parsed.table.length || !columns[mapping.url]} onClick={createPreview}>预览导入</button>
+          <button disabled={busy || readingFile || !(plainText ? parsed.textRows?.length : columns[mapping.url])} onClick={createPreview}>预览导入</button>
         </section>
         {preview && <section className="card stack">
           <h2>导入预览</h2><p>共 {ledger.length} 行，其中 {ledger.filter(row => row.disposition === 'candidate').length} 条候选。</p>

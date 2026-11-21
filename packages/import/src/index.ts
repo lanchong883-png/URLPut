@@ -39,6 +39,24 @@ export function mapRows(table: ReturnType<typeof readTable>, mapping: ColumnMapp
   }));
 }
 
+export function readTextRows(text: string): ImportBatch['rows'] {
+  if (new TextEncoder().encode(text).length > MAX_IMPORT_BYTES) {
+    throw new Error('输入超过 2 MB，请拆分后导入。');
+  }
+  const rows: ImportBatch['rows'] = [];
+  const lines = text.replace(/^\uFEFF/, '').split(/\r\n|\n|\r/);
+  for (const [index, sourceText] of lines.entries()) {
+    if (!sourceText.trim()) continue;
+    if (sourceText.length > 8192) throw new Error(`第 ${index + 1} 行超过 8,192 字符，请拆分后导入。`);
+    const tokens = sourceText.match(/https?:\/\/[^\s<>"'`，。；！？、）》】」]+/gi) ?? [sourceText];
+    for (const url of tokens) {
+      if (rows.length === MAX_ROWS) throw new Error('每批最多导入 5,000 条记录。');
+      rows.push({ sourceLine: index + 1, url, entry: '', name: '', notes: '', sourceText });
+    }
+  }
+  return rows;
+}
+
 export function normalizeUrl(raw: string): string | undefined {
   const value = raw.trim();
   if (!/^https?:\/\//i.test(value)) return;

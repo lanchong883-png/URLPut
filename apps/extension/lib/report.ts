@@ -21,7 +21,12 @@ export function reportCells(row: LedgerRow, site: ReportSite) {
 
 export function downloadLedger(batch: Batch, site: ReportSite) {
   const headings = [...reportColumns, '来源文件'];
-  const rows = batch.rows.map(row => [...reportCells(row, site), batch.filename ?? '']);
+  if (batch.source === 'txt') headings.push('原始文本');
+  const rows = batch.rows.map(row => {
+    const cells = [...reportCells(row, site), batch.filename ?? ''];
+    if (batch.source === 'txt') cells.push(row.sourceText ?? '');
+    return cells;
+  });
   const csv = encodeCsv(headings, rows);
   downloadCsv(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `URLPut-台账-${batch.id}.csv`);
 }

@@ -3,7 +3,7 @@ import Fastify, { type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { importBatchSchema } from '@urlput/contracts';
+import { importBatchSchema, MAX_IMPORT_REQUEST_BYTES } from '@urlput/contracts';
 import { buildLedger, type LedgerRow } from '@urlput/import';
 import type { Database } from './database.ts';
 import { registerFormTemplates } from './form-templates.ts';
@@ -30,7 +30,7 @@ export function createApp(
   authenticate: (request: FastifyRequest) => Promise<string | undefined>,
   allowedOrigin?: string | RegExp,
 ) {
-  const app = Fastify({ bodyLimit: 12_000_000 });
+  const app = Fastify({ bodyLimit: MAX_IMPORT_REQUEST_BYTES });
   if (allowedOrigin) app.register(cors, { origin: allowedOrigin, methods: ['GET', 'POST'] });
 
   app.get('/health', async () => {

@@ -97,7 +97,7 @@ try {
   await page.getByRole('button', { name: '确认并保存' }).click();
   await page.getByLabel('导入批次').waitFor();
 
-  await page.getByLabel('CSV 文件').setInputFiles({
+  await page.getByLabel('CSV 或 TXT 文件').setInputFiles({
     name: 'candidates.csv', mimeType: 'text/csv', buffer: Buffer.from('URL;名称\nhttps://example.net;目录站\nhttps://EXAMPLE.net/#重复;重复\ninvalid;无效'),
   });
   await page.getByText('来源文件：candidates.csv').waitFor();
@@ -139,6 +139,29 @@ try {
   assert.match(secondCsv, /second-target.example/);
   assert.match(secondCsv, /第二站点/);
   assert.doesNotMatch(secondCsv, /example.net|示例站点/);
+  const originalText = '目录 https://txt-first.example/；备用 https://txt-second.example/';
+  await page.getByLabel('CSV 或 TXT 文件').setInputFiles({
+    name: 'links.TXT', mimeType: 'text/plain',
+    buffer: Buffer.from(`\uFEFF${originalText}\r\n\r\n无效地址\rhttps://TXT-FIRST.example/#重复`),
+  });
+  await page.getByText('来源文件：links.TXT').waitFor();
+  assert.equal(await page.getByLabel('分隔符').count(), 0);
+  await page.getByRole('button', { name: '预览导入' }).click();
+  await page.getByText('重复候选，关联第 1 条。').waitFor();
+  await page.getByRole('button', { name: '确认并保存' }).click();
+  await page.getByRole('option', { name: /links.TXT/ }).waitFor({ state: 'attached' });
+  await page.reload();
+  await page.getByLabel('推广站点').selectOption({ label: '第二站点' });
+  const txtOption = page.getByRole('option', { name: /links.TXT/ });
+  await txtOption.waitFor({ state: 'attached' });
+  await page.getByLabel('导入批次').selectOption(await txtOption.getAttribute('value'));
+  const txtDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出 CSV' }).click();
+  const txtCsv = await readFile(await (await txtDownload).path(), 'utf8');
+  assert.ok(txtCsv.includes(originalText));
+  assert.match(txtCsv, /"3","—","未识别","无效地址","未成功","输入无效"/);
+  assert.match(txtCsv, /"第二站点","https:\/\/second.example","3"/);
+  assert.doesNotMatch(txtCsv, /second-target\.example/);
   await page.getByRole('button', { name: '外链清单' }).click();
   const catalog = page.getByRole('region', { name: '活跃外链列表' });
   await catalog.getByText('catalog5.example', { exact: true }).waitFor();
@@ -167,7 +190,7 @@ try {
     assert.equal(await catalog.getByRole('listitem').count(), 0);
   }
   await page.getByRole('button', { name: '推广站点' }).click();
-  await page.getByRole('cell', { name: 'https://second-target.example/', exact: true }).waitFor();
+  await page.getByRole('cell', { name: 'https://txt-first.example/', exact: true }).waitFor();
   await page.getByRole('button', { name: 'AI 模型' }).click();
   await page.getByLabel('服务类型').waitFor();
   const opened = context.waitForEvent('page');
@@ -201,7 +224,7 @@ try {
     ['/local/v1/chat/completions', undefined, 'local-model'],
     ['/custom/v1/chat/completions', 'Bearer test-session-key', 'custom-model'],
   ]);
-  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV export, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
+  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
 } finally {
   try {
     await context?.close();

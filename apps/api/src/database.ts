@@ -38,7 +38,7 @@ export function postgresDatabase(connectionString: string): Database {
 }
 
 export async function migrate(db: Database) {
-  for (const file of ['001-initial.sql', '002-form-templates.sql', '003-link-catalog.sql']) {
+  for (const file of ['001-initial.sql', '002-form-templates.sql', '003-link-catalog.sql', '004-txt-import.sql']) {
     const migration = await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8');
     await db.migrate(migration);
   }

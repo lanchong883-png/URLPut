@@ -43,4 +43,21 @@ test('keeps one persistent ledger per confirmation and enforces membership', asy
   assert.equal(list.json()[0].rowCount, 3);
   assert.deepEqual((await app.inject({ url: `${path}/${batch.id}`, headers })).json(), batch);
   assert.equal((await app.inject({ url: `${path}/${batch.id}`, headers: outsider })).statusCode, 404);
+
+  await migrate(database);
+  const sourceText = '目录 https://example.org；备用 https://example.net';
+  const txt = await app.inject({
+    method: 'POST', url: path, headers, payload: {
+      ...payload, requestId: randomUUID(), source: 'txt', filename: '目录.txt',
+      rows: [{ ...row, sourceText }, { ...row, url: 'https://example.net', sourceText }],
+    },
+  });
+  assert.equal(txt.statusCode, 200, txt.body);
+  const textBatch = txt.json();
+  assert.equal(textBatch.source, 'txt');
+  assert.equal(textBatch.filename, '目录.txt');
+  assert.deepEqual(textBatch.rows.map((item: typeof row & { sourceText: string }) => [item.sourceLine, item.sourceText]),
+    [[2, sourceText], [2, sourceText]]);
+  assert.deepEqual((await app.inject({ url: `${path}/${textBatch.id}`, headers })).json(), textBatch);
+  assert.deepEqual((await app.inject({ url: `${path}/${batch.id}`, headers })).json(), batch);
 });
