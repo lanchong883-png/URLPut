@@ -355,7 +355,7 @@ const actionIcons={
   'new-content':'plus','new-auth-preset':'plus','new-auth-email':'plus',
   'edit-content':'edit','edit-library':'edit','edit-auth-preset':'edit',
   'delete-site':'trash','delete-content':'trash','confirm-delete-site':'trash','confirm-delete-content':'trash',
-  export:'download','export-link-list':'download','export-all-links':'download','download-site-columns':'download',
+  export:'download','export-link-list':'download','export-all-links':'download','download-site-columns':'download','download-link-columns':'download',
   'download-import-sites':'download','download-import-links':'download',
   'return-content':'back','return-auth':'back','return-setup':'back',tasks:'back',
   resume:'play',pause:'pause',stop:'stop',resolve:'check','check-confirmation':'check',
@@ -396,7 +396,7 @@ const demoLinkFailures=new Map([
   ['closed.example','页面失效：入口已移除（模拟）'],
 ]);
 function simulatedLinkIssue(url){return demoLinkFailures.get(url.hostname)}
-function siteCsvRecords(value){
+function csvRecords(value){
   const text=value.replace(/^\uFEFF/,'');
   const token=/"(?:[^"]|"")*"(?=,|\r|\n|$)|[^,"\r\n]+|[",\r\n]/gy;
   const records=[];
@@ -428,7 +428,7 @@ function siteCsvRecords(value){
 const siteUrlColumns=['站点网址','推广站点网址','官网','url','网址','域名'];
 const csvKey=value=>value.trim().normalize('NFKC').toLowerCase();
 function siteImportRows(value){
-  const records=siteCsvRecords(value);
+  const records=csvRecords(value);
   const header=records[0];
   if(!header)return [];
   const headers=header.fields.map(csvKey);
@@ -453,11 +453,35 @@ function siteImportRows(value){
   });
 }
 
+const linkColumns=['外链 URL','网站类型','价格类别','样本链接属性','Ahrefs DR','描述'];
+const linkExample=['https://directory.example/submit','目录站','免费','Dofollow','50','替换为实际投稿页面'];
+function linkImportRows(value){
+  const records=csvRecords(value);
+  if(!records.length)return [];
+  const headers=records[0].fields.map(csvKey);
+  const urlIndex=headers.findIndex(name=>['外链 url','外链url','url','网址','域名','站点网址','外链网址'].includes(name));
+  if(urlIndex<0)return records.map(record=>record.fields.length===1?{...record,input:record.fields[0]}:
+    {...record,reason:'多列 CSV 需要「外链 URL」表头。'});
+  return records.slice(1).map(record=>{
+    const field=label=>record.fields[headers.indexOf(csvKey(label))]?.trim()??'';
+    const price=field('价格类别'),rel=field('样本链接属性'),rating=field('Ahrefs DR');
+    const observedRel=['Dofollow','Nofollow','Sponsored','UGC','未知'].find(item=>csvKey(item)===csvKey(rel));
+    let reason;
+    if(record.fields.length>headers.length)reason='数据列多于表头，请检查含逗号的字段是否已加引号。';
+    else if(price&&!priceTypes.includes(price))reason='价格类别请填免费、付费或价格未知。';
+    else if(rel&&!observedRel)reason='链接属性请填 Dofollow、Nofollow、Sponsored、UGC 或未知。';
+    else if(rating&&(!/^\d+(?:\.\d+)?$/.test(rating)||Number(rating)>100))reason='Ahrefs DR 请填 0 至 100 的数字，未知时留空。';
+    return {...record,input:record.fields[urlIndex]??'',reason,metadata:{
+      siteType:field('网站类型'),priceType:price,observedRel:observedRel??'未知',
+      dr:rating?Number(rating):null,description:field('描述')}};
+  });
+}
+
 function compareImport(value,kind,format){
   const known=kind==='sites'?new Map(sites.map(site=>[new URL(site.url).hostname,site])):
     new Map(linkLists.flatMap(list=>list.links.map(link=>[link.url,list])));
   const seen=new Set(),rows=[];
-  const records=kind==='sites'&&format==='csv'?siteImportRows(value):
+  const records=format==='csv'?(kind==='sites'?siteImportRows(value):linkImportRows(value)):
     value.replace(/^\uFEFF/,'').split(/\r\n|\n|\r/).map((line,index)=>({line:index+1,raw:line,input:line.trim()}));
   for(const record of records){
     const {line,raw,profile}=record;
@@ -465,11 +489,7 @@ function compareImport(value,kind,format){
     if(record.reason||record.invalid){
       rows.push({line,raw,status:'error',reason:record.reason??'CSV 引号格式有误。'});continue;
     }
-    let input=record.input;
-    if(kind==='links'&&format==='csv'){
-      if(!rows.length&&/^(?:"?(?:url|网址|域名|站点网址|外链\s*url)"?)$/i.test(input))continue;
-      input=input.replace(/^"([^"]*)"$/,'$1');
-    }
+    const input=record.input;
     const url=checkedUrl(input,kind);
     if(!url){
       rows.push({line,raw,status:'error',reason:kind==='sites'?'请输入有效域名或 HTTP/HTTPS 站点网址。':'请输入完整的 HTTP/HTTPS 外链网址。'});
@@ -484,7 +504,7 @@ function compareImport(value,kind,format){
     const previous=known.get(key);
     const status=seen.has(key)?'duplicate':previous&&!previous.deleted?'existing':'new';
     seen.add(key);
-    rows.push({line,raw,url:url.href,key,previous,status,profile,
+    rows.push({line,raw,url:url.href,key,previous,status,profile,metadata:record.metadata,
       name:kind==='sites'?url.hostname:previous?.name??url.hostname,
       reason:status==='duplicate'?'本次输入已有相同项':previous?.deleted?'可重新添加，保留原站点历史':status==='existing'?'已保存在清单':'可加入清单'});
   }
@@ -500,8 +520,8 @@ function reviewMarkup(kind){
   return detail('import-'+kind,icon('upload')+'录入或导入'+label,
     '<label class="field">录入'+label+'（每行一个）<textarea id="input-'+kind+'" rows="3" placeholder="'+(kind==='sites'?'brand.example':'https://directory.example/submit')+'">'+safe(draft.text)+'</textarea></label>'+
     '<label class="field">上传'+label+'文件<input id="file-'+kind+'" type="file" accept=".txt,.csv,text/plain,text/csv"></label>'+
-    '<p class="hint">'+(kind==='sites'?'站点名称取域名。用多列 CSV 导入站点资料，图片文件在站点编辑中上传。':'TXT 或单列 CSV。可用 offline.example 或 timeout.example 演示访问失败。')+(draft.filename?' · '+safe(draft.filename):'')+'</p>'+
-    (kind==='sites'?btn('下载站点资料 CSV 模板','download-site-columns','subtle'):'')+
+    '<p class="hint">'+(kind==='sites'?'站点名称取域名。用多列 CSV 导入站点资料，图片文件在站点编辑中上传。':'TXT 每行一个网址。CSV 只需填写外链 URL，其余列可留空。请替换模板中的示例行。')+(draft.filename?' · '+safe(draft.filename):'')+'</p>'+
+    (kind==='sites'?btn('下载站点资料 CSV 模板','download-site-columns','subtle'):btn('下载外链 CSV 模板','download-link-columns','subtle'))+
     '<p class="hint">检查后自动导入新增有效项，已有和重复项会跳过。</p>'+
     '<button class="button secondary" data-action="review-'+kind+'" '+(draft.loading||rows||!draft.text.trim()?'disabled':'')+'>检查'+label+'</button>'+
     (draft.error?'<p class="hint" role="alert">'+safe(draft.error)+'</p>':'')+
@@ -532,7 +552,7 @@ function checkAndImport(kind){
     if(libraryFromSetup)listId=id;
     const name=draft.filename.replace(/\.[^.]+$/,'')||'外链清单 '+(linkLists.length+1);
     linkLists=[...linkLists,{id,name,source:draft.filename?draft.format:'paste',
-      links:fresh.map(row=>({id:'row-'+row.line,line:row.line,url:row.url,status:'active'}))}];
+      links:fresh.map(row=>({id:'row-'+row.line,line:row.line,url:row.url,...row.metadata,status:'active'}))}];
   }
   draft.rows=rows;
   draft.error='';
@@ -945,7 +965,7 @@ function authOptions(){
   return detail('auth',stepTitle(5,'认证与二次确认')+' <small>'+(authDraft.register?'允许新注册':'仅登录已有账号')+'</small>',
     '<div class="stack">'+checkbox('google','允许使用目标站点的 Google 登录')+
     checkbox('savedCredentials','允许复用 Chrome／Google 保存的站点密码')+
-    checkbox('register','允许注册新账号')+checkbox('gmail','允许使用已授权的 Gmail 检查验证邮件')+checkbox('confirmPublish','正式发表前需要我确认')+'</div>'+
+    checkbox('register','允许注册新账号')+checkbox('gmail','允许使用已授权的 Gmail 检查验证邮件')+checkbox('confirmPublish','每条投稿都先让我确认，再提交')+'</div>'+
     '<p class="hint">邮箱默认 '+safe(authAccounts.email||'未设置')+' · 密码 '+safe(authAccounts.presets.find(preset=>preset.id===authAccounts.defaultPreset)?.name??'手动选择')+'</p>'+
     '<p class="hint">Google 默认 '+safe(authAccounts.googleEmail||'未设置')+'</p>'+
     '<p class="hint">优先复用已核对的登录状态。第三方登录邮箱和 Google 默认账号在「认证方式」管理。选账号、同意授权和二次验证都由用户确认。</p>'+
@@ -1624,7 +1644,7 @@ document.addEventListener('change',event=>{
     const kind=input.id.slice(5),draft=imports[kind],file=input.files[0];
     const read=++draft.read;
     if(!/\.(txt|csv)$/i.test(file.name)||file.size>2_000_000){
-      draft.loading=false;draft.error='请选择小于 2 MB 的 TXT 或单列 CSV 文件。';render();return;
+      draft.loading=false;draft.error='请选择小于 2 MB 的 TXT 或 CSV 文件。';render();return;
     }
     draft.loading=true;
     draft.error='';
@@ -1772,6 +1792,9 @@ document.addEventListener('click',event=>{
     const asTemplate=text=>text.replaceAll(site.url,'{{站点网址}}').replaceAll(site.name,'{{站点名称}}');
     openTemplateEditor({name:'AI 投稿草稿',category:record.content.category,title:asTemplate(record.content.title),body:asTemplate(record.content.body)});
     return;
+  }
+  if(action==='download-link-columns'){
+    downloadCsv([linkColumns,linkExample],'URLPut-外链导入模板.csv');return;
   }
   if(action==='download-site-columns'){
     downloadCsv([['站点网址',...profileFields.map(field=>field.label)]],'URLPut-站点资料导入模板.csv');return;
