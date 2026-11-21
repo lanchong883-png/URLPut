@@ -10,11 +10,13 @@
 header{padding:14px 15px 10px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}.brand{font-weight:800;font-size:19px;letter-spacing:-.035em}.bar,.row,.actions{display:flex;align-items:center;gap:8px;min-width:0}.bar,.row{justify-content:space-between}.actions{flex-wrap:wrap}.grow{flex:1}.muted,small{color:var(--muted)}.hint{font-size:12px;color:var(--muted)}nav{display:flex;gap:16px;margin-top:7px}nav button{background:none;border:0;padding:6px 2px;color:var(--muted);border-bottom:2px solid transparent}nav button[aria-current]{font-weight:750;color:var(--accent);border-bottom-color:var(--accent)}
 main{padding:12px 14px 20px}h1,h2,h3,p{margin:0}h1{font-size:18px;margin-bottom:8px}h2{font-size:14px}h3{font-size:13px}.card,details{background:#fff;border:1px solid var(--line);border-radius:10px;margin-bottom:9px;padding:10px 11px}.card p,details p{margin:5px 0}summary{cursor:pointer;font-weight:700;overflow-wrap:anywhere}summary small{font-weight:500}details[open] summary{margin-bottom:9px}.stack{display:grid;gap:7px}.list{max-height:186px;overflow:auto}.item{padding:6px 0;border-bottom:1px solid #e7eeeb;overflow-wrap:anywhere}.item:last-child{border-bottom:none}.item label{display:flex;align-items:flex-start;gap:7px}.truncate{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
 input:not([type=radio],[type=checkbox]),select,textarea{width:100%;min-width:0;padding:6px 7px;border:1px solid #b9cbc4;border-radius:6px;background:#fff}textarea{resize:vertical}label.field{display:grid;gap:3px;margin:5px 0}.check{display:flex;align-items:center;gap:6px}.check input{margin:0}.button{background:var(--accent);color:#fff;border:1px solid var(--accent);padding:5px 9px;border-radius:7px;font-weight:700}.secondary{background:#fff;color:var(--accent);border-color:#b8cec5}.subtle{background:transparent;color:var(--accent);border-color:transparent}.full{width:100%;padding:8px}.chip{display:inline-block;border-radius:99px;background:var(--soft);padding:2px 7px;color:var(--accent);font-size:11px;font-weight:700;white-space:nowrap}.chip.warm{background:var(--warm);color:#755316}.stats{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:7px 0}.stats div{background:#edf5f2;border-radius:7px;padding:6px 8px}.stats strong{display:block;font-size:19px;line-height:1.1}.meter{height:8px;background:#e2ece8;border-radius:99px;overflow:hidden;margin:7px 0}.meter div{height:100%;background:#248366}.notice{min-height:1em;color:var(--accent);font-size:12px;margin-top:6px}.links{overflow-wrap:anywhere}.settings{font-size:12px}
+dialog{width:min(360px,calc(100% - 24px));border:1px solid var(--line);border-radius:10px;padding:14px;color:inherit;background:#fff}dialog::backdrop{background:#183a3466}
 </style>
 <div class="panel">
 <header><div class="bar"><div class="brand">URLPut</div><span class="chip">模拟演示</span><button class="button secondary settings" data-action="settings">设置</button></div><nav id="nav" aria-label="插件导航"></nav></header>
 <main id="main"></main>
 </div>
+<dialog id="dialog" aria-labelledby="editor-title"></dialog>
 <script>
 const numbers = new Intl.NumberFormat('zh-CN');
 const n = value => numbers.format(value);
@@ -23,18 +25,23 @@ const demoLinks = Array.from({length:1000},(_,i)=>({id:'row-'+(i+1),line:i+1,url
 const storageKey = 'urlput-panel-prototype-v2';
 let saved;
 try {saved=JSON.parse(localStorage.getItem(storageKey))}catch{}
-let sites=saved?.sites??demoSites, links=saved?.links??demoLinks, batches=saved?.batches??[];
+const sourceNames={paste:'直接粘贴',csv:'CSV 文件',excel:'Excel 工作表',txt:'TXT 文件'};
+let sites=saved?.sites??demoSites, batches=saved?.batches??[];
+let linkLists=saved?.linkLists??[{id:'initial',name:'示例外链清单',source:'csv',links:saved?.links??demoLinks}];
+let listId=saved?.listId??'initial';
+let taskQuery='',taskFilter='all',taskPageIndex=0,libraryTab='sites',libraryQuery='',libraryPageIndex=0,showArchived=false,editing='',batchName='';
 let batch=batches.find(item=>item.id===saved?.batchId)??batches.at(-1)??null;
-let picked=new Set(saved?.picked??[]), view='setup', query='', scope='', source='csv', limit=1000, mode='analysis', notice='';
+let picked=new Set(saved?.picked??[]), view='setup', query='', scope='', limit=1000, mode='analysis', notice='';
 let open=new Set(['sites']), model={type:'local',endpoint:'http://127.0.0.1:11434/v1',name:'',analysis:false,writing:false};
-const main = document.querySelector('#main'), nav = document.querySelector('#nav');
-function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,links,batches,batchId:batch?.id,picked:[...picked]}))}catch{}}
+const main = document.querySelector('#main'), nav = document.querySelector('#nav'), dialog=document.querySelector('#dialog');
+function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked]}))}catch{}}
 const safe = value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const btn = (label,action,style='')=>'<button class="button '+style+'" data-action="'+action+'">'+label+'</button>';
 const detail = (id,title,body)=>'<details data-section="'+id+'" '+(open.has(id)?'open':'')+'><summary>'+title+'</summary>'+body+'</details>';
-const matchSites=()=>sites.filter(site=>(site.name+' '+site.url).toLowerCase().includes(query.toLowerCase()));
-const selected=()=>sites.filter(site=>picked.has(site.id));
-const perSite=()=>Math.min(links.length,limit);
+const matchSites=()=>sites.filter(site=>!site.archived&&matches(site.name+' '+site.url,query));
+const selected=()=>sites.filter(site=>!site.archived&&picked.has(site.id));
+const currentList=()=>linkLists.find(list=>list.id===listId&&!list.archived);
+const perSite=()=>Math.min(currentList()?.links.length??0,limit);
 function setup(){
   const visible=matchSites();
   const selectors=visible.slice(0,20).map(site=>'<div class="item"><label><input type="checkbox" data-site="'+safe(site.id)+'" '+(picked.has(site.id)?'checked':'')+'><span>'+safe(site.name)+'<small class="truncate">'+safe(site.url)+'</small></span></label></div>').join('');
@@ -45,27 +52,24 @@ function setup(){
       '<div class="actions">'+btn('全选搜索结果','select-all','secondary')+btn('清空选择','clear','subtle')+'</div>'+
       '<div class="list">'+(selectors||'<p class="hint">没有匹配站点。</p>')+'</div>'+
       (visible.length>20?'<p class="hint result-count">展示前 20 个，共 '+n(visible.length)+' 个匹配。全选包含所有匹配站点。</p>':'')+
-      '<details data-section="edit-sites" '+(open.has('edit-sites')?'open':'')+'><summary>导入推广站点清单</summary><label class="field">每行一个站点网址<textarea id="site-input" rows="3" placeholder="https://your-site.example/"></textarea></label>'+btn('保存站点清单','save-sites','secondary')+' '+btn('恢复 100 个示例站点','demo-sites','subtle')+'</details>')+
-    detail('links','2. 外链清单 <small>· '+n(links.length)+' 条可用候选</small>',
-      '<label class="field">导入方式<select id="source"><option value="csv">CSV 文件</option><option value="excel">Excel 工作表</option><option value="txt">TXT 文件</option><option value="paste">直接粘贴</option></select></label>'+
-      '<label class="field">粘贴外链网址，每行一条<textarea id="link-input" rows="3" placeholder="https://directory.example/submit"></textarea></label>'+
-      '<p class="hint">可演示 1,000 条共享候选。CSV、Excel 和 TXT 在此原型中使用内置样本。</p>'+
-      '<div class="actions">'+btn('载入 1,000 条示例','demo-links','secondary')+btn('使用粘贴清单','save-links','subtle')+'</div>'+
-      '<p class="hint links">'+safe(links[0]?.url??'未载入外链')+'</p>')+
-    '<section class="card"><h2>启动预览</h2><label class="field">每站最多使用<input id="limit" type="number" min="1" max="10000" value="'+safe(limit)+'"></label>'+
+      btn('维护推广站点','manage-sites','subtle'))+
+    detail('links','2. 外链清单 <small>· '+n(currentList()?.links.length??0)+' 条可用候选</small>',
+      '<label class="field">共享外链清单<select id="shared-list"><option value="">请选择清单</option>'+linkLists.filter(list=>!list.archived).map(list=>'<option value="'+safe(list.id)+'" '+(list.id===listId?'selected':'')+'>'+safe(list.name)+' · '+n(list.links.length)+' 条</option>').join('')+'</select></label>'+
+      btn('导入或维护外链清单','manage-links','subtle'))+
+    '<section class="card"><h2>启动预览</h2><label class="field">批次名称（可选）<input id="batch-name" value="'+safe(batchName)+'"></label><label class="field">每站最多使用<input id="limit" type="number" min="1" max="10000" value="'+safe(limit)+'"></label>'+
     '<div class="stats"><div><strong id="per-site">'+n(perSite())+'</strong><small>每站候选</small></div><div><strong id="combinations">'+n(picked.size*perSite())+'</strong><small>站点 × 外链组合</small></div></div>'+
     '<p class="hint">每个已选推广站点都用同一份外链清单。历史投稿和同平台跳过会影响实际尝试数。</p>'+
     '<label class="field">执行方式<select id="mode"><option value="analysis">仅分析</option><option value="execute">分析后执行（模拟）</option></select></label>'+
     '<button class="button full" data-action="start" '+(!picked.size||!perSite()?'disabled':'')+'>启动模拟批次</button><p class="notice" role="status">'+safe(notice)+'</p></section>';
 }
-function metrics(site){
-  const width=batch.links.length, index=site?batch.sites.indexOf(site):-1;
+function metrics(site,batchItem=batch){
+  const width=batchItem.links.length, index=site?batchItem.sites.indexOf(site):-1;
   const start=index<0?0:index*width;
-  const total=index<0?batch.sites.length*width:width;
+  const total=index<0?batchItem.sites.length*width:width;
   // One deliberately held row belongs to the first site.
-  const held=batch.manual&&start===0?1:0;
-  const regular=Math.max(0,Math.min(total,batch.cursor-start));
-  const pending=held&&!batch.resolved?1:0;
+  const held=batchItem.manual&&start===0?1:0;
+  const regular=Math.max(0,Math.min(total,batchItem.cursor-start));
+  const pending=held&&!batchItem.resolved?1:0;
   const dealt=Math.max(0,regular-pending);
   return {total,dealt,pending,percent:Math.floor(dealt*100/total)};
 }
@@ -75,38 +79,112 @@ function sample(site){
     const index=batch.sites.indexOf(target)*batch.links.length+offset;
     const pending=index===0&&batch.manual&&!batch.resolved;
     const complete=index<batch.cursor&&!pending;
-    return {target,link,status:pending?'需人工':complete?'已处理':'排队中'};
+    const status=pending?'需人工':complete?'已处理':'排队中';
+    const result=pending?'等待核对账号':!complete?'等待继续':batch.mode==='analysis'?'仅分析 · 已检查入口':
+      ['模拟有效外链','模拟待审核','模拟入口已关闭'][index%3];
+    return {target,link,status,result};
   }));
 }
 function progress(){
-  if(!batch)return '<h1>任务进度</h1><section class="card"><p>还没有批次。</p>'+btn('新建批次','setup')+'</section>';
+  if(!batch)return '<h1>任务进度</h1><section class="card"><p>还没有批次。</p>'+btn('创建批次','setup')+'</section>';
   const site=batch.sites.find(site=>site.id===scope);
-  const m=metrics(site), overall=metrics();
-  const finished=overall.dealt===overall.total;
-  const waiting=!finished&&batch.cursor===overall.total;
-  const status=finished?'批次已完成':waiting?'等待人工处理':batch.paused?'已暂停':'执行中';
+  const m=metrics(site);
+  const [state,status]=batchStatus(batch);
   const records=sample(site);
-  return '<h1>任务进度</h1><section class="card">'+
-    (batches.length>1?'<label class="field">演示批次<select id="batch-picker">'+batches.map(item=>'<option value="'+item.id+'" '+(item===batch?'selected':'')+'>批次 '+item.id+' · '+n(item.sites.length)+' 站 × '+n(item.links.length)+' 条</option>').join('')+'</select></label>':'')+
+  return '<div class="row"><h1>'+safe(batch.name||'批次 '+batch.id)+'</h1>'+btn('返回任务','tasks','subtle')+'</div><section class="card">'+
     '<div class="row"><h2>'+status+'</h2><span class="chip">'+(batch.mode==='analysis'?'仅分析':'模拟执行')+'</span></div>'+
+    (batch.interrupted?'<p class="hint">本批次已停止。继续时从保存的进度恢复。</p>':'')+
     '<p class="hint">'+n(batch.sites.length)+' 个推广站点 · 每站 '+n(batch.links.length)+' 条 · 批次快照</p>'+
+    (batch.listName?'<p class="hint">外链清单 · '+safe(batch.listName)+'</p>':'')+
     '<label class="field">查看范围<select id="scope"><option value="">全部站点</option>'+batch.sites.map(site=>'<option value="'+safe(site.id)+'" '+(site.id===scope?'selected':'')+'>'+safe(site.name)+'</option>').join('')+'</select></label>'+
     '<div class="meter" role="progressbar" aria-label="已处理比例" aria-valuenow="'+m.percent+'"><div style="width:'+m.percent+'%"></div></div>'+
     '<div class="row"><span>已处理 '+n(m.dealt)+' / '+n(m.total)+'</span><strong>'+m.percent+'%</strong></div>'+
-    (!finished&&!waiting?'<div class="actions" style="margin-top:7px">'+btn(batch.paused?'继续':'暂停','pause','secondary')+(!batch.paused?btn('推进一步','advance','subtle'):'')+'</div>':'')+'</section>'+
-    (m.pending?'<section class="card"><div class="row"><h2>人工待办</h2><span class="chip warm">1 条</span></div><p>'+safe(batch.sites[0].name)+' → '+safe(batch.links[0].url)+'</p><p class="hint">核对站点专用账号。其他组合继续运行。</p>'+btn('已确认，恢复该条','resolve','secondary')+'</section>':'')+
+    (state==='waiting'?'<div class="actions">'+btn('中断','interrupt','subtle')+'</div>':'')+
+    (state!=='completed'&&state!=='waiting'?'<div class="actions" style="margin-top:7px">'+(state==='paused'||state==='interrupted'?btn('继续','resume','secondary'):btn('暂停','pause','secondary')+btn('推进一步','advance','subtle'))+(state!=='interrupted'?btn('中断','interrupt','subtle'):'')+'</div>':'')+'</section>'+
+    (m.pending&&state!=='interrupted'?'<section class="card"><div class="row"><h2>人工待办</h2><span class="chip warm">1 条</span></div><p>'+safe(batch.sites[0].name)+' → '+safe(batch.links[0].url)+'</p><p class="hint">核对站点专用账号。其他组合继续运行。</p>'+btn('已确认，恢复该条','resolve','secondary')+'</section>':'')+
     detail('report','记录与导出 <small>· 当前范围抽样</small>',
       '<p class="hint">每条都保留推广站点、来源行和外链网址。</p>'+
-      '<div class="list">'+records.map(({target,link,status})=>'<div class="item"><div class="row"><strong>'+safe(target.name)+'</strong><span class="chip">'+status+'</span></div><small class="links">第 '+link.line+' 行 · '+safe(link.url)+'</small></div>').join('')+'</div>'+
+      '<div class="list">'+records.map(({target,link,status,result})=>'<div class="item"><div class="row"><strong>'+safe(target.name)+'</strong><span class="chip">'+status+'</span></div><small class="links">第 '+link.line+' 行 · '+safe(link.url)+'</small><p class="hint">'+result+'</p></div>').join('')+'</div>'+
       btn('导出演示样本 CSV','export','secondary')+'<p class="notice" role="status" id="export-notice"></p>');
 }
+const pageSize=8;
+function batchStatus(item){
+  const total=item.sites.length*item.links.length;
+  if(item.cursor===total&&(!item.manual||item.resolved))return ['completed','已完成'];
+  if(item.interrupted)return ['interrupted','已中断'];
+  if(item.paused)return ['paused','已暂停'];
+  if(item.cursor===total)return ['waiting','待人工'];
+  return ['running','执行中'];
+}
+function matches(value,term){return value.toLowerCase().includes(term.trim().toLowerCase())}
+function paging(type,count,index){
+  const pages=Math.max(1,Math.ceil(count/pageSize));
+  if(pages===1)return '';
+  return '<div class="row" style="margin-top:8px"><button class="button secondary" data-action="'+type+'-prev" '+(index===0?'disabled':'')+'>上一页</button><small>第 '+(index+1)+' / '+pages+' 页</small><button class="button secondary" data-action="'+type+'-next" '+(index+1>=pages?'disabled':'')+'>下一页</button></div>';
+}
+function taskRows(){
+  const filtered=[...batches].reverse().filter(item=>{
+    const [status]=batchStatus(item);
+    return (taskFilter==='all'||status===taskFilter)&&matches((item.name||'')+' 批次 '+item.id,taskQuery);
+  });
+  taskPageIndex=Math.min(taskPageIndex,Math.max(0,Math.ceil(filtered.length/pageSize)-1));
+  return filtered.length?'<div>'+filtered.slice(taskPageIndex*pageSize,(taskPageIndex+1)*pageSize).map(item=>{
+    const [status,label]=batchStatus(item);
+    const m=metrics(undefined,item);
+    return '<div class="item"><div class="row"><strong>'+safe(item.name||'批次 '+item.id)+'</strong><span class="chip '+(status==='waiting'||status==='interrupted'?'warm':'')+'">'+label+'</span></div>'+
+      '<p class="hint">'+n(item.sites.length)+' 站 · '+n(m.dealt)+' / '+n(m.total)+' 条已处理</p>'+
+      entityButton(status==='completed'?'查看结果':'查看进度','open-task',item.id)+'</div>';
+  }).join('')+'</div>'+paging('task',filtered.length,taskPageIndex):'<p class="hint">没有符合条件的批次。</p>';
+}
+function tasks(){
+  return '<h1>任务</h1><section class="card"><label class="field">搜索批次<input id="task-search" placeholder="批次名称或编号" value="'+safe(taskQuery)+'"></label>'+
+    '<label class="field">任务状态<select id="task-filter">'+[['all','全部'],['running','执行中'],['waiting','待人工'],['paused','已暂停'],['interrupted','已中断'],['completed','已完成']].map(([id,label])=>'<option value="'+id+'" '+(id===taskFilter?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
+    '<div id="task-rows">'+taskRows()+'</div>'+(!batches.length?btn('载入历史任务示例','demo-history','secondary'):'')+'</section>';
+}
+const entityButton=(label,action,key)=>'<button class="button secondary" data-action="'+action+'" data-key="'+safe(key)+'">'+label+'</button>';
+function libraryRows(){
+  const isSites=libraryTab==='sites';
+  const items=isSites?sites:linkLists;
+  const filtered=items.filter(item=>(showArchived?Boolean(item.archived):!item.archived)&&matches(item.name+' '+(isSites?item.url:''),libraryQuery));
+  libraryPageIndex=Math.min(libraryPageIndex,Math.max(0,Math.ceil(filtered.length/pageSize)-1));
+  return filtered.length?'<div>'+filtered.slice(libraryPageIndex*pageSize,(libraryPageIndex+1)*pageSize).map(item=>
+    '<div class="item"><strong>'+safe(item.name)+'</strong><p class="hint truncate">'+(isSites?safe(item.url):n(item.links.length)+' 条 · '+safe(sourceNames[item.source]??'清单'))+'</p>'+
+    '<div class="actions">'+entityButton('查看／编辑','edit-library',item.id)+entityButton(item.archived?'恢复':'归档','archive-library',item.id)+'</div></div>'
+  ).join('')+'</div>'+paging('library',filtered.length,libraryPageIndex):'<p class="hint">没有符合条件的记录。</p>';
+}
+function library(){
+  const isSites=libraryTab==='sites';
+  return '<h1>清单</h1><section class="card"><div class="actions">'+btn('推广站点','library-sites',isSites?'':'secondary')+btn('外链清单','library-links',isSites?'secondary':'')+'</div>'+
+    '<label class="field">搜索'+(isSites?'站点':'清单')+'<input id="library-search" value="'+safe(libraryQuery)+'"></label>'+
+    '<label class="check"><input type="checkbox" id="archived-only" '+(showArchived?'checked':'')+'>查看已归档</label>'+
+    '<div id="library-rows">'+libraryRows()+'</div></section>'+
+    (isSites?detail('site-add','批量添加推广站点',
+      '<label class="field">每行一个站点网址<textarea id="site-input" rows="3" placeholder="https://your-site.example/"></textarea></label>'+btn('添加站点','save-sites','secondary')):
+      detail('link-add','新建外链清单',
+      '<label class="field">清单名称<input id="list-name"></label><label class="field">导入方式<select id="new-list-source">'+Object.entries(sourceNames).map(([id,label])=>'<option value="'+id+'">'+label+'</option>').join('')+'</select></label>'+
+      '<label class="field">粘贴外链网址，每行一条<textarea id="link-input" rows="3"></textarea></label><p class="hint">CSV、Excel、TXT 在原型里使用内置样本，可另存为独立清单。</p>'+
+      '<div class="actions">'+btn('保存粘贴清单','save-links','secondary')+btn('保存示例清单','demo-links','secondary')+'</div>'))+
+    '<p class="notice" role="status">'+safe(notice)+'</p>';
+}
+function openEditor(item){
+  const site=libraryTab==='sites';
+  editing=item.id;
+  dialog.innerHTML='<h2 id="editor-title">'+(site?'维护推广站点':'维护外链清单')+'</h2>'+
+    '<label class="field">名称<input id="edit-name" value="'+safe(item.name)+'"></label>'+
+    (site?'<label class="field">站点网址<input id="edit-url" value="'+safe(item.url)+'"></label>':
+      '<label class="field">外链网址，每行一条<textarea id="edit-links" rows="6">'+safe(item.links.map(link=>link.url).join('\n'))+'</textarea></label>')+
+    '<p class="hint">修改仅用于后续批次。已启动批次继续使用原快照。</p><p role="status" id="editor-error"></p>'+
+    '<div class="actions">'+btn('保存修改','save-edit')+btn('关闭','close-dialog','secondary')+'</div>';
+  dialog.showModal();
+}
+
 function settings(){
   return '<h1>设置</h1><section class="card"><h2>AI 模型</h2><label class="field">服务类型<select id="model-type"><option value="local">本地模型</option><option value="custom">自建模型服务</option></select></label><label class="field">API 地址<input id="endpoint" value="'+safe(model.endpoint)+'"></label><label class="field">模型名<input id="model-name" value="'+safe(model.name)+'"></label><div class="actions"><label class="check"><input id="model-analysis" type="checkbox" '+(model.analysis?'checked':'')+'>AI 分析</label><label class="check"><input id="model-writing" type="checkbox" '+(model.writing?'checked':'')+'>AI 文案</label></div><p class="hint">只演示配置，页面不会发起模型请求。</p>'+btn('模拟保存','save-model','secondary')+'<p class="notice" role="status">'+safe(notice)+'</p></section>';
 }
 function render(){
-  nav.innerHTML=[['setup','新建批次'],['progress','任务进度']].map(([id,label])=>'<button data-action="'+id+'" '+(view===id?'aria-current="page"':'')+'>'+label+'</button>').join('');
-  main.innerHTML={setup,progress,settings}[view]();
-  if(view==='setup'){document.querySelector('#source').value=source;document.querySelector('#mode').value=mode}
+  nav.innerHTML=[['setup','新建批次'],['tasks','任务'],['library','清单']].map(([id,label])=>'<button data-action="'+id+'" '+((view===id||view==='progress'&&id==='tasks')?'aria-current="page"':'')+'>'+label+'</button>').join('');
+  main.innerHTML={setup,tasks,library,progress,settings}[view]();
+  if(view==='setup'){document.querySelector('#mode').value=mode}
   if(view==='settings')document.querySelector('#model-type').value=model.type;
 }
 function refreshSection(id){
@@ -145,20 +223,25 @@ function advance(targets=batches){
   let changed=false;
   for(const item of targets){
     const total=item.sites.length*item.links.length;
-    if(item.paused||item.cursor>=total)continue;
+    if(item.paused||item.interrupted||item.cursor>=total)continue;
     item.manual=true;
     item.cursor=Math.min(total,item.cursor+Math.max(1,Math.ceil(total/5)));
     changed=true;
   }
-  if(changed){persist();if(view==='progress')render()}
+  if(changed){persist();if(view==='progress')render();if(view==='tasks'&&!dialog.open)document.querySelector('#task-rows').innerHTML=taskRows()}
 }
 function exportSample(){
   const site=batch.sites.find(site=>site.id===scope);
-  const rows=[['推广站点','推广站点网址','外链 URL','外链来源行','状态'],
-    ...sample(site).map(({target,link,status})=>[target.name,target.url,link.url,link.line,status])];
-  const csv=rows.map(row=>row.map(value=>'"'+String(value).replaceAll('"','""')+'"').join(',')).join('\r\n');
+  const rows=[['推广站点','推广站点网址','外链 URL','外链来源行','状态','结论'],
+    ...sample(site).map(({target,link,status,result})=>[target.name,target.url,link.url,link.line,status,result])];
+  const csvCell=value=>{
+    const text=String(value);
+    const escaped=/^[=+@\-\t\r\n]/.test(text)?"'"+text:text;
+    return '"'+escaped.replaceAll('"','""')+'"';
+  };
+  const csv=rows.map(row=>row.map(csvCell).join(',')).join('\r\n');
   const url=URL.createObjectURL(new Blob(['\uFEFF',csv],{type:'text/csv;charset=utf-8'}));
-  const anchor=document.createElement('a');anchor.href=url;anchor.download='URLPut-演示批次记录.csv';anchor.click();
+  const anchor=document.createElement('a');anchor.href=url;anchor.download='URLPut-批次-'+batch.id+'-演示记录.csv';anchor.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
   document.querySelector('#export-notice').textContent='已导出 '+(rows.length-1)+' 条演示记录。';
 }
@@ -169,42 +252,97 @@ document.addEventListener('toggle',event=>{
 },true);
 document.addEventListener('input',event=>{
   if(event.target.id==='site-search'){query=event.target.value;refreshSection('sites')}
+  if(event.target.id==='task-search'){taskQuery=event.target.value;taskPageIndex=0;document.querySelector('#task-rows').innerHTML=taskRows()}
+  if(event.target.id==='library-search'){libraryQuery=event.target.value;libraryPageIndex=0;document.querySelector('#library-rows').innerHTML=libraryRows()}
+  if(event.target.id==='batch-name')batchName=event.target.value;
   if(event.target.id==='limit'){limit=Math.max(0,Math.min(10000,Math.floor(Number(event.target.value)||0)));refreshSection('limit')}
 });
 document.addEventListener('change',event=>{
   const input=event.target;
   if(input.dataset.site){if(input.checked)picked.add(input.dataset.site);else picked.delete(input.dataset.site);persist();refreshSection('sites')}
-  if(input.id==='batch-picker'){batch=batches.find(item=>String(item.id)===input.value);scope='';persist();render()}
+  if(input.id==='task-filter'){taskFilter=input.value;taskPageIndex=0;render()}
+  if(input.id==='archived-only'){showArchived=input.checked;libraryPageIndex=0;render()}
+  if(input.id==='shared-list'){listId=input.value;persist();render()}
   if(input.id==='scope'){scope=input.value;render()}
-  if(input.id==='source')source=input.value;
   if(input.id==='mode')mode=input.value;
 });
 let lastTick=performance.now();
 document.addEventListener('click',event=>{
-  const action=event.target.closest('[data-action]')?.dataset.action;
+  const control=event.target.closest('[data-action]');
+  const action=control?.dataset.action,key=control?.dataset.key;
   if(!action)return;
-  if(['setup','progress','settings'].includes(action)){view=action;notice='';render();window.scrollTo(0,0);return}
+  if(['setup','tasks','library','settings'].includes(action)){view=action;notice='';render();window.scrollTo(0,0);return}
   if(action==='select-all'){for(const site of matchSites())picked.add(site.id);persist();refreshSection('sites');return}
   if(action==='clear'){picked.clear();persist();refreshSection('sites');return}
+  if(action==='open-task'){batch=batches.find(item=>String(item.id)===key);scope='';view='progress';open.add('report')}
+  if(action==='demo-history'){
+    const examples=[['品牌目录回访',5,false,false],['社区测试批次',2,true,false],['海外目录检查',2,false,true]];
+    batches=examples.map(([name,cursor,paused,interrupted],index)=>({id:index+1,name,sites:demoSites.slice(0,1),links:demoLinks.slice(0,5),
+      mode:'analysis',cursor,paused,interrupted,manual:cursor>0,resolved:cursor===5}));
+  }
+  if(['task-prev','task-next','library-prev','library-next'].includes(action)){
+    const step=action.endsWith('-next')?1:-1;
+    if(action.startsWith('task-'))taskPageIndex+=step;else libraryPageIndex+=step;
+  }
+  if(['manage-sites','manage-links','library-sites','library-links'].includes(action)){
+    view='library';libraryTab=action.endsWith('sites')?'sites':'links';libraryQuery='';libraryPageIndex=0;showArchived=false;
+  }
   if(action==='save-sites'){
     const rows=parseLines(document.querySelector('#site-input').value);
-    if(!rows.length){notice='请输入至少一个有效站点网址。';document.querySelector('.notice').textContent=notice;return}
-    sites=rows.map(({url})=>({id:url,name:new URL(url).hostname,url}));picked=new Set(sites.filter(site=>picked.has(site.id)).map(site=>site.id));query='';
+    const added=rows.filter(row=>!sites.some(site=>site.url===row.url));
+    if(!added.length){document.querySelector('.notice').textContent='没有可新增的有效站点。已归档站点可在清单恢复。';return}
+    sites=[...sites,...added.map(({url})=>({id:crypto.randomUUID(),name:new URL(url).hostname,url}))];query='';
   }
-  if(action==='demo-sites'){sites=demoSites;picked.clear();query=''}
-  if(action==='demo-links')links=demoLinks;
-  if(action==='save-links'){
-    const rows=parseLines(document.querySelector('#link-input').value);
-    if(!rows.length){notice='请输入至少一个有效外链网址。';document.querySelector('.notice').textContent=notice;return}
-    links=rows.map(row=>({...row,id:'row-'+row.line}));source='paste';
+  if(action==='save-links'||action==='demo-links'){
+    const rows=action==='demo-links'?demoLinks:parseLines(document.querySelector('#link-input').value).map(row=>({...row,id:'row-'+row.line}));
+    if(!rows.length){document.querySelector('.notice').textContent='请输入至少一个有效外链网址。';return}
+    const name=document.querySelector('#list-name').value.trim()||'外链清单 '+(linkLists.length+1);
+    const source=action==='demo-links'?document.querySelector('#new-list-source').value:'paste';
+    listId=crypto.randomUUID();linkLists=[...linkLists,{id:listId,name,source,links:rows}];
+  }
+  const records=libraryTab==='sites'?sites:linkLists;
+  if(action==='edit-library'){openEditor(records.find(item=>item.id===key));return}
+  if(action==='archive-library'){
+    const item=records.find(item=>item.id===key);
+    if(libraryTab==='sites'){
+      sites=sites.map(site=>site===item?{...site,archived:!site.archived}:site);
+      picked.delete(item.id);
+    }else{
+      linkLists=linkLists.map(list=>list===item?{...list,archived:!list.archived}:list);
+      if(!item.archived&&listId===item.id)listId='';
+    }
+  }
+  if(action==='close-dialog'){dialog.close();return}
+  if(action==='save-edit'){
+    const name=document.querySelector('#edit-name').value.trim();
+    const isSite=libraryTab==='sites';
+    const rows=parseLines(document.querySelector(isSite?'#edit-url':'#edit-links').value);
+    if(!name||!rows.length||isSite&&(rows.length!==1||sites.some(site=>site.id!==editing&&site.url===rows[0].url))){
+      document.querySelector('#editor-error').textContent='请填写名称和有效网址。站点网址不能重复。';return;
+    }
+    if(isSite)sites=sites.map(site=>site.id===editing?{...site,name,url:rows[0].url}:site);
+    else linkLists=linkLists.map(list=>{
+      if(list.id!==editing)return list;
+      const unchanged=rows.length===list.links.length&&rows.every((row,index)=>row.url===list.links[index].url);
+      return {...list,name,links:unchanged?list.links:rows.map(row=>({...row,id:'row-'+row.line}))};
+    });
+    dialog.close();
   }
   if(action==='start'&&picked.size&&perSite()){
-    batch={id:(batches.at(-1)?.id??0)+1,sites:selected(),links:links.slice(0,perSite()),mode,source,cursor:0,paused:false,manual:false,resolved:false};
+    const list=currentList();
+    batch={id:(batches.at(-1)?.id??0)+1,name:batchName.trim(),listName:list.name,sites:selected(),links:list.links.slice(0,perSite()),mode,source:list.source,
+      cursor:0,paused:false,interrupted:false,manual:false,resolved:false};batchName='';
     batches.push(batch);
     scope='';view='progress';lastTick=performance.now();open.add('report');
   }
   if(action==='advance'){lastTick=performance.now();advance([batch]);return}
-  if(action==='pause'){batch.paused=!batch.paused;lastTick=performance.now()}
+  if(action==='pause'){batch.paused=true;lastTick=performance.now()}
+  if(action==='resume'){batch.paused=false;batch.interrupted=false;lastTick=performance.now()}
+  if(action==='interrupt'){
+    dialog.innerHTML='<h2 id="editor-title">中断当前批次？</h2><p>停止该批次并保留已经处理的记录。以后可以从保存的进度继续。</p><div class="actions">'+btn('确认中断','confirm-interrupt')+btn('返回','close-dialog','secondary')+'</div>';
+    dialog.showModal();return;
+  }
+  if(action==='confirm-interrupt'){batch.interrupted=true;batch.paused=false;dialog.close()}
   if(action==='resolve')batch.resolved=true;
   if(action==='export'){exportSample();return}
   if(action==='save-model'){
