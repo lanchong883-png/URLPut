@@ -547,7 +547,9 @@ function authManagement(){
     '<label class="field">添加登录邮箱<input id="manage-login-email" type="email" maxlength="254" placeholder="publisher@example.com"></label>'+
     btn('添加邮箱','add-auth-email','secondary')+
     '<label class="field">默认登录邮箱<select id="auth-default-email">'+authEmailOptions(authAccounts.email)+'</select></label>'+
-    '<div class="list" aria-label="已添加邮箱">'+authAccounts.emails.map(email=>'<div class="item row"><span class="links">'+safe(email)+'</span>'+
+    '<label class="field">默认密码方案<select id="auth-default-preset"><option value="">手动选择或填写</option>'+
+    authAccounts.presets.map(preset=>'<option value="'+safe(preset.id)+'" '+(preset.id===authAccounts.defaultPreset?'selected':'')+'>'+safe(preset.name)+'</option>').join('')+'</select></label>'+
+    '<p class="hint">站点已有同账号密码时优先复用。</p><div class="list" aria-label="已添加邮箱">'+authAccounts.emails.map(email=>'<div class="item row"><span class="links">'+safe(email)+'</span>'+
       entityButton('移除','remove-auth-email',email)+'</div>').join('')+'</div></section>'+
     '<section class="card"><div class="row"><h2>Google 认证</h2><span class="chip '+(simulated?'':'warm')+'">'+
       (simulated?'模拟登录通过':authAccounts.googleEmail?'待模拟登录':'未设置邮箱')+'</span></div>'+
@@ -558,7 +560,7 @@ function authManagement(){
     '<div aria-label="密码方案列表">'+authAccounts.presets.map(preset=>'<div class="item"><div class="row"><strong>'+safe(preset.name)+'</strong>'+
       (authAccounts.defaultPreset===preset.id?'<span class="chip">默认</span>':'')+'</div><p class="hint">'+
       (sessionPasswords.has(preset.id)?'本次会话已填写':'本次会话待填写')+'</p><div class="actions">'+
-      entityButton('编辑','edit-auth-preset',preset.id)+(authAccounts.defaultPreset!==preset.id?entityButton('设为默认密码','default-auth-preset',preset.id):'')+
+      entityButton('编辑','edit-auth-preset',preset.id)+
       entityButton('移除','remove-auth-preset',preset.id)+'</div></div>').join('')+'</div></section>'+
     '<p class="notice" role="status" id="auth-management-notice">'+safe(notice)+'</p>';
 }
@@ -588,6 +590,7 @@ const authGuides={
   password:{title:'邮箱和密码',action:'打开邮箱登录演示',hint:'在目标站点填写邮箱和密码。可用 Chrome 密码管理器，也可手动输入。'},
   manual:{title:'手动登录',action:'打开手动登录演示',hint:'在目标站点完成登录、二次验证或人机验证，再返回。'},
   verify:{title:'邮箱验证',action:'打开邮箱验证演示',hint:'使用邮件中的验证链接，或在目标站点填写验证码。'},
+  save:{title:'保存站点密码',action:'处理密码保存',hint:'登录和邮箱验证已通过。可在 Chrome 密码管理器确认保存，供下次登录使用。'},
   approval:{title:'发表前确认',action:'查看待确认内容',hint:'此任务需要用户批准后才进入下一步。'},
 };
 function authOptions(){
@@ -597,14 +600,19 @@ function authOptions(){
     '<div class="stack">'+checkbox('google','允许使用目标站点的 Google 登录')+
     checkbox('savedCredentials','允许使用 Chrome 保存的账号密码')+
     checkbox('register','允许注册新账号')+checkbox('gmail','允许使用已授权的 Gmail 检查验证邮件')+checkbox('confirmPublish','正式发表前需要我确认')+'</div>'+
+    '<p class="hint">邮箱默认 '+safe(authAccounts.email||'未设置')+' · 密码 '+safe(authAccounts.presets.find(preset=>preset.id===authAccounts.defaultPreset)?.name??'手动选择')+'</p>'+
+    '<p class="hint">Google 默认 '+safe(authAccounts.googleEmail||'未设置')+'</p>'+
     '<p class="hint">优先复用已核对的登录状态。第三方登录邮箱和 Google 默认账号在「认证方式」管理。选账号、同意授权和二次验证都由用户确认。</p>'+
-    '<p class="hint">可手动在目标站点输入账号密码或处理邮件验证。批次不会保存密码或验证码。</p>'+btn('管理认证方式','manage-auth','secondary'));
+    '<p class="hint">可手动在目标站点输入账号密码或处理邮件验证。验证通过后，可在 Chrome 确认保存站点密码。批次不会保存密码或验证码。</p>'+btn('管理认证方式','manage-auth','secondary'));
 }
 function pendingConfirmations(item){
   if(!canDispatch(item))return 0;
   const auth=item.authDemo?.filter(row=>row.step!=='done'&&row.step!=='queued').length??0;
   return auth+Number(item.manual&&!item.resolved||false)+missingContent(item);
 }
+const authStage=row=>['verify','save'].includes(row.step)?row.step:row.type;
+const authCanCheck=row=>row.type!=='approval'&&row.step!=='save';
+const targetLoginKey=(url,email)=>JSON.stringify([new URL(url).origin,email]);
 const activeAuthChecks=new Set();
 const pickedConfirmations=new Set();
 let authDialogTask;
@@ -615,26 +623,26 @@ function pendingAuthEntries(){
 }
 function confirmationPage(){
   const entries=pendingAuthEntries();
-  const eligible=entries.filter(entry=>entry.row.type!=='approval'&&!activeAuthChecks.has(entry.key));
+  const eligible=entries.filter(entry=>authCanCheck(entry.row)&&!activeAuthChecks.has(entry.key));
   const selected=eligible.filter(entry=>pickedConfirmations.has(entry.key)).length;
   const other=batches.filter(item=>canDispatch(item)&&(item.manual&&!item.resolved||missingContent(item)));
   return '<div class="row"><h1>待确认清单</h1>'+btn('返回任务','tasks','subtle')+'</div>'+
-    '<section class="card"><p class="hint">在对应页面处理完成后，可单条检查或批量检查。发表授权需单独确认。</p>'+
+    '<section class="card"><p class="hint">在对应页面处理完成后，可单条检查或批量检查。发表授权和保存密码需单独确认。</p>'+
     '<div class="actions"><button class="button secondary" data-action="select-confirmations" '+(!eligible.length?'disabled':'')+'>'+
     (selected&&selected===eligible.length?'取消全选':'全选可检查项')+'</button>'+
     '<button class="button" data-action="check-confirmations" '+(!selected?'disabled':'')+'>检查所选并继续（'+n(selected)+'）</button></div>'+
     '<p class="notice" role="status">'+safe(notice)+'</p></section>'+
     entries.map(({item,row,key,index})=>{
-      const guide=authGuides[row.step==='verify'?'verify':row.type];
+      const guide=authGuides[authStage(row)];
       const checking=activeAuthChecks.has(key);
       return '<section class="card"><div class="row"><h2>'+guide.title+'</h2>'+
-        (row.type==='approval'?'<span class="chip warm">单独授权</span>':
+        (!authCanCheck(row)?'<span class="chip warm">'+(row.step==='save'?'单独确认':'单独授权')+'</span>':
           '<label class="check"><input type="checkbox" data-confirmation="'+safe(key)+'" '+(pickedConfirmations.has(key)?'checked':'')+' '+(checking?'disabled':'')+'>选择</label>')+'</div>'+
         '<p class="hint links">'+'批次 '+item.id+' · '+safe(item.name)+' · '+safe(item.sites[0].name)+' · '+safe(item.links[index].url)+'</p>'+
         '<p class="hint">'+safe(guide.hint)+'</p>'+
         (checking?'<p class="notice" role="status">正在核对…</p>':
-          '<div class="actions">'+entityButton(row.type==='approval'?'查看并确认':'打开对应页面','open-confirmation',key)+
-          (row.type==='approval'?'':entityButton('检查并继续','check-confirmation',key))+'</div>')+
+          '<div class="actions">'+entityButton(row.step==='save'?guide.action:row.type==='approval'?'查看并确认':'打开对应页面','open-confirmation',key)+
+          (authCanCheck(row)?entityButton('检查并继续','check-confirmation',key):'')+'</div>')+
         (row.message?'<p class="notice" role="status">'+safe(row.message)+'</p>':'')+'</section>';
     }).join('')+
     other.map(item=>'<section class="card"><h2>'+safe(item.name||'批次 '+item.id)+'</h2><p>需人工核对账号或补齐投稿资料。</p>'+
@@ -643,7 +651,7 @@ function confirmationPage(){
 }
 async function verifyAuthRow(item,index){
   const row=item.authDemo[index],key=confirmationKey(item,index);
-  if(!canDispatch(item)||row.step==='done'||activeAuthChecks.has(key))return;
+  if(!canDispatch(item)||row.step==='done'||row.step==='save'||activeAuthChecks.has(key))return;
   activeAuthChecks.add(key);
   row.message='';
   updateProgress();
@@ -656,6 +664,8 @@ async function verifyAuthRow(item,index){
       row.ready=false;
       if(row.type==='password'&&row.step==='login'){
         row.step='verify';row.message='登录已核对，请继续完成邮箱验证。';
+      }else if(row.type==='password'&&row.step==='verify'&&row.passwordSource&&row.passwordSource!=='existing'){
+        row.step='save';row.message='邮箱验证通过。先确认是否保存密码，再继续任务。';
       }else{
         row.step='done';item.cursor++;
       }
@@ -671,24 +681,32 @@ function authDemoRows(item){
     item.authDemo.map((row,index)=>{
       const guide=authGuides[row.type];
       const checking=activeAuthChecks.has(item.id+':'+index);
-      const status=checking?'核对中':row.skipped?'已跳过':row.step==='done'?'已继续':row.step==='queued'?'排队中':row.step==='verify'?'待邮箱验证':row.type==='approval'?'待确认':'需认证';
+      const status=checking?'核对中':row.skipped?'已跳过':row.step==='done'?'已继续':row.step==='queued'?'排队中':row.step==='verify'?'待邮箱验证':row.step==='save'?'待保存密码':row.type==='approval'?'待确认':'需认证';
       const waiting=row.step!=='done'&&row.step!=='queued';
-      const nextGuide=row.step==='verify'?authGuides.verify:guide;
+      const nextGuide=authGuides[authStage(row)];
       return '<div class="item"><div class="row"><strong>'+safe(guide?.title??'无需登录')+'</strong><span class="chip '+(waiting?'warm':'')+'">'+status+'</span></div>'+
         '<p class="hint links">'+safe(item.links[index].url)+'</p>'+
         (waiting&&canDispatch(item)?'<p class="hint">'+safe(nextGuide.hint)+'</p>'+
           (row.message?'<p class="notice" role="status">'+safe(row.message)+'</p>':'')+
           (!checking?'<div class="actions">'+entityButton(nextGuide.action,'auth-open',index)+
-            (row.type==='approval'?'':entityButton('已处理，检查并继续','auth-check',index))+'</div>':''):'')+'</div>';
+            (authCanCheck(row)?entityButton('已处理，检查并继续','auth-check',index):'')+'</div>':''):'')+'</div>';
     }).join('')+'</section>';
 }
 function openAuthStep(item,index){
   authDialogTask={item,index};
-  const task=item.authDemo[index],type=task.step==='verify'?'verify':task.type;
+  const task=item.authDemo[index],type=authStage(task);
   const guide=authGuides[type];
-  const account=(type==='google'?(item.authentication?.googleEmail??authAccounts.googleEmail):(item.authentication?.email??authAccounts.email))||'publisher@brand-3.example';
+  const account=(type==='google'?(item.authentication?.googleEmail??authAccounts.googleEmail):(task.loginEmail??item.authentication?.email??authAccounts.email))||'publisher@brand-3.example';
   let body='<p class="hint links">目标站点 · '+safe(new URL(item.links[index].url).hostname)+'</p>';
   let actionLabel='已完成验证，检查结果';
+  if(type==='save'){
+    dialog.innerHTML='<h2 id="editor-title">保存到 Chrome 密码管理器（模拟）</h2>'+body+
+      '<p>登录邮箱 · '+safe(account)+'</p><p>确认保存后，下次登录同一站点和邮箱时可优先使用。</p>'+
+      '<p class="hint">此处只记录演示状态。正式保存由 Chrome 的密码提示处理。</p>'+
+      '<div class="actions">'+btn('保存到 Chrome（模拟）','auth-save-target-password')+
+      btn('暂不保存，继续','auth-decline-target-password','secondary')+'</div>';
+    dialog.showModal();return;
+  }
   if(type==='google'){
     body+='<p>指定的 Google 邮箱 · '+safe(account)+'</p>'+
       '<p class="hint">在目标站点点「使用 Google 登录」。已有且身份匹配的会话可继续；需要选账号或授权时，请在 Google 页面确认。</p>';
@@ -696,10 +714,11 @@ function openAuthStep(item,index){
   }else if(type==='password'){
     const activePresets=authAccounts.presets.filter(preset=>sessionPasswords.has(preset.id));
     const defaultPreset=item.authentication?.defaultPreset??authAccounts.defaultPreset;
-    const defaultSource=activePresets.some(preset=>preset.id===defaultPreset)?defaultPreset:'manual';
+    const remembered=(authAccounts.savedTargetLogins??[]).includes(targetLoginKey(item.links[index].url,account));
+    const defaultSource=remembered?'existing':activePresets.some(preset=>preset.id===defaultPreset)?defaultPreset:'manual';
     body+='<p class="hint">以下仅演示目标站点表单。选择一种已知的密码来源。登录失败后转回人工处理。</p>'+
       '<label class="field">登录邮箱<input id="auth-email" type="email" value="'+safe(account)+'"></label>'+
-      '<label class="field">密码来源<select id="auth-password-source"><option value="existing">使用站点已保存密码（模拟）</option>'+
+      '<label class="field">密码来源<select id="auth-password-source"><option value="existing" '+(remembered?'selected':'')+'>使用站点已保存密码（模拟）</option>'+
       '<option value="manual" '+(defaultSource==='manual'?'selected':'')+'>手动填写</option>'+activePresets.map(preset=>
       '<option value="'+safe(preset.id)+'" '+(defaultSource===preset.id?'selected':'')+'>'+safe(preset.name)+'</option>').join('')+'</select></label>'+
       '<label class="field" id="auth-password-field" '+(defaultSource==='manual'?'':'hidden')+'>站点密码（仅演示）<input id="auth-password" type="password" autocomplete="off"></label>';
@@ -771,7 +790,7 @@ function sample(site){
     if(auth){
       const status=auth.skipped?'已跳过':auth.step==='done'?'已处理':auth.step==='queued'?'排队中':'需人工';
       const result=auth.step==='done'?(auth.skipped?'用户跳过':'确认通过，已继续（模拟）'):auth.step==='queued'?'等待执行':
-        auth.step==='verify'?'待邮箱验证':'待'+authGuides[auth.type].title;
+        auth.step==='verify'?'待邮箱验证':auth.step==='save'?'待保存密码':'待'+authGuides[auth.type].title;
       return {target,link,status,result};
     }
     const pending=index===0&&batch.manual&&!batch.resolved;
@@ -1157,6 +1176,9 @@ document.addEventListener('change',event=>{
     }
     notice='邮箱设置已保存。';persist();render();
   }
+  if(input.id==='auth-default-preset'){
+    authAccounts.defaultPreset=input.value;notice='默认密码方案已更新。';persist();render();
+  }
   if(input.id==='auth-password-source'){
     const field=dialog.querySelector('#auth-password-field');
     field.hidden=input.value!=='manual';
@@ -1223,12 +1245,9 @@ document.addEventListener('click',event=>{
     const id=editingPreset||crypto.randomUUID();
     sessionPasswords.set(id,secret.value);secret.value='';
     authAccounts.presets=[...authAccounts.presets.filter(preset=>preset.id!==id),{id,name}];
-    authAccounts.defaultPreset||=id;
+    if(authAccounts.presets.length===1)authAccounts.defaultPreset=id;
     notice='密码方案已保存。密码仅在本次页面会话保留。';
     dialog.close();dialog.innerHTML='';persist();render();return;
-  }
-  if(action==='default-auth-preset'){
-    authAccounts.defaultPreset=key;notice='默认密码方案已更新。';persist();render();return;
   }
   if(action==='remove-auth-preset'){
     authAccounts.presets=authAccounts.presets.filter(preset=>preset.id!==key);
@@ -1332,11 +1351,11 @@ document.addEventListener('click',event=>{
     const entry=pendingAuthEntries().find(entry=>entry.key===key);
     if(!entry)return;
     if(action==='open-confirmation')openAuthStep(entry.item,entry.index);
-    else if(entry.row.type!=='approval')void verifyAuthRow(entry.item,entry.index);
+    else if(authCanCheck(entry.row))void verifyAuthRow(entry.item,entry.index);
     return;
   }
   if(action==='select-confirmations'||action==='check-confirmations'){
-    const eligible=pendingAuthEntries().filter(entry=>entry.row.type!=='approval'&&!activeAuthChecks.has(entry.key));
+    const eligible=pendingAuthEntries().filter(entry=>authCanCheck(entry.row)&&!activeAuthChecks.has(entry.key));
     if(action==='select-confirmations'){
       if(eligible.some(entry=>!pickedConfirmations.has(entry.key)))for(const entry of eligible)pickedConfirmations.add(entry.key);
       else pickedConfirmations.clear();
@@ -1352,6 +1371,18 @@ document.addEventListener('click',event=>{
       });
     }
     return;
+  }
+  if(action==='auth-save-target-password'||action==='auth-decline-target-password'){
+    const {item,index}=authDialogTask;
+    const row=item.authDemo[index];
+    if(!canDispatch(item)||row.step!=='save')return;
+    if(action==='auth-save-target-password'){
+      const key=targetLoginKey(item.links[index].url,row.loginEmail);
+      const saved=authAccounts.savedTargetLogins??=[];
+      if(!saved.includes(key))saved.push(key);
+    }
+    row.step='done';row.message='';item.cursor++;
+    dialog.close();dialog.innerHTML='';authDialogTask=undefined;updateProgress();return;
   }
   if(action==='auth-login-failed'){
     const {item,index}=authDialogTask;
@@ -1374,6 +1405,7 @@ document.addEventListener('click',event=>{
         if(!email.value||!email.checkValidity()||(source==='manual'?!password.value:source!=='existing'&&!sessionPasswords.has(source))){
           dialog.querySelector('#auth-error').textContent='请输入示例邮箱和密码。';return;
         }
+        row.loginEmail=email.value.trim();row.passwordSource=source;
         email.value='';password.value='';
       }
       row.ready=true;
