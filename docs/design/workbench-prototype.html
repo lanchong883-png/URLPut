@@ -763,11 +763,18 @@ function setup(){
     detail('links','2. 外链清单 <small>· '+n(currentList()?.links.length??0)+' 条可用候选</small>',
       '<label class="field">共享外链清单<select id="shared-list"><option value="">请选择清单</option>'+linkLists.map(list=>'<option value="'+safe(list.id)+'" '+(list.id===listId?'selected':'')+'>'+safe(list.name)+' · '+n(list.links.length)+' 条</option>').join('')+'</select></label>'+
       btn('去清单补充外链','manage-links','secondary'))+
-    '<section class="card"><h2>启动预览</h2><label class="field">批次名称（可选）<input id="batch-name" value="'+safe(batchName)+'"></label><label class="field">每站最多使用<input id="limit" type="number" min="1" max="10000" value="'+safe(limit)+'"></label>'+
-    '<div class="stats"><div><strong id="per-site">'+n(perSite())+'</strong><small>每站候选</small></div><div><strong id="combinations">'+n(picked.size*perSite())+'</strong><small>站点 × 外链组合</small></div></div><p class="hint">其中待提交 <strong id="pending-combinations">'+n(selectedPending())+'</strong> 条</p>'+
-    '<p class="hint">每个已选推广站点都用同一份外链清单。历史投稿和同平台跳过会影响实际尝试数。</p>'+
-    '<label class="field">执行方式<select id="mode"><option value="analysis">仅分析</option><option value="execute">分析后执行（模拟）</option></select></label>'+
-    '</section>'+contentOptions()+authOptions()+limitsMarkup()+'<section class="card">'+
+    '<section class="card"><h2>批次设置</h2><label class="field">批次名称（可选）<input id="batch-name" value="'+safe(batchName)+'"></label>'+
+    '<label class="field">每站最多使用<input id="limit" type="number" min="1" max="10000" value="'+safe(limit)+'"></label>'+
+    '<label class="field">执行方式<select id="mode" aria-describedby="mode-help"><option value="analysis">仅分析</option><option value="execute">分析后执行（模拟）</option></select></label>'+
+    '<p class="hint" id="mode-help">'+(mode==='analysis'?'检查外链入口可用性与投稿要求，记录结果，不填写或提交。':
+      '分析通过后，按投稿内容、认证规则和每日额度继续。需要你确认的条目会进入待办。')+'</p>'+
+    '</section>'+contentOptions()+authOptions()+limitsMarkup()+'<section class="card" aria-labelledby="launch-summary">'+
+    '<h2 id="launch-summary">启动前确认</h2><p class="hint">执行方式 · '+(mode==='analysis'?'仅分析':'分析后执行（模拟）')+'</p>'+
+    '<div class="stats"><div><strong id="selected-sites">'+n(picked.size)+'</strong><small>已选推广站点</small></div>'+
+    '<div><strong id="per-site">'+n(perSite())+'</strong><small>每站候选</small></div>'+
+    '<div><strong id="combinations">'+n(picked.size*perSite())+'</strong><small>站点 × 外链组合</small></div>'+
+    '<div><strong id="pending-combinations">'+n(selectedPending())+'</strong><small>其中待提交</small></div></div>'+
+    '<p class="hint">'+(mode==='analysis'?'本批次只分析，待提交数供核对。':'历史投稿与同平台去重会影响实际尝试数。')+'</p>'+
     '<button class="button full" data-action="start" '+(!canStartBatch()?'disabled':'')+'>启动模拟批次</button><p class="notice" role="status">'+safe(notice)+'</p></section>';
 }
 function unverified(item,site){
@@ -1046,6 +1053,7 @@ function refreshSection(id){
       before.querySelector('.list').after(text);
     }
   }
+  document.querySelector('#selected-sites').textContent=n(picked.size);
   document.querySelector('#per-site').textContent=n(perSite());
   document.querySelector('#combinations').textContent=n(picked.size*perSite());
   document.querySelector('#pending-combinations').textContent=n(selectedPending());
