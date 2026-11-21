@@ -7,13 +7,13 @@
 :root{color-scheme:light;font:14px/1.5 Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:#172c2b;background:#e8eeed;--muted:#536866;--line:#d5e2de;--accent:#14604f;--soft:#e8f4ee;--warm:#fff3db}
 *{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer}button:disabled{cursor:default;opacity:.55}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid #188568;outline-offset:3px}
 .panel{max-width:392px;margin:0 auto;min-height:100vh;background:#f3f7f6;border-inline:1px solid var(--line);box-shadow:0 3px 25px #203f3420}
-header{padding:14px 15px 10px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}.brand{font-weight:800;font-size:19px;letter-spacing:-.035em}.bar,.row,.actions{display:flex;align-items:center;gap:8px;min-width:0}.bar,.row{justify-content:space-between}.actions{flex-wrap:wrap}.grow{flex:1}.muted,small{color:var(--muted)}.hint{font-size:12px;color:var(--muted)}nav{display:flex;gap:16px;margin-top:7px}nav button{background:none;border:0;padding:6px 2px;color:var(--muted);border-bottom:2px solid transparent}nav button[aria-current]{font-weight:750;color:var(--accent);border-bottom-color:var(--accent)}
+header{padding:14px 15px 10px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}.brand{font-weight:800;font-size:19px;letter-spacing:-.035em}.bar,.row,.actions{display:flex;align-items:center;gap:8px;min-width:0}.bar,.row{justify-content:space-between}.actions{flex-wrap:wrap}.grow{flex:1}.muted,small{color:var(--muted)}.hint{font-size:12px;color:var(--muted)}nav{display:flex;gap:clamp(9px,3.8vw,16px);flex-wrap:wrap;margin-top:7px}nav button{background:none;border:0;padding:6px 2px;color:var(--muted);border-bottom:2px solid transparent}nav button[aria-current]{font-weight:750;color:var(--accent);border-bottom-color:var(--accent)}
 main{padding:12px 14px 20px}h1,h2,h3,p{margin:0}h1{font-size:18px;margin-bottom:8px}h2{font-size:14px}h3{font-size:13px}.card,details{background:#fff;border:1px solid var(--line);border-radius:10px;margin-bottom:9px;padding:10px 11px}.card p,details p{margin:5px 0}summary{cursor:pointer;font-weight:700;overflow-wrap:anywhere}summary small{font-weight:500}details[open] summary{margin-bottom:9px}.stack{display:grid;gap:7px}.list{max-height:186px;overflow:auto}.item{padding:6px 0;border-bottom:1px solid #e7eeeb;overflow-wrap:anywhere}.item:last-child{border-bottom:none}.item label{display:flex;align-items:flex-start;gap:7px}.truncate{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
-input:not([type=radio],[type=checkbox]),select,textarea{width:100%;min-width:0;padding:6px 7px;border:1px solid #b9cbc4;border-radius:6px;background:#fff}textarea{resize:vertical}label.field{display:grid;gap:3px;margin:5px 0}.check{display:flex;align-items:center;gap:6px}.check input{margin:0}.button{background:var(--accent);color:#fff;border:1px solid var(--accent);padding:5px 9px;border-radius:7px;font-weight:700}.secondary{background:#fff;color:var(--accent);border-color:#b8cec5}.subtle{background:transparent;color:var(--accent);border-color:transparent}.full{width:100%;padding:8px}.chip{display:inline-block;border-radius:99px;background:var(--soft);padding:2px 7px;color:var(--accent);font-size:11px;font-weight:700;white-space:nowrap}.chip.warm{background:var(--warm);color:#755316}.stats{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:7px 0}.stats div{background:#edf5f2;border-radius:7px;padding:6px 8px}.stats strong{display:block;font-size:19px;line-height:1.1}.meter{height:8px;background:#e2ece8;border-radius:99px;overflow:hidden;margin:7px 0}.meter div{height:100%;background:#248366}.notice{min-height:1em;color:var(--accent);font-size:12px;margin-top:6px}.links{overflow-wrap:anywhere}.settings{font-size:12px}
+input:not([type=radio],[type=checkbox]),select,textarea{width:100%;min-width:0;padding:6px 7px;border:1px solid #b9cbc4;border-radius:6px;background:#fff}textarea{resize:vertical}label.field{display:grid;gap:3px;margin:5px 0}.check{display:flex;align-items:center;gap:6px}.check input{margin:0}.button{background:var(--accent);color:#fff;border:1px solid var(--accent);padding:5px 9px;border-radius:7px;font-weight:700}.secondary{background:#fff;color:var(--accent);border-color:#b8cec5}.subtle{background:transparent;color:var(--accent);border-color:transparent}.full{width:100%;padding:8px}.chip{display:inline-block;border-radius:99px;background:var(--soft);padding:2px 7px;color:var(--accent);font-size:11px;font-weight:700;white-space:nowrap}.chip.warm{background:var(--warm);color:#755316}.stats{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:7px 0}.stats div{background:#edf5f2;border-radius:7px;padding:6px 8px}.stats strong{display:block;font-size:19px;line-height:1.1}.meter{height:8px;background:#e2ece8;border-radius:99px;overflow:hidden;margin:7px 0}.meter div{height:100%;background:#248366}.notice{min-height:1em;color:var(--accent);font-size:12px;margin-top:6px}.links{overflow-wrap:anywhere}
 dialog{width:min(360px,calc(100% - 24px));border:1px solid var(--line);border-radius:10px;padding:14px;color:inherit;background:#fff}dialog::backdrop{background:#183a3466}
 </style>
 <div class="panel">
-<header><div class="bar"><div class="brand">URLPut</div><span class="chip">模拟演示</span><button class="button secondary settings" data-action="settings">设置</button></div><nav id="nav" aria-label="插件导航"></nav></header>
+<header><div class="bar"><div class="brand">URLPut</div><span class="chip">模拟演示</span></div><nav id="nav" aria-label="插件导航"></nav></header>
 <main id="main"></main>
 </div>
 <dialog id="dialog" aria-labelledby="editor-title"></dialog>
@@ -36,7 +36,8 @@ let taskQuery='',taskFilter='all',taskPageIndex=0,libraryTab='sites',libraryQuer
 let batch=batches.find(item=>item.id===saved?.batchId)??batches.at(-1)??null;
 let picked=new Set(saved?.picked??[]), view='setup', query='', scope='', limit=1000, mode='analysis', notice='';
 let pendingSitesOnly=false, libraryFromSetup=false;
-const imports={sites:{text:'',filename:'',format:'txt'},links:{text:'',filename:'',format:'txt',name:''}};
+const importDraft=()=>({text:'',filename:'',format:'txt',read:0});
+const imports={sites:importDraft(),links:importDraft()};
 let open=new Set(['sites']), model={type:'local',endpoint:'http://127.0.0.1:11434/v1',name:'',analysis:false,writing:false};
 const main = document.querySelector('#main'), nav = document.querySelector('#nav'), dialog=document.querySelector('#dialog');
 function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts,pairLedger:[...pairLedger],contentTemplates,defaultTemplateId}))}catch{}}
@@ -75,14 +76,14 @@ function compareImport(value,kind,format){
     }
     const url=checkedUrl(input,kind);
     if(!url){
-      rows.push({line:index+1,raw,status:'error',reason:kind==='sites'?'请输入有效域名或 HTTP/HTTPS 站点网址。':'请输入完整的 HTTP/HTTPS 外链网址。'});
+      rows.push({line:index+1,raw:line,status:'error',reason:kind==='sites'?'请输入有效域名或 HTTP/HTTPS 站点网址。':'请输入完整的 HTTP/HTTPS 外链网址。'});
       continue;
     }
     const key=kind==='sites'?url.hostname:url.href;
     const previous=known.get(key);
     const status=seen.has(key)?'duplicate':previous&&!previous.deleted?'existing':'new';
     seen.add(key);
-    rows.push({line:index+1,raw,url:url.href,key,previous,status,
+    rows.push({line:index+1,raw:line,url:url.href,key,previous,status,
       name:kind==='sites'?url.hostname:previous?.name??url.hostname,
       reason:status==='duplicate'?'本次输入已有相同项':previous?.deleted?'可重新添加，保留原站点历史':status==='existing'?'已保存在清单':'可加入清单'});
   }
@@ -93,16 +94,48 @@ function reviewMarkup(kind){
   const summary=rows?Object.entries(reviewLabels).map(([key,title])=>title+' '+n(rows.filter(row=>row.status===key).length)).join(' · '):'';
   const preview=rows?'<p class="hint" role="status">'+summary+'</p>'+
     '<div class="list" aria-label="'+label+'检查明细">'+rows.map(row=>'<div class="item"><div class="row"><strong>第 '+row.line+' 行</strong><span class="chip '+(row.status==='error'||row.status==='duplicate'?'warm':'')+'">'+reviewLabels[row.status]+'</span></div><div class="links">'+safe(row.raw)+'</div><small>'+safe(row.reason)+(kind==='sites'&&row.url?' · 站点名称 '+safe(row.name):'')+'</small></div>').join('')+'</div>':'';
-  const usable=!draft.saved&&rows?.some(row=>row.status==='new'||row.status==='existing');
+  const issues=rows?.filter(row=>row.status==='error')??[];
+  const imported=rows?.filter(row=>row.status==='new').length??0;
   return detail('import-'+kind,'录入或导入'+label,
     '<label class="field">录入'+label+'（每行一个）<textarea id="input-'+kind+'" rows="3" placeholder="'+(kind==='sites'?'brand.example':'https://directory.example/submit')+'">'+safe(draft.text)+'</textarea></label>'+
     '<label class="field">上传'+label+'文件<input id="file-'+kind+'" type="file" accept=".txt,.csv,text/plain,text/csv"></label>'+
     '<p class="hint">'+(kind==='sites'?'默认用域名作为站点名称。':'TXT 或单列 CSV。如需 Excel，可从已保存的外链清单选择。')+(draft.filename?' · '+safe(draft.filename):'')+'</p>'+
-    (kind==='links'?'<label class="field">新外链清单名称<input id="import-list-name" value="'+safe(draft.name)+'"></label>':'')+
-    btn('检查'+label,'review-'+kind,'secondary')+
-    (draft.error?'<p class="hint" role="alert">'+safe(draft.error)+'</p>':'')+preview+
-    (usable?btn(libraryFromSetup?'保存并返回批次':kind==='sites'?'保存有效站点':'保存有效外链清单','accept-'+kind):''));
+    '<p class="hint">检查后自动导入新增有效项，已有和重复项会跳过。</p>'+
+    '<button class="button secondary" data-action="review-'+kind+'" '+(draft.loading||rows||!draft.text.trim()?'disabled':'')+'>检查'+label+'</button>'+
+    (draft.error?'<p class="hint" role="alert">'+safe(draft.error)+'</p>':'')+
+    (rows?'<p class="notice" role="status">已导入 '+n(imported)+' '+(kind==='sites'?'个站点':'条外链')+'</p>':'')+preview+
+    (issues.length?btn('下载问题行 CSV','download-import-'+kind,'secondary'):''));
 }
+function checkAndImport(kind){
+  const draft=imports[kind];
+  if(draft.rows)return;
+  const rows=compareImport(draft.text,kind,draft.format);
+  if(!rows.length){draft.error='请先填写或上传有效的清单内容。';render();return}
+  const fresh=rows.filter(row=>row.status==='new');
+  if(kind==='sites'&&fresh.length){
+    const added=fresh.map(row=>({id:row.previous?.id??crypto.randomUUID(),name:row.name,url:row.url}));
+    const restored=new Set(added.map(site=>site.id));
+    sites=[...sites.filter(site=>!restored.has(site.id)),...added];
+    if(libraryFromSetup){
+      for(const site of added)picked.add(site.id);
+      query='';pendingSitesOnly=false;
+    }
+  }
+  if(kind==='links'&&fresh.length){
+    const id=crypto.randomUUID();
+    if(libraryFromSetup)listId=id;
+    const name=draft.filename.replace(/\.[^.]+$/,'')||'外链清单 '+(linkLists.length+1);
+    linkLists=[...linkLists,{id,name,source:draft.filename?draft.format:'paste',
+      links:fresh.map(row=>({id:'row-'+row.line,line:row.line,url:row.url}))}];
+  }
+  draft.rows=rows;
+  draft.error='';
+  libraryQuery='';
+  libraryPageIndex=0;
+  persist();
+  render();
+}
+
 function submittedForSite(site){
   const urls=new Set();
   if(site.id==='site-1'||site.id==='site-2'){
@@ -272,7 +305,7 @@ const starterTemplates = [
 ];
 let contentTemplates=saved?.contentTemplates??starterTemplates;
 let defaultTemplateId=saved?.defaultTemplateId??'intro';
-let contentStrategy='templates', pickedTemplates=null, editingTemplate='', settingsFromSetup=false;
+let contentStrategy='templates', pickedTemplates=null, editingTemplate='', templatesFromSetup=false;
 
 function chosenTemplates(){
   const ids=pickedTemplates??new Set([defaultTemplateId]);
@@ -497,15 +530,17 @@ function openEditor(item){
   dialog.showModal();
 }
 
-function settings(){
-  return '<div class="row"><h1>设置</h1>'+(settingsFromSetup?btn('返回新建批次','return-content','subtle'):'')+'</div>'+
-    templateSettings()+'<section class="card"><h2>AI 模型</h2><label class="field">服务类型<select id="model-type"><option value="local">本地模型</option><option value="custom">自建模型服务</option></select></label><label class="field">API 地址<input id="endpoint" value="'+safe(model.endpoint)+'"></label><label class="field">模型名<input id="model-name" value="'+safe(model.name)+'"></label><div class="actions"><label class="check"><input id="model-analysis" type="checkbox" '+(model.analysis?'checked':'')+'>AI 分析</label><label class="check"><input id="model-writing" type="checkbox" '+(model.writing?'checked':'')+'>AI 文案</label></div><p class="hint">只演示配置，页面不会发起模型请求。</p>'+btn('模拟保存','save-model','secondary')+'<p class="notice" role="status">'+safe(notice)+'</p></section>';
+function templatesPage(){
+  return (templatesFromSetup?'<div class="row" style="margin-bottom:8px">'+btn('返回新建批次','return-content','subtle')+'</div>':'')+templateSettings();
+}
+function modelsPage(){
+  return '<h1>AI 模型</h1><section class="card"><label class="field">服务类型<select id="model-type"><option value="local">本地模型</option><option value="custom">自建模型服务</option></select></label><label class="field">API 地址<input id="endpoint" value="'+safe(model.endpoint)+'"></label><label class="field">模型名<input id="model-name" value="'+safe(model.name)+'"></label><div class="actions"><label class="check"><input id="model-analysis" type="checkbox" '+(model.analysis?'checked':'')+'>AI 分析</label><label class="check"><input id="model-writing" type="checkbox" '+(model.writing?'checked':'')+'>AI 文案</label></div><p class="hint">只演示配置，页面不会发起模型请求。</p>'+btn('模拟保存','save-model','secondary')+'<p class="notice" role="status">'+safe(notice)+'</p></section>';
 }
 function render(){
-  nav.innerHTML=[['setup','新建批次'],['tasks','任务'],['library','清单']].map(([id,label])=>'<button data-action="'+id+'" '+((view===id||view==='progress'&&id==='tasks')?'aria-current="page"':'')+'>'+label+'</button>').join('');
-  main.innerHTML={setup,tasks,library,progress,settings}[view]();
+  nav.innerHTML=[['setup','新建批次'],['tasks','任务'],['library','清单'],['templates','内容模板'],['models','AI 模型']].map(([id,label])=>'<button data-action="'+id+'" '+((view===id||view==='progress'&&id==='tasks')?'aria-current="page"':'')+'>'+label+'</button>').join('');
+  main.innerHTML={setup,tasks,library,progress,templates:templatesPage,models:modelsPage}[view]();
   if(view==='setup'){document.querySelector('#mode').value=mode}
-  if(view==='settings')document.querySelector('#model-type').value=model.type;
+  if(view==='models')document.querySelector('#model-type').value=model.type;
 }
 function refreshSection(id){
   const before=main.querySelector('[data-section="'+id+'"]');
@@ -552,10 +587,7 @@ function advance(targets=batches){
   }
   if(changed)updateProgress()
 }
-function exportSample(){
-  const site=batch.sites.find(site=>site.id===scope);
-  const rows=[['推广站点','推广站点网址','外链 URL','外链来源行','状态','结论'],
-    ...sample(site).map(({target,link,status,result})=>[target.name,target.url,link.url,link.line,status,result])];
+function downloadCsv(rows,filename){
   const csvCell=value=>{
     const text=String(value);
     const escaped=/^[=+@\-\t\r\n]/.test(text)?"'"+text:text;
@@ -563,8 +595,14 @@ function exportSample(){
   };
   const csv=rows.map(row=>row.map(csvCell).join(',')).join('\r\n');
   const url=URL.createObjectURL(new Blob(['\uFEFF',csv],{type:'text/csv;charset=utf-8'}));
-  const anchor=document.createElement('a');anchor.href=url;anchor.download='URLPut-批次-'+batch.id+'-演示记录.csv';anchor.click();
+  const anchor=document.createElement('a');anchor.href=url;anchor.download=filename;anchor.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function exportSample(){
+  const site=batch.sites.find(site=>site.id===scope);
+  const rows=[['推广站点','推广站点网址','外链 URL','外链来源行','状态','结论'],
+    ...sample(site).map(({target,link,status,result})=>[target.name,target.url,link.url,link.line,status,result])];
+  downloadCsv(rows,'URLPut-批次-'+batch.id+'-演示记录.csv');
   document.querySelector('#export-notice').textContent='已导出 '+(rows.length-1)+' 条演示记录。';
 }
 document.addEventListener('toggle',event=>{
@@ -575,10 +613,11 @@ document.addEventListener('toggle',event=>{
 document.addEventListener('input',event=>{
   if(event.target.id.startsWith('input-')){
     const kind=event.target.id.slice(6),draft=imports[kind];
-    draft.text=event.target.value;draft.filename='';draft.format='txt';draft.error='';draft.saved=false;
-    if(draft.rows){draft.rows=null;render();const field=document.querySelector('#input-'+kind);field?.focus();field?.setSelectionRange(draft.text.length,draft.text.length)}
+    draft.read++;draft.loading=false;
+    draft.text=event.target.value;draft.filename='';draft.format='txt';
+    if(draft.rows||draft.error){draft.rows=null;draft.error='';render();document.querySelector('#input-'+kind)?.focus()}
+    main.querySelector('[data-action=review-'+kind+']').disabled=!draft.text.trim();
   }
-  if(event.target.id==='import-list-name')imports.links.name=event.target.value;
   if(event.target.id==='site-search'){query=event.target.value;refreshSection('sites')}
   if(event.target.id==='task-search'){taskQuery=event.target.value;taskPageIndex=0;document.querySelector('#task-rows').innerHTML=taskRows()}
   if(event.target.id==='library-search'){libraryQuery=event.target.value;libraryPageIndex=0;document.querySelector('#library-rows').innerHTML=libraryRows()}
@@ -591,14 +630,23 @@ document.addEventListener('change',event=>{
   if(input.id==='pending-sites'){pendingSitesOnly=input.checked;refreshSection('sites')}
   if(input.id.startsWith('file-')&&input.files[0]){
     const kind=input.id.slice(5),draft=imports[kind],file=input.files[0];
+    const read=++draft.read;
     if(!/\.(txt|csv)$/i.test(file.name)||file.size>2_000_000){
-      draft.rows=null;draft.error='请选择小于 2 MB 的 TXT 或单列 CSV 文件。';render();return;
+      draft.loading=false;draft.error='请选择小于 2 MB 的 TXT 或单列 CSV 文件。';render();return;
     }
+    draft.loading=true;
+    draft.error='';
+    main.querySelector('[data-action=review-'+kind+']').disabled=true;
     void file.text().then(value=>{
-      draft.text=value;draft.saved=false;draft.filename=file.name;draft.format=file.name.toLowerCase().endsWith('.csv')?'csv':'txt';
-      draft.rows=compareImport(value,kind,draft.format);draft.error=draft.rows.length?'':'文件没有可检查的内容。';
-      if(view==='library')render();
-    }).catch(()=>{draft.rows=null;draft.error='未能读取文件。';if(view==='library')render()});
+      if(read!==draft.read)return;
+      draft.loading=false;draft.rows=null;draft.text=value;draft.filename=file.name;
+      draft.format=file.name.toLowerCase().endsWith('.csv')?'csv':'txt';
+      if(view==='library'&&libraryTab===kind)render();
+    }).catch(()=>{
+      if(read!==draft.read)return;
+      draft.loading=false;draft.error='未能读取文件。';
+      if(view==='library'&&libraryTab===kind)render();
+    });
   }
   if(input.id==='task-filter'){taskFilter=input.value;taskPageIndex=0;render()}
   if(input.id==='shared-list'){listId=input.value;persist();render()}
@@ -621,11 +669,11 @@ document.addEventListener('click',event=>{
   const control=event.target.closest('[data-action]');
   const action=control?.dataset.action,key=control?.dataset.key;
   if(!action)return;
-  if(['setup','tasks','library','settings'].includes(action)){
-    libraryFromSetup=false;settingsFromSetup=false;view=action;notice='';render();window.scrollTo(0,0);return;
+  if(['setup','tasks','library','templates','models'].includes(action)){
+    libraryFromSetup=false;templatesFromSetup=false;view=action;notice='';render();window.scrollTo(0,0);return;
   }
-  if(action==='manage-content'){view='settings';settingsFromSetup=true;notice='';render();window.scrollTo(0,0);return}
-  if(action==='return-content'){view='setup';settingsFromSetup=false;notice='';render();main.querySelector('[data-action=manage-content]')?.focus();return}
+  if(action==='manage-content'){view='templates';templatesFromSetup=true;notice='';render();window.scrollTo(0,0);return}
+  if(action==='return-content'){view='setup';templatesFromSetup=false;notice='';render();main.querySelector('[data-action=manage-content]')?.focus();return}
   if(action==='new-content'||action==='edit-content'){
     openTemplateEditor(contentTemplates.find(template=>template.id===key));return;
   }
@@ -651,36 +699,13 @@ document.addEventListener('click',event=>{
     notice='已从清单带回所选'+(libraryTab==='sites'?'站点。':'外链。');
     returnToSetup();return;
   }
-  if(action.startsWith('review-')){
-    const kind=action.slice(7),draft=imports[kind];
-    draft.rows=compareImport(draft.text,kind,draft.format);
-    draft.error=draft.rows.length?'':'请先填写或上传网址。';
-    open.add('import-'+kind);render();return;
-  }
-  if(action.startsWith('accept-')){
-    const kind=action.slice(7),draft=imports[kind],rows=compareImport(draft.text,kind,draft.format);
-    const valid=rows.filter(row=>row.status==='new'||row.status==='existing');
-    if(kind==='sites'){
-      const added=valid.filter(row=>row.status==='new').map(row=>({id:row.previous?.id??crypto.randomUUID(),name:row.name,url:row.url}));
-      const restored=new Set(added.map(site=>site.id));
-      sites=[...sites.filter(site=>!restored.has(site.id)),...added];
-      if(libraryFromSetup){
-        for(const site of [...added,...valid.flatMap(row=>row.status==='existing'&&row.previous?[row.previous]:[])])picked.add(site.id);
-        query='';pendingSitesOnly=false;
-      }
-      notice='已新增 '+added.length+' 个站点，已有站点保留原记录。';
-    }else{
-      if(!valid.length)return;
-      const newListId=crypto.randomUUID();
-      if(libraryFromSetup)listId=newListId;
-      const name=draft.name.trim()||draft.filename?.replace(/\.[^.]+$/,'')||'外链清单 '+(linkLists.length+1);
-      linkLists=[...linkLists,{id:newListId,name,source:draft.filename?draft.format:'paste',links:valid.map(row=>({id:'row-'+row.line,line:row.line,url:row.url}))}];
-      notice='已保存 '+valid.length+' 条有效外链。已有外链可在新清单复用。';
-    }
-    if(rows.some(row=>row.status==='error'))notice+=' 有问题的行未加入。';
-    draft.rows=rows;draft.saved=true;
-    if(libraryFromSetup){returnToSetup();return}
-    libraryQuery='';persist();render();return;
+  if(action.startsWith('review-')){checkAndImport(action.slice(7));return}
+  if(action.startsWith('download-import-')){
+    const kind=action.slice(16);
+    const issues=(imports[kind].rows??[]).filter(row=>row.status==='error');
+    if(issues.length)downloadCsv([['行号','原始内容','问题原因'],...issues.map(row=>[row.line,row.raw,row.reason])],
+      'URLPut-'+(kind==='sites'?'站点':'外链')+'导入问题.csv');
+    return;
   }
   if(action==='select-all'){for(const site of matchSites())picked.add(site.id);persist();refreshSection('sites');return}
   if(action==='clear'){picked.clear();persist();refreshSection('sites');return}
@@ -712,8 +737,6 @@ document.addEventListener('click',event=>{
     view='library';libraryTab=action.endsWith('sites')?'sites':'links';libraryQuery='';libraryPageIndex=0;
     if(fromSetup){
       libraryFromSetup=true;
-      const draft=imports[libraryTab];
-      if(draft.saved)Object.assign(draft,{text:'',filename:'',format:'txt',name:'',rows:null,saved:false,error:''});
       open.add('import-'+libraryTab);
       notice='';render();window.scrollTo(0,0);return;
     }
