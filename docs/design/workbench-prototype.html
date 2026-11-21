@@ -299,6 +299,9 @@ dialog::backdrop { background: #21153966; }
   main { padding-inline: 9px; }
   .card, details { padding-inline: 10px; }
 }
+.link-filter-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 5px 8px; }
+.link-filter-grid .field { margin: 0; }
+details[data-section="link-filters"] { margin: 8px 0; padding: 7px 9px; background: #faf9ff; }
 </style>
 <div class="panel">
 <header><div class="bar"><div class="brand"><span class="brand-mark" aria-hidden="true"></span>URLPut</div><span class="chip demo-label">模拟演示</span></div><nav id="nav" aria-label="插件导航"></nav></header>
@@ -309,7 +312,8 @@ dialog::backdrop { background: #21153966; }
 const numbers = new Intl.NumberFormat('zh-CN');
 const n = value => numbers.format(value);
 const demoSites = Array.from({length:100},(_,i)=>({id:'site-'+(i+1),name:'brand-'+(i+1)+'.example',url:'https://brand-'+(i+1)+'.example/'}));
-const demoLinks = Array.from({length:1000},(_,i)=>({id:'row-'+(i+1),line:i+1,url:'https://channel-'+(i+1)+'.example/submit',observedRel:['Dofollow','Nofollow','Sponsored','UGC','未知'][i%5],dr:i%7===0?null:(i*13)%101,entryType:i%2===0?'directory':'resource',siteType:i%2===0?'目录站':'内容社区',description:i%2===0?'收录产品官网和工具简介':'分享资源与使用心得',status:'active'}));
+const commonSiteTypes=['目录站','内容社区','工具站','博客'];
+const demoLinks = Array.from({length:1000},(_,i)=>({id:'row-'+(i+1),line:i+1,url:'https://channel-'+(i+1)+'.example/submit',observedRel:['Dofollow','Nofollow','Sponsored','UGC','未知'][i%5],dr:i%7===0?null:(i*13)%101,entryType:i%2===0?'directory':'resource',siteType:commonSiteTypes[i%commonSiteTypes.length],description:i%2===0?'收录产品官网和工具简介':'分享资源与使用心得',status:'active'}));
 const storageKey = 'urlput-panel-prototype-v2';
 let saved;
 try {saved=JSON.parse(localStorage.getItem(storageKey))}catch{}
@@ -1176,6 +1180,10 @@ function browseMarkup(kind){
     '<p class="hint" id="browse-status-'+kind+'" aria-live="polite">'+browseStatus(count,items.length)+'</p>';
 }
 function refreshBrowse(kind,reset=false){
+  if(kind==='links'){
+    const summary=main.querySelector('[data-section="link-filters"] > summary');
+    if(summary)summary.innerHTML=linkFilterSummary();
+  }
   if(reset)browseCounts[kind]=browseStep;
   const list=main.querySelector('[data-browse="'+kind+'"]');
   if(!list)return;
@@ -1195,20 +1203,24 @@ function growBrowse(kind){
   list.insertAdjacentHTML('beforeend',items.slice(before,count).map(item=>browseRow(kind,item)).join(''));
   main.querySelector('#browse-status-'+kind).textContent=browseStatus(count,items.length);
 }
+function linkFilterSummary(){
+  const values=[linkType,linkPrice,relFilter,drFloor?'DR ≥ '+drFloor:''].filter(Boolean);
+  return '筛选条件 <small>'+safe(values.join(' · ')||'不限')+'</small>';
+}
 function activeLinkPreview(){
   const list=previewList();
   if(!list)return '';
-  const types=[...new Set(activeLinks(list).map(websiteType))].sort();
+  const types=[...new Set([...commonSiteTypes,...activeLinks(list).map(websiteType)])].sort();
   return '<h3>活跃外链 · '+safe(list.name)+'</h3>'+
     '<label class="field"><span>'+icon('search')+'搜索外链</span><input id="link-preview-query" placeholder="网址、域名、类别或描述" value="'+safe(linkQuery)+'"></label>'+
-    '<label class="field">网站类型<select id="link-preview-type"><option value="">全部类型</option>'+
+    detail('link-filters',linkFilterSummary(),'<div class="link-filter-grid"><label class="field">网站类型<select id="link-preview-type"><option value="">全部类型</option>'+
     types.map(type=>'<option value="'+safe(type)+'" '+(type===linkType?'selected':'')+'>'+safe(type)+'</option>').join('')+'</select></label>'+
     '<label class="field">价格类别<select id="link-preview-price"><option value="">全部价格</option>'+
     priceTypes.map(price=>'<option '+(price===linkPrice?'selected':'')+'>'+price+'</option>').join('')+'</select></label>'+
     '<label class="field">样本链接属性<select id="rel-filter"><option value="">全部属性</option>'+
     ['Dofollow','Nofollow','Sponsored','UGC','未知'].map(rel=>'<option '+(rel===relFilter?'selected':'')+'>'+rel+'</option>').join('')+'</select></label>'+
-    '<label class="field">最低 Ahrefs DR（0–100）<input id="dr-floor" type="number" min="0" max="100" placeholder="不限" value="'+safe(drFloor)+'"></label>'+
-    '<p class="hint">演示数据。链接属性参考同入口的历史样本，实际以发布页为准。设置最低 DR 后仅显示有评分的外链。</p>'+
+    '<label class="field">最低 Ahrefs DR（0–100）<input id="dr-floor" type="number" min="0" max="100" placeholder="不限" value="'+safe(drFloor)+'"></label></div>'+
+    '<p class="hint">演示数据。链接属性参考同入口的历史样本，实际以发布页为准。设置最低 DR 后仅显示有评分的外链。</p>')+
     (view==='setup'?'<div class="actions">'+btn('只选筛选结果','pick-filtered','secondary')+btn('清空外链选择','clear-links','subtle')+'</div>':'')+
     browseMarkup('links');
 }
