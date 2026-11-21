@@ -763,6 +763,7 @@ function chosenTemplates(){
 function canStartBatch(){
   return picked.size&&perSite()&&(mode!=='execute'||contentStrategy==='ai'||chosenTemplates().length);
 }
+const selectionHint=count=>count?'已选 '+count+' 份模板':'请至少选择一份模板才能启动。';
 function contentOptions(){
   if(mode!=='execute')return '';
   const selectedIds=new Set(chosenTemplates().map(template=>template.id));
@@ -778,10 +779,10 @@ function contentOptions(){
     '<label class="field">内容来源<select id="content-strategy"><option value="templates" '+(contentStrategy==='templates'?'selected':'')+'>仅用内容模板</option>'+
     '<option value="ai" '+(contentStrategy==='ai'?'selected':'')+'>AI 根据目标网页拟写</option>'+
     '<option value="hybrid" '+(contentStrategy==='hybrid'?'selected':'')+'>AI 分析 + 模板</option></select></label>'+
-    (contentStrategy!=='ai'?'<p class="hint">'+(contentStrategy==='hybrid'?'先选适合投稿页面的模板，再由 AI 按网页要求修改文案。':'可多选。每次从匹配的模板中随机选一份，缺少匹配时使用已选通用文案。')+'</p>'+
-      '<div class="list" aria-label="可选内容模板">'+groups+'</div><p class="hint" id="content-count">已选 '+selectedIds.size+' 份模板</p>':
-      '<p class="hint">AI 用目标网页的主题和要求拟写。原型生成示例预览。正式执行遇到模型不可用或网页信息不足时，转人工处理。</p>')+
-    btn('管理内容模板','manage-content','secondary')+'</section>';
+    (contentStrategy!=='ai'?'<p class="hint">'+(contentStrategy==='hybrid'?'勾选可用模板。系统选取一份匹配的模板，再由 AI 按投稿要求改写。':'可多选。每次从匹配的模板中随机选一份，缺少匹配时使用已选通用文案。')+'</p>'+
+      '<div class="list" aria-label="可选内容模板">'+groups+'</div><p class="hint" id="content-count">'+selectionHint(selectedIds.size)+'</p>':
+      '<p class="hint">AI 根据投稿页面和推广站点资料起草文案。演示使用示例草稿。</p>')+
+    (contentStrategy==='ai'?'':btn('管理内容模板','manage-content','secondary'))+'</section>';
 }
 function templateRows(){
   const filtered=[...contentTemplates].reverse().filter(template=>matches(template.name+' '+template.title+' '+templateCategories[template.category].label,templateQuery));
@@ -1196,7 +1197,7 @@ function setup(){
     '<section class="card"><h2>'+stepTitle(3,'执行方式')+'</h2>'+
     '<label class="field"><select aria-label="执行方式" id="mode" aria-describedby="mode-help"><option value="analysis">仅分析</option><option value="execute">分析后执行（模拟）</option></select></label>'+
     '<p class="hint" id="mode-help">'+(mode==='analysis'?'只检查投稿入口和要求，不会提交。':
-      '分析通过后，按投稿内容、认证规则和每日额度继续。需要你确认的条目会进入待办。')+'</p>'+
+      '先检查入口，再按额度模拟投稿。需要你操作时，到「任务」里处理待确认事项。')+'</p>'+
     '</section>'+contentOptions()+authOptions()+limitsMarkup()+
     '<section class="card"><h2>'+stepTitle(mode==='analysis'?4:7,'批次设置')+'</h2>'+
     '<label class="field">批次名称（可选）<input id="batch-name" value="'+safe(batchName)+'"></label>'+
@@ -1208,7 +1209,7 @@ function setup(){
     '<div><strong id="combinations">'+n(picked.size*perSite())+'</strong><small>合计处理条数</small></div>'+
     '<div><strong id="pending-combinations">'+n(selectedPending())+'</strong><small>待接收</small></div></div>'+
     '<p class="hint">'+(mode==='analysis'?'每个站点和每条外链算一条。「待接收」表示尚未确认平台收件。本次只分析。':'「待接收」表示尚未确认平台收件。已尝试过同一平台的投稿会跳过。')+'</p>'+
-    '<button class="button full" data-action="start" '+(!canStartBatch()?'disabled':'')+'>启动模拟批次</button><p class="notice" role="status">'+safe(notice)+'</p></section>';
+    '<button class="button full" data-action="start" '+(!canStartBatch()?'disabled':'')+'>'+(mode==='analysis'?'开始分析（模拟）':'开始分析并投稿（模拟）')+'</button><p class="notice" role="status">'+safe(notice)+'</p></section>';
 }
 function unverified(item,site){
   const groups=site?[item.daily?.verify?.[site.id]??[]]:Object.values(item.daily?.verify??{});
@@ -1528,7 +1529,7 @@ function advance(targets=batches){
       continue;
     }
     if(item.daily){void processCycle(item);continue}
-    item.manual=true;
+    item.manual=item.mode==='execute';
     item.cursor=Math.min(total,item.cursor+Math.max(1,Math.ceil(total/5)));
     changed=true;
   }
@@ -1665,15 +1666,15 @@ document.addEventListener('change',event=>{
     if(field.hidden)field.querySelector('input').value='';
   }
   if(input.id==='content-category')editorCategoryLabels(input.value);
-  if(input.id==='content-strategy'){contentStrategy=input.value;render()}
+  if(input.id==='content-strategy'){contentStrategy=input.value;notice='';render()}
   if(input.dataset.contentId){
     pickedTemplates??=new Set(Object.values(defaultTemplateIds));
     if(input.checked)pickedTemplates.add(input.dataset.contentId);else pickedTemplates.delete(input.dataset.contentId);
-    document.querySelector('#content-count').textContent='已选 '+pickedTemplates.size+' 份模板';
+    document.querySelector('#content-count').textContent=selectionHint(pickedTemplates.size);
     main.querySelector('[data-action=start]').disabled=!canStartBatch();
   }
   if(input.dataset.authSetting){authDraft[input.dataset.authSetting]=input.checked;render()}
-  if(input.id==='mode'){mode=input.value;render()}
+  if(input.id==='mode'){mode=input.value;notice='';render()}
   if(input.id==='daily-limit')dailyLimit=integerQuota(input.value);
   if(input.id==='limit-site'){limitSite=input.value;render()}
   if(input.id==='site-limit'&&limitSite)overrides[limitSite]=integerQuota(input.value);
