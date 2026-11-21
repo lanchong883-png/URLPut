@@ -32,34 +32,189 @@ let listId=saved?.listId??'initial';
 let taskQuery='',taskFilter='all',taskPageIndex=0,libraryTab='sites',libraryQuery='',libraryPageIndex=0,showArchived=false,editing='',batchName='';
 let batch=batches.find(item=>item.id===saved?.batchId)??batches.at(-1)??null;
 let picked=new Set(saved?.picked??[]), view='setup', query='', scope='', limit=1000, mode='analysis', notice='';
+let pendingSitesOnly=false;
+const imports={sites:{text:'',filename:'',format:'txt'},links:{text:'',filename:'',format:'txt',name:''}};
 let open=new Set(['sites']), model={type:'local',endpoint:'http://127.0.0.1:11434/v1',name:'',analysis:false,writing:false};
 const main = document.querySelector('#main'), nav = document.querySelector('#nav'), dialog=document.querySelector('#dialog');
-function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked]}))}catch{}}
+function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts}))}catch{}}
 const safe = value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const btn = (label,action,style='')=>'<button class="button '+style+'" data-action="'+action+'">'+label+'</button>';
 const detail = (id,title,body)=>'<details data-section="'+id+'" '+(open.has(id)?'open':'')+'><summary>'+title+'</summary>'+body+'</details>';
-const matchSites=()=>sites.filter(site=>!site.archived&&matches(site.name+' '+site.url,query));
+const matchSites=()=>sites.filter(site=>!site.archived&&matches(site.name+' '+site.url,query)&&(!pendingSitesOnly||siteCounts(site).pending>0));
 const selected=()=>sites.filter(site=>!site.archived&&picked.has(site.id));
 const currentList=()=>linkLists.find(list=>list.id===listId&&!list.archived);
 const perSite=()=>Math.min(currentList()?.links.length??0,limit);
+const reviewLabels={new:'新增',existing:'已有',duplicate:'清单内重复',error:'有问题'};
+function checkedUrl(value,kind){
+  const raw=value.trim();
+  const address=kind==='sites'&&!/^[a-z][a-z\d+.-]*:/i.test(raw)?'https://'+raw:raw;
+  if(!/^https?:\/\//i.test(address))return;
+  try{
+    const url=new URL(address);
+    const host=url.hostname.replace(/\.$/,'');
+    if(!host.includes('.')||url.username||url.password||/\s/.test(raw))return;
+    url.hostname=host;
+    url.hash='';
+    return url;
+  }catch{}
+}
+function compareImport(value,kind,format){
+  const known=kind==='sites'?new Map(sites.map(site=>[new URL(site.url).hostname,site])):
+    new Map(linkLists.flatMap(list=>list.links.map(link=>[link.url,list])));
+  const seen=new Set(),rows=[];
+  for(const [index,line] of value.replace(/^\uFEFF/,'').split(/\r\n|\n|\r/).entries()){
+    const raw=line.trim();
+    if(!raw)continue;
+    let input=raw;
+    if(format==='csv'){
+      if(!rows.length&&/^(?:"?(?:url|网址|域名|站点网址|外链\s*url)"?)$/i.test(input))continue;
+      input=input.replace(/^"([^"]*)"$/,'$1');
+    }
+    const url=checkedUrl(input,kind);
+    if(!url){
+      rows.push({line:index+1,raw,status:'error',reason:kind==='sites'?'请输入有效域名或 HTTP/HTTPS 站点网址。':'请输入完整的 HTTP/HTTPS 外链网址。'});
+      continue;
+    }
+    const key=kind==='sites'?url.hostname:url.href;
+    const previous=known.get(key);
+    const status=seen.has(key)?'duplicate':previous?'existing':'new';
+    seen.add(key);
+    rows.push({line:index+1,raw,url:url.href,key,previous,status,
+      name:previous?.name??url.hostname,
+      reason:status==='duplicate'?'本次输入已有相同项':previous?.archived?'已有且归档，可在清单恢复':status==='existing'?'已保存在清单':'可加入清单'});
+  }
+  return rows;
+}
+function reviewMarkup(kind){
+  const draft=imports[kind],label=kind==='sites'?'站点':'外链',rows=draft.rows;
+  const summary=rows?Object.entries(reviewLabels).map(([key,title])=>title+' '+n(rows.filter(row=>row.status===key).length)).join(' · '):'';
+  const preview=rows?'<p class="hint" role="status">'+summary+'</p>'+
+    '<div class="list" aria-label="'+label+'检查明细">'+rows.map(row=>'<div class="item"><div class="row"><strong>第 '+row.line+' 行</strong><span class="chip '+(row.status==='error'||row.status==='duplicate'?'warm':'')+'">'+reviewLabels[row.status]+'</span></div><div class="links">'+safe(row.raw)+'</div><small>'+safe(row.reason)+(kind==='sites'&&row.url?' · 站点名称 '+safe(row.name):'')+'</small></div>').join('')+'</div>':'';
+  const usable=!draft.saved&&rows?.some(row=>kind==='sites'?row.status==='new'||row.status==='existing'&&!row.previous.archived:
+    row.status==='new'||row.status==='existing');
+  return detail('import-'+kind,'录入或导入'+label,
+    '<label class="field">录入'+label+'（每行一个）<textarea id="input-'+kind+'" rows="3" placeholder="'+(kind==='sites'?'brand.example':'https://directory.example/submit')+'">'+safe(draft.text)+'</textarea></label>'+
+    '<label class="field">上传'+label+'文件<input id="file-'+kind+'" type="file" accept=".txt,.csv,text/plain,text/csv"></label>'+
+    '<p class="hint">'+(kind==='sites'?'默认用域名作为站点名称。':'TXT 或单列 CSV。如需 Excel，可从已保存的外链清单选择。')+(draft.filename?' · '+safe(draft.filename):'')+'</p>'+
+    (kind==='links'?'<label class="field">新外链清单名称<input id="import-list-name" value="'+safe(draft.name)+'"></label>':'')+
+    btn('检查'+label,'review-'+kind,'secondary')+
+    (draft.error?'<p class="hint" role="alert">'+safe(draft.error)+'</p>':'')+preview+
+    (usable?btn(kind==='sites'?'保存并选中有效站点':'保存并使用有效外链','accept-'+kind):''));
+}
+function submittedForSite(site){
+  const urls=new Set();
+  if(site.id==='site-1'||site.id==='site-2'){
+    for(const link of demoLinks.slice(0,site.id==='site-1'?240:1000))urls.add(link.url);
+  }
+  for(const item of batches){
+    if(item.mode!=='execute')continue;
+    const index=item.sites.findIndex(entry=>entry.id===site.id);
+    if(index===-1)continue;
+    const start=index*item.links.length;
+    const end=item.daily?item.daily.positions[index]:Math.min(item.links.length,item.cursor-start);
+    for(let offset=0;offset<end;offset++){
+      const position=start+offset;
+      if(position===0&&item.manual&&!item.resolved)continue;
+      if(position%3!==2)urls.add(item.links[offset].url);
+    }
+  }
+  return urls;
+}
+function siteCounts(site,pool=currentList()?.links??[],submitted=submittedForSite(site)){
+  const total=new Set(pool.map(link=>link.url));
+  const count=[...total].filter(url=>submitted.has(url)).length;
+  return {total:total.size,submitted:count,pending:total.size-count};
+}
+function selectedPending(){
+  const pool=(currentList()?.links??[]).slice(0,perSite());
+  if(!pool.length)return 0;
+  return selected().reduce((total,site)=>total+siteCounts(site,pool).pending,0);
+}
+
+const DAY=24*60*60*1000;
+let dailyLimit=10, recurring=true, limitSite='', overrides={};
+let clockShift=saved?.clockShift??0, attempts=saved?.attempts??[];
+const demoNow=()=>Date.now()+clockShift;
+function integerQuota(value){return Math.max(1,Math.min(1000,Math.floor(Number(value)||1)))}
+function limitsMarkup(){
+  if(mode!=='execute')return '';
+  const targets=selected();
+  const override=targets.find(site=>site.id===limitSite);
+  return '<section class="card"><h2>提交频率</h2>'+
+    '<label class="field">每站 24 小时默认尝试上限<input id="daily-limit" type="number" min="1" max="1000" value="'+dailyLimit+'"></label>'+
+    '<label class="field">单站额度可选<select id="limit-site"><option value="">选择站点</option>'+targets.map(site=>'<option value="'+safe(site.id)+'" '+(site.id===limitSite?'selected':'')+'>'+safe(site.name)+'</option>').join('')+'</select></label>'+
+    (override?'<label class="field">该站 24 小时尝试上限<input id="site-limit" type="number" min="1" max="1000" value="'+(Object.hasOwn(overrides,override.id)?overrides[override.id]:dailyLimit)+'"></label>':'')+
+    '<label class="check"><input type="checkbox" id="recurring" '+(recurring?'checked':'')+'>每天执行，自动续跑</label>'+
+    '<p class="hint">按滚动 24 小时统计，每站跨批次共享额度。达到上限后保留进度。设定合适的额度并遵守目标平台规则。</p></section>';
+}
+function budgetRemaining(item,siteId,now){
+  const effective=Math.min(item.daily.quotas[siteId],...batches.filter(other=>other.daily&&!other.stopped&&
+    other.cursor<other.sites.length*other.links.length&&Object.hasOwn(other.daily.quotas,siteId)).map(other=>other.daily.quotas[siteId]));
+  const used=attempts.reduce((sum,entry)=>sum+(entry.siteId===siteId&&now-entry.at<DAY?entry.count:0),0);
+  return Math.max(0,effective-used);
+}
+function processCycle(item){
+  const now=demoNow(),daily=item.daily;
+  if(daily.nextAt>now)return false;
+  if(daily.nextAt&&!daily.recurring&&!daily.allowed)return false;
+  daily.allowed=false;
+  daily.nextAt=0;
+  daily.retry=null;
+  attempts=attempts.filter(entry=>now-entry.at<DAY);
+  let phase='';
+  for(const [index,site] of item.sites.entries()){
+    let position=daily.positions[index];
+    let remaining=budgetRemaining(item,site.id,now);
+    let used=0;
+    const history=submittedForSite(site);
+    const skipped=new Set(daily.skipped[site.id]??[]);
+    while(position<item.links.length){
+      const link=item.links[position];
+      if(history.has(link.url)){skipped.add(link.url);position++;continue}
+      if(!remaining){phase||='额度已用完';break}
+      if(index===0&&!daily.injectedFailure&&used===1&&position+1<item.links.length){
+        daily.injectedFailure=true;daily.retry={siteId:site.id,offset:position};phase='提交前临时失败，等待次日重试';break;
+      }
+      remaining--;used++;position++;
+    }
+    daily.positions[index]=position;
+    if(skipped.size)daily.skipped[site.id]=[...skipped];
+    if(used)attempts.push({siteId:site.id,count:used,at:now});
+  }
+  item.cursor=daily.positions.reduce((total,count)=>total+count,0);
+  if(item.cursor<item.sites.length*item.links.length){
+    daily.nextAt=now+DAY;daily.reason=phase||'等待下一周期';
+  }else{daily.nextAt=0;daily.reason=''}
+  return true;
+}
+function cycleMarkup(item){
+  if(!item.daily)return '';
+  const daily=item.daily;
+  const status=item.stopped?'自动执行已关闭':daily.recurring?'每天执行':'单次执行';
+  return '<p class="hint">'+status+' · 每站 24 小时默认上限 '+daily.defaultQuota+' 次</p>'+
+    (daily.nextAt&&!item.stopped?'<p class="hint">'+safe(daily.reason)+'</p><p class="hint">下轮最早 · '+safe(new Date(daily.nextAt).toLocaleString('zh-CN'))+'</p>':'');
+}
+
 function setup(){
   const visible=matchSites();
-  const selectors=visible.slice(0,20).map(site=>'<div class="item"><label><input type="checkbox" data-site="'+safe(site.id)+'" '+(picked.has(site.id)?'checked':'')+'><span>'+safe(site.name)+'<small class="truncate">'+safe(site.url)+'</small></span></label></div>').join('');
+  const selectors=visible.slice(0,20).map(site=>{const counts=siteCounts(site);return '<div class="item"><label><input type="checkbox" data-site="'+safe(site.id)+'" '+(picked.has(site.id)?'checked':'')+'><span>'+safe(site.name)+'<small class="truncate">'+safe(site.url)+'</small><small>总外链 '+n(counts.total)+' · 已提交 '+n(counts.submitted)+' · 待提交 '+n(counts.pending)+'</small></span></label></div>'}).join('');
   return '<h1>新建批次</h1>'+
     detail('sites','1. 推广站点 <small>· 已选 '+n(picked.size)+' / '+n(sites.length)+'</small>',
-      '<p class="hint">推广站点是你要推广的网站。外链清单在下一步导入。</p>'+
+      '<p class="hint">统计按当前共享外链清单计算。示例站点包含模拟历史。</p>'+
       '<label class="field">搜索站点<input id="site-search" value="'+safe(query)+'" placeholder="名称或域名"></label>'+
-      '<div class="actions">'+btn('全选搜索结果','select-all','secondary')+btn('清空选择','clear','subtle')+'</div>'+
+      '<label class="check"><input type="checkbox" id="pending-sites" '+(pendingSitesOnly?'checked':'')+'>仅看有待提交外链的站点</label>'+
+      '<div class="actions" style="margin-top:6px">'+btn('全选搜索结果','select-all','secondary')+btn('清空选择','clear','subtle')+'</div>'+
       '<div class="list">'+(selectors||'<p class="hint">没有匹配站点。</p>')+'</div>'+
       (visible.length>20?'<p class="hint result-count">展示前 20 个，共 '+n(visible.length)+' 个匹配。全选包含所有匹配站点。</p>':'')+
-      btn('维护推广站点','manage-sites','subtle'))+
+      reviewMarkup('sites')+btn('维护推广站点','manage-sites','subtle'))+
     detail('links','2. 外链清单 <small>· '+n(currentList()?.links.length??0)+' 条可用候选</small>',
       '<label class="field">共享外链清单<select id="shared-list"><option value="">请选择清单</option>'+linkLists.filter(list=>!list.archived).map(list=>'<option value="'+safe(list.id)+'" '+(list.id===listId?'selected':'')+'>'+safe(list.name)+' · '+n(list.links.length)+' 条</option>').join('')+'</select></label>'+
-      btn('导入或维护外链清单','manage-links','subtle'))+
+      reviewMarkup('links')+btn('维护已有外链清单','manage-links','subtle'))+
     '<section class="card"><h2>启动预览</h2><label class="field">批次名称（可选）<input id="batch-name" value="'+safe(batchName)+'"></label><label class="field">每站最多使用<input id="limit" type="number" min="1" max="10000" value="'+safe(limit)+'"></label>'+
-    '<div class="stats"><div><strong id="per-site">'+n(perSite())+'</strong><small>每站候选</small></div><div><strong id="combinations">'+n(picked.size*perSite())+'</strong><small>站点 × 外链组合</small></div></div>'+
+    '<div class="stats"><div><strong id="per-site">'+n(perSite())+'</strong><small>每站候选</small></div><div><strong id="combinations">'+n(picked.size*perSite())+'</strong><small>站点 × 外链组合</small></div></div><p class="hint">其中待提交 <strong id="pending-combinations">'+n(selectedPending())+'</strong> 条</p>'+
     '<p class="hint">每个已选推广站点都用同一份外链清单。历史投稿和同平台跳过会影响实际尝试数。</p>'+
     '<label class="field">执行方式<select id="mode"><option value="analysis">仅分析</option><option value="execute">分析后执行（模拟）</option></select></label>'+
+    '</section>'+limitsMarkup()+'<section class="card">'+
     '<button class="button full" data-action="start" '+(!picked.size||!perSite()?'disabled':'')+'>启动模拟批次</button><p class="notice" role="status">'+safe(notice)+'</p></section>';
 }
 function metrics(site,batchItem=batch){
@@ -68,7 +223,7 @@ function metrics(site,batchItem=batch){
   const total=index<0?batchItem.sites.length*width:width;
   // One deliberately held row belongs to the first site.
   const held=batchItem.manual&&start===0?1:0;
-  const regular=Math.max(0,Math.min(total,batchItem.cursor-start));
+  const regular=index>=0&&batchItem.daily?batchItem.daily.positions[index]:Math.max(0,Math.min(total,batchItem.cursor-start));
   const pending=held&&!batchItem.resolved?1:0;
   const dealt=Math.max(0,regular-pending);
   return {total,dealt,pending,percent:Math.floor(dealt*100/total)};
@@ -78,9 +233,12 @@ function sample(site){
   return targets.flatMap(target=>batch.links.slice(0,5).map((link,offset)=>{
     const index=batch.sites.indexOf(target)*batch.links.length+offset;
     const pending=index===0&&batch.manual&&!batch.resolved;
-    const complete=index<batch.cursor&&!pending;
-    const status=pending?'需人工':complete?'已处理':'排队中';
-    const result=pending?'等待核对账号':!complete?'等待继续':batch.mode==='analysis'?'仅分析 · 已检查入口':
+    const siteIndex=batch.sites.indexOf(target);
+    const complete=(batch.daily?offset<batch.daily.positions[siteIndex]:index<batch.cursor)&&!pending;
+    const skipped=batch.daily?.skipped[target.id]?.includes(link.url);
+    const retry=batch.daily?.retry?.siteId===target.id&&batch.daily.retry.offset===offset;
+    const status=skipped?'已跳过':pending?'需人工':complete?'已处理':retry?'待重试':'排队中';
+    const result=skipped?'历史已提交':retry?'提交前临时失败，等下一周期':pending?'等待核对账号':!complete?'等待继续':batch.mode==='analysis'?'仅分析 · 已检查入口':
       ['模拟有效外链','模拟待审核','模拟入口已关闭'][index%3];
     return {target,link,status,result};
   }));
@@ -93,15 +251,20 @@ function progress(){
   const records=sample(site);
   return '<div class="row"><h1>'+safe(batch.name||'批次 '+batch.id)+'</h1>'+btn('返回任务','tasks','subtle')+'</div><section class="card">'+
     '<div class="row"><h2>'+status+'</h2><span class="chip">'+(batch.mode==='analysis'?'仅分析':'模拟执行')+'</span></div>'+
+    cycleMarkup(batch)+
     (batch.interrupted?'<p class="hint">本批次已停止。继续时从保存的进度恢复。</p>':'')+
     '<p class="hint">'+n(batch.sites.length)+' 个推广站点 · 每站 '+n(batch.links.length)+' 条 · 批次快照</p>'+
     (batch.listName?'<p class="hint">外链清单 · '+safe(batch.listName)+'</p>':'')+
     '<label class="field">查看范围<select id="scope"><option value="">全部站点</option>'+batch.sites.map(site=>'<option value="'+safe(site.id)+'" '+(site.id===scope?'selected':'')+'>'+safe(site.name)+'</option>').join('')+'</select></label>'+
     '<div class="meter" role="progressbar" aria-label="已处理比例" aria-valuenow="'+m.percent+'"><div style="width:'+m.percent+'%"></div></div>'+
     '<div class="row"><span>已处理 '+n(m.dealt)+' / '+n(m.total)+'</span><strong>'+m.percent+'%</strong></div>'+
-    (state==='waiting'?'<div class="actions">'+btn('中断','interrupt','subtle')+'</div>':'')+
-    (state!=='completed'&&state!=='waiting'?'<div class="actions" style="margin-top:7px">'+(state==='paused'||state==='interrupted'?btn('继续','resume','secondary'):btn('暂停','pause','secondary')+btn('推进一步','advance','subtle'))+(state!=='interrupted'?btn('中断','interrupt','subtle'):'')+'</div>':'')+'</section>'+
-    (m.pending&&state!=='interrupted'?'<section class="card"><div class="row"><h2>人工待办</h2><span class="chip warm">1 条</span></div><p>'+safe(batch.sites[0].name)+' → '+safe(batch.links[0].url)+'</p><p class="hint">核对站点专用账号。其他组合继续运行。</p>'+btn('已确认，恢复该条','resolve','secondary')+'</section>':'')+
+    (state!=='completed'?'<div class="actions" style="margin-top:7px">'+
+      (['paused','interrupted','stopped'].includes(state)?btn('继续','resume','secondary'):
+        state==='budget'?btn('模拟 24 小时后','next-cycle','secondary')+btn('暂停','pause','subtle'):
+        state==='waiting'?'':btn('暂停','pause','secondary')+btn(batch.daily?'执行本轮':'推进一步','advance','subtle'))+
+      (['interrupted','stopped'].includes(state)?'':btn('中断','interrupt','subtle'))+
+      (state==='stopped'?'':btn('停止','stop','subtle'))+'</div>':'')+'</section>'+
+    (m.pending&&!['interrupted','stopped'].includes(state)?'<section class="card"><div class="row"><h2>人工待办</h2><span class="chip warm">1 条</span></div><p>'+safe(batch.sites[0].name)+' → '+safe(batch.links[0].url)+'</p><p class="hint">核对站点专用账号。其他组合继续运行。</p>'+btn('已确认，恢复该条','resolve','secondary')+'</section>':'')+
     detail('report','记录与导出 <small>· 当前范围抽样</small>',
       '<p class="hint">每条都保留推广站点、来源行和外链网址。</p>'+
       '<div class="list">'+records.map(({target,link,status,result})=>'<div class="item"><div class="row"><strong>'+safe(target.name)+'</strong><span class="chip">'+status+'</span></div><small class="links">第 '+link.line+' 行 · '+safe(link.url)+'</small><p class="hint">'+result+'</p></div>').join('')+'</div>'+
@@ -111,9 +274,11 @@ const pageSize=8;
 function batchStatus(item){
   const total=item.sites.length*item.links.length;
   if(item.cursor===total&&(!item.manual||item.resolved))return ['completed','已完成'];
+  if(item.stopped)return ['stopped','已停止'];
   if(item.interrupted)return ['interrupted','已中断'];
   if(item.paused)return ['paused','已暂停'];
   if(item.cursor===total)return ['waiting','待人工'];
+  if(item.daily?.nextAt&&(item.daily.nextAt>demoNow()||!item.daily.recurring&&!item.daily.allowed))return ['budget','待下轮'];
   return ['running','执行中'];
 }
 function matches(value,term){return value.toLowerCase().includes(term.trim().toLowerCase())}
@@ -138,7 +303,7 @@ function taskRows(){
 }
 function tasks(){
   return '<h1>任务</h1><section class="card"><label class="field">搜索批次<input id="task-search" placeholder="批次名称或编号" value="'+safe(taskQuery)+'"></label>'+
-    '<label class="field">任务状态<select id="task-filter">'+[['all','全部'],['running','执行中'],['waiting','待人工'],['paused','已暂停'],['interrupted','已中断'],['completed','已完成']].map(([id,label])=>'<option value="'+id+'" '+(id===taskFilter?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
+    '<label class="field">任务状态<select id="task-filter">'+[['all','全部'],['running','执行中'],['waiting','待人工'],['paused','已暂停'],['interrupted','已中断'],['stopped','已停止'],['budget','待下轮'],['completed','已完成']].map(([id,label])=>'<option value="'+id+'" '+(id===taskFilter?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
     '<div id="task-rows">'+taskRows()+'</div>'+(!batches.length?btn('载入历史任务示例','demo-history','secondary'):'')+'</section>';
 }
 const entityButton=(label,action,key)=>'<button class="button secondary" data-action="'+action+'" data-key="'+safe(key)+'">'+label+'</button>';
@@ -205,6 +370,7 @@ function refreshSection(id){
   }
   document.querySelector('#per-site').textContent=n(perSite());
   document.querySelector('#combinations').textContent=n(picked.size*perSite());
+  document.querySelector('#pending-combinations').textContent=n(selectedPending());
   main.querySelector('[data-action=start]').disabled=!picked.size||!perSite();
 }
 function parseLines(value){
@@ -223,7 +389,8 @@ function advance(targets=batches){
   let changed=false;
   for(const item of targets){
     const total=item.sites.length*item.links.length;
-    if(item.paused||item.interrupted||item.cursor>=total)continue;
+    if(item.paused||item.interrupted||item.stopped||item.cursor>=total)continue;
+    if(item.daily){if(processCycle(item))changed=true;continue}
     item.manual=true;
     item.cursor=Math.min(total,item.cursor+Math.max(1,Math.ceil(total/5)));
     changed=true;
@@ -251,6 +418,12 @@ document.addEventListener('toggle',event=>{
   if(event.target.open)open.add(id);else open.delete(id);
 },true);
 document.addEventListener('input',event=>{
+  if(event.target.id.startsWith('input-')){
+    const kind=event.target.id.slice(6),draft=imports[kind];
+    draft.text=event.target.value;draft.filename='';draft.format='txt';draft.error='';draft.saved=false;
+    if(draft.rows){draft.rows=null;render();const field=document.querySelector('#input-'+kind);field.focus();field.setSelectionRange(draft.text.length,draft.text.length)}
+  }
+  if(event.target.id==='import-list-name')imports.links.name=event.target.value;
   if(event.target.id==='site-search'){query=event.target.value;refreshSection('sites')}
   if(event.target.id==='task-search'){taskQuery=event.target.value;taskPageIndex=0;document.querySelector('#task-rows').innerHTML=taskRows()}
   if(event.target.id==='library-search'){libraryQuery=event.target.value;libraryPageIndex=0;document.querySelector('#library-rows').innerHTML=libraryRows()}
@@ -260,11 +433,27 @@ document.addEventListener('input',event=>{
 document.addEventListener('change',event=>{
   const input=event.target;
   if(input.dataset.site){if(input.checked)picked.add(input.dataset.site);else picked.delete(input.dataset.site);persist();refreshSection('sites')}
+  if(input.id==='pending-sites'){pendingSitesOnly=input.checked;refreshSection('sites')}
+  if(input.id.startsWith('file-')&&input.files[0]){
+    const kind=input.id.slice(5),draft=imports[kind],file=input.files[0];
+    if(!/\.(txt|csv)$/i.test(file.name)||file.size>2_000_000){
+      draft.rows=null;draft.error='请选择小于 2 MB 的 TXT 或单列 CSV 文件。';render();return;
+    }
+    void file.text().then(value=>{
+      draft.text=value;draft.saved=false;draft.filename=file.name;draft.format=file.name.toLowerCase().endsWith('.csv')?'csv':'txt';
+      draft.rows=compareImport(value,kind,draft.format);draft.error=draft.rows.length?'':'文件没有可检查的内容。';
+      if(view==='setup')render();
+    }).catch(()=>{draft.rows=null;draft.error='未能读取文件。';if(view==='setup')render()});
+  }
   if(input.id==='task-filter'){taskFilter=input.value;taskPageIndex=0;render()}
   if(input.id==='archived-only'){showArchived=input.checked;libraryPageIndex=0;render()}
   if(input.id==='shared-list'){listId=input.value;persist();render()}
   if(input.id==='scope'){scope=input.value;render()}
-  if(input.id==='mode')mode=input.value;
+  if(input.id==='mode'){mode=input.value;render()}
+  if(input.id==='daily-limit')dailyLimit=integerQuota(input.value);
+  if(input.id==='limit-site'){limitSite=input.value;render()}
+  if(input.id==='site-limit'&&limitSite)overrides[limitSite]=integerQuota(input.value);
+  if(input.id==='recurring')recurring=input.checked;
 });
 let lastTick=performance.now();
 document.addEventListener('click',event=>{
@@ -272,6 +461,32 @@ document.addEventListener('click',event=>{
   const action=control?.dataset.action,key=control?.dataset.key;
   if(!action)return;
   if(['setup','tasks','library','settings'].includes(action)){view=action;notice='';render();window.scrollTo(0,0);return}
+  if(action.startsWith('review-')){
+    const kind=action.slice(7),draft=imports[kind];
+    draft.rows=compareImport(draft.text,kind,draft.format);
+    draft.error=draft.rows.length?'':'请先填写或上传网址。';
+    open.add('import-'+kind);render();return;
+  }
+  if(action.startsWith('accept-')){
+    const kind=action.slice(7),draft=imports[kind],rows=compareImport(draft.text,kind,draft.format);
+    const valid=rows.filter(row=>row.status==='new'||row.status==='existing');
+    if(kind==='sites'){
+      const added=valid.filter(row=>row.status==='new').map(row=>({id:crypto.randomUUID(),name:row.name,url:row.url}));
+      sites=[...sites,...added];
+      for(const site of [...added,...valid.flatMap(row=>row.previous&&!row.previous.archived?[row.previous]:[])])picked.add(site.id);
+      query='';
+      notice='已新增 '+added.length+' 个站点，已有站点保留原记录。';
+    }else{
+      if(!valid.length)return;
+      listId=crypto.randomUUID();
+      const name=draft.name.trim()||draft.filename?.replace(/\.[^.]+$/,'')||'外链清单 '+(linkLists.length+1);
+      linkLists=[...linkLists,{id:listId,name,source:draft.filename?draft.format:'paste',links:valid.map(row=>({id:'row-'+row.line,line:row.line,url:row.url}))}];
+      notice='已保存 '+valid.length+' 条有效外链。已有外链可在新清单复用。';
+    }
+    if(rows.some(row=>row.status==='error'))notice+=' 有问题的行未加入。';
+    draft.rows=rows;draft.saved=true;
+    persist();render();return;
+  }
   if(action==='select-all'){for(const site of matchSites())picked.add(site.id);persist();refreshSection('sites');return}
   if(action==='clear'){picked.clear();persist();refreshSection('sites');return}
   if(action==='open-task'){batch=batches.find(item=>String(item.id)===key);scope='';view='progress';open.add('report')}
@@ -332,12 +547,26 @@ document.addEventListener('click',event=>{
     const list=currentList();
     batch={id:(batches.at(-1)?.id??0)+1,name:batchName.trim(),listName:list.name,sites:selected(),links:list.links.slice(0,perSite()),mode,source:list.source,
       cursor:0,paused:false,interrupted:false,manual:false,resolved:false};batchName='';
+    if(mode==='execute'){
+      batch.daily={defaultQuota:dailyLimit,recurring,quotas:Object.fromEntries(batch.sites.map(site=>[site.id,Object.hasOwn(overrides,site.id)?overrides[site.id]:dailyLimit])),
+        positions:batch.sites.map(()=>0),skipped:{},nextAt:0,reason:'',allowed:false,injectedFailure:false};
+    }
     batches.push(batch);
     scope='';view='progress';lastTick=performance.now();open.add('report');
   }
   if(action==='advance'){lastTick=performance.now();advance([batch]);return}
   if(action==='pause'){batch.paused=true;lastTick=performance.now()}
-  if(action==='resume'){batch.paused=false;batch.interrupted=false;lastTick=performance.now()}
+  if(action==='resume'){batch.paused=false;batch.interrupted=false;batch.stopped=false;lastTick=performance.now()}
+  if(action==='next-cycle'){
+    clockShift+=DAY;
+    if(batch.daily)batch.daily.allowed=true;
+    lastTick=performance.now();advance();return;
+  }
+  if(action==='stop'){
+    dialog.innerHTML='<h2 id="editor-title">停止当前批次？</h2><p>停止后关闭自动执行并保留结果。手动继续可重新启用原有周期。</p><div class="actions">'+btn('确认停止','confirm-stop')+btn('返回','close-dialog','secondary')+'</div>';
+    dialog.showModal();return;
+  }
+  if(action==='confirm-stop'){batch.stopped=true;batch.paused=false;batch.interrupted=false;dialog.close()}
   if(action==='interrupt'){
     dialog.innerHTML='<h2 id="editor-title">中断当前批次？</h2><p>停止该批次并保留已经处理的记录。以后可以从保存的进度继续。</p><div class="actions">'+btn('确认中断','confirm-interrupt')+btn('返回','close-dialog','secondary')+'</div>';
     dialog.showModal();return;
