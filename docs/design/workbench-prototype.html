@@ -9,7 +9,7 @@
 .panel{max-width:392px;margin:0 auto;min-height:100vh;background:#f3f7f6;border-inline:1px solid var(--line);box-shadow:0 3px 25px #203f3420}
 header{padding:14px 15px 10px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}.brand{font-weight:800;font-size:19px;letter-spacing:-.035em}.bar,.row,.actions{display:flex;align-items:center;gap:8px;min-width:0}.bar,.row{justify-content:space-between}.actions{flex-wrap:wrap}.grow{flex:1}.muted,small{color:var(--muted)}.hint{font-size:12px;color:var(--muted)}nav{display:flex;justify-content:space-between;gap:4px;flex-wrap:wrap;margin-top:7px}nav button{background:none;border:0;padding:6px 2px;color:var(--muted);border-bottom:2px solid transparent}nav button[aria-current]{font-weight:750;color:var(--accent);border-bottom-color:var(--accent)}
 main{padding:12px 14px 20px}h1,h2,h3,p{margin:0}h1{font-size:18px;margin-bottom:8px}h2{font-size:14px}h3{font-size:13px}.card,details{background:#fff;border:1px solid var(--line);border-radius:10px;margin-bottom:9px;padding:10px 11px}.card p,details p{margin:5px 0}summary{cursor:pointer;font-weight:700;overflow-wrap:anywhere}summary small{font-weight:500}details[open] summary{margin-bottom:9px}.stack{display:grid;gap:7px}.list{max-height:186px;overflow:auto}.item{padding:6px 0;border-bottom:1px solid #e7eeeb;overflow-wrap:anywhere}.item:last-child{border-bottom:none}.item label{display:flex;align-items:flex-start;gap:7px}.truncate{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
-input:not([type=radio],[type=checkbox]),select,textarea{width:100%;min-width:0;padding:6px 7px;border:1px solid #b9cbc4;border-radius:6px;background:#fff}textarea{resize:vertical}label.field{display:grid;gap:3px;margin:5px 0}.check{display:flex;align-items:center;gap:6px}.check input{margin:0}.button{background:var(--accent);color:#fff;border:1px solid var(--accent);padding:5px 9px;border-radius:7px;font-weight:700}.secondary{background:#fff;color:var(--accent);border-color:#b8cec5}.subtle{background:transparent;color:var(--accent);border-color:transparent}.full{width:100%;padding:8px}.chip{display:inline-block;border-radius:99px;background:var(--soft);padding:2px 7px;color:var(--accent);font-size:11px;font-weight:700;white-space:nowrap}.chip.warm{background:var(--warm);color:#755316}.stats{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:7px 0}.stats div{background:#edf5f2;border-radius:7px;padding:6px 8px}.stats strong{display:block;font-size:19px;line-height:1.1}.meter{height:8px;background:#e2ece8;border-radius:99px;overflow:hidden;margin:7px 0}.meter div{height:100%;background:#248366}.notice{min-height:1em;color:var(--accent);font-size:12px;margin-top:6px}.links{overflow-wrap:anywhere}
+input:not([type=radio],[type=checkbox]),select,textarea{width:100%;min-width:0;padding:6px 7px;border:1px solid #b9cbc4;border-radius:6px;background:#fff}textarea{resize:vertical}label.field[hidden]{display:none}.field{display:grid;gap:3px;margin:5px 0}.check{display:flex;align-items:center;gap:6px}.check input{margin:0}.button{background:var(--accent);color:#fff;border:1px solid var(--accent);padding:5px 9px;border-radius:7px;font-weight:700}.secondary{background:#fff;color:var(--accent);border-color:#b8cec5}.subtle{background:transparent;color:var(--accent);border-color:transparent}.full{width:100%;padding:8px}.chip{display:inline-block;border-radius:99px;background:var(--soft);padding:2px 7px;color:var(--accent);font-size:11px;font-weight:700;white-space:nowrap}.chip.warm{background:var(--warm);color:#755316}.stats{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:7px 0}.stats div{background:#edf5f2;border-radius:7px;padding:6px 8px}.stats strong{display:block;font-size:19px;line-height:1.1}.meter{height:8px;background:#e2ece8;border-radius:99px;overflow:hidden;margin:7px 0}.meter div{height:100%;background:#248366}.notice{min-height:1em;color:var(--accent);font-size:12px;margin-top:6px}.links{overflow-wrap:anywhere}
 dialog{width:min(360px,calc(100% - 24px));border:1px solid var(--line);border-radius:10px;padding:14px;color:inherit;background:#fff}.product-image{max-width:100%;max-height:110px;object-fit:contain;border:1px solid var(--line);border-radius:7px}dialog::backdrop{background:#183a3466}
 </style>
 <div class="panel">
@@ -40,7 +40,7 @@ const importDraft=()=>({text:'',filename:'',format:'txt',read:0});
 const imports={sites:importDraft(),links:importDraft()};
 let open=new Set(['sites']), model={type:'local',endpoint:'http://127.0.0.1:11434/v1',name:'',analysis:false,writing:false};
 const main = document.querySelector('#main'), nav = document.querySelector('#nav'), dialog=document.querySelector('#dialog');
-function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts,pairLedger:[...pairLedger],contentTemplates,defaultTemplateIds}));return true}catch{return false}}
+function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts,pairLedger:[...pairLedger],contentTemplates,defaultTemplateIds,authAccounts}));return true}catch{return false}}
 const safe = value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const btn = (label,action,style='')=>'<button class="button '+style+'" data-action="'+action+'">'+label+'</button>';
 const detail = (id,title,body)=>'<details data-section="'+id+'" '+(open.has(id)?'open':'')+'><summary>'+title+'</summary>'+body+'</details>';
@@ -528,62 +528,56 @@ function contentLabel(content){
 }
 
 const authDraft={google:true,savedCredentials:true,register:false,gmail:false,confirmPublish:true};
-const identityMethods={email:'邮箱账号登录',google:'Google 登录',manual:'手动登录'};
-let managedAuthSiteId='',authFromSetup=false;
-const savedAuthSite=()=>sites.find(site=>site.id===managedAuthSiteId&&!site.deleted);
-
+const legacyAuthSites=sites.filter(site=>!site.deleted);
+const legacyMailboxes=[...new Set(legacyAuthSites.flatMap(site=>[site.profile?.loginEmail,site.authentication?.googleEmail]).filter(Boolean))];
+let authAccounts=saved?.authAccounts??{
+  emails:legacyMailboxes,email:legacyAuthSites.find(site=>site.profile?.loginEmail)?.profile.loginEmail??'',
+  googleEmail:legacyAuthSites.find(site=>site.authentication?.googleEmail)?.authentication.googleEmail??'',
+  presets:[],defaultPreset:'',
+};
+let authFromSetup=false,editingPreset='',googleSimulation='';
+const sessionPasswords=new Map();
+const authEmailOptions=selected=>'<option value="">请选择邮箱</option>'+authAccounts.emails.map(email=>
+  '<option value="'+safe(email)+'" '+(selected===email?'selected':'')+'>'+safe(email)+'</option>').join('');
 function authManagement(){
-  const available=sites.filter(site=>!site.deleted);
-  const site=savedAuthSite()??available[0];
-  managedAuthSiteId=site?.id??'';
-  const config=site?.authentication??{};
-  const email=site?.profile?.loginEmail??'';
-  const googleEmail=config.googleEmail??'';
-  const simulated=googleEmail&&config.simulatedGoogleEmail===googleEmail;
+  const simulated=authAccounts.googleEmail&&authAccounts.simulatedGoogleEmail===authAccounts.googleEmail;
   return '<div class="row"><h1>认证方式</h1>'+(authFromSetup?btn('返回新建批次','return-auth','subtle'):'')+'</div>'+
-    (!site?'<section class="card"><p>请先在「清单」添加推广站点。</p></section>':
-    '<section class="card"><label class="field">推广站点<select id="auth-site">'+available.map(item=>
-      '<option value="'+safe(item.id)+'" '+(item.id===site.id?'selected':'')+'>'+safe(item.name)+'</option>').join('')+'</select></label>'+
-    '<label class="field">首选认证方式<select id="auth-preferred">'+Object.entries(identityMethods).map(([id,label])=>
-      '<option value="'+id+'" '+(id===(config.preferred??'email')?'selected':'')+'>'+label+'</option>').join('')+'</select></label></section>'+
-    '<section class="card"><h2>邮箱账号</h2><label class="field">登录邮箱账号<input id="manage-login-email" type="email" maxlength="254" value="'+safe(email)+'" placeholder="publisher@example.com"></label>'+
-    '<p class="hint">用于目标站点的邮箱登录、注册和验证。密码由 Chrome 密码管理器填写，或你在目标站点手动输入。</p></section>'+
+    '<section class="card"><h2>统一邮箱账号</h2>'+
+    '<p class="hint">可添加多个邮箱，供当前工作空间选用。</p>'+
+    '<label class="field">添加登录邮箱<input id="manage-login-email" type="email" maxlength="254" placeholder="publisher@example.com"></label>'+
+    btn('添加邮箱','add-auth-email','secondary')+
+    '<label class="field">默认登录邮箱<select id="auth-default-email">'+authEmailOptions(authAccounts.email)+'</select></label>'+
+    '<div class="list" aria-label="已添加邮箱">'+authAccounts.emails.map(email=>'<div class="item row"><span class="links">'+safe(email)+'</span>'+
+      entityButton('移除','remove-auth-email',email)+'</div>').join('')+'</div></section>'+
     '<section class="card"><div class="row"><h2>Google 认证</h2><span class="chip '+(simulated?'':'warm')+'">'+
-      (simulated?'模拟登录通过':googleEmail?'待模拟登录':'未设置邮箱')+'</span></div>'+
-    '<label class="field">默认 Google 邮箱<input id="manage-google-email" type="email" maxlength="254" value="'+safe(googleEmail)+'" placeholder="account@gmail.com"></label>'+
-    '<p class="hint">模拟选择此账号、继续并返回插件。原型不会连接 Google。</p>'+
+      (simulated?'模拟登录通过':authAccounts.googleEmail?'待模拟登录':'未设置邮箱')+'</span></div>'+
+    '<label class="field">默认 Google 邮箱<select id="auth-google-email">'+authEmailOptions(authAccounts.googleEmail)+'</select></label>'+
     btn('模拟 Google 认证登录','simulate-google-auth','secondary')+'</section>'+
-    '<section class="card">'+btn('保存认证方式','save-auth-settings')+'<p class="notice" role="status" id="auth-management-notice">'+safe(notice)+'</p></section>');
+    '<section class="card"><div class="row"><h2>密码方案</h2>'+btn('添加密码方案','new-auth-preset','secondary')+'</div>'+
+    '<p class="hint">优先复用目标站已保存的账号密码。需要填写时可选择一套已知密码。演示密码仅在当前页面会话保留。</p>'+
+    '<div aria-label="密码方案列表">'+authAccounts.presets.map(preset=>'<div class="item"><div class="row"><strong>'+safe(preset.name)+'</strong>'+
+      (authAccounts.defaultPreset===preset.id?'<span class="chip">默认</span>':'')+'</div><p class="hint">'+
+      (sessionPasswords.has(preset.id)?'本次会话已填写':'本次会话待填写')+'</p><div class="actions">'+
+      entityButton('编辑','edit-auth-preset',preset.id)+(authAccounts.defaultPreset!==preset.id?entityButton('设为默认密码','default-auth-preset',preset.id):'')+
+      entityButton('移除','remove-auth-preset',preset.id)+'</div></div>').join('')+'</div></section>'+
+    '<p class="notice" role="status" id="auth-management-notice">'+safe(notice)+'</p>';
 }
-function readAuthSettings(requireGoogle=false){
-  const site=savedAuthSite();
-  const loginInput=document.querySelector('#manage-login-email');
-  const googleInput=document.querySelector('#manage-google-email');
-  const loginEmail=loginInput.value.trim(),googleEmail=googleInput.value.trim();
-  if(!site||!loginInput.checkValidity()||!googleInput.checkValidity()||requireGoogle&&!googleEmail){
-    document.querySelector('#auth-management-notice').textContent=requireGoogle?'请输入有效的默认 Google 邮箱。':'请检查邮箱格式。';
-    return;
-  }
-  return {site,loginEmail,googleEmail,preferred:document.querySelector('#auth-preferred').value};
+function openPasswordPreset(preset){
+  editingPreset=preset?.id??'';
+  dialog.innerHTML='<h2 id="editor-title">'+(preset?'编辑密码方案':'添加密码方案')+'</h2>'+
+    '<label class="field">方案名称<input id="preset-name" maxlength="60" value="'+safe(preset?.name)+'"></label>'+
+    '<label class="field">示例密码<input id="preset-secret" type="password" maxlength="256" autocomplete="off"></label>'+
+    '<p class="hint">仅填写示例密码，刷新后须重新输入。</p><p class="notice" role="status" id="preset-error"></p>'+
+    '<div class="actions">'+btn('保存密码方案','save-auth-preset')+btn('取消','close-dialog','secondary')+'</div>';
+  dialog.showModal();
 }
-function saveAuthSettings({site,loginEmail,googleEmail,preferred},simulated=false){
-  const authentication={preferred,googleEmail};
-  if(simulated||googleEmail&&site.authentication?.simulatedGoogleEmail===googleEmail){
-    authentication.simulatedGoogleEmail=googleEmail;
-  }
-  const profile={...site.profile};
-  if(loginEmail)profile.loginEmail=loginEmail;
-  else delete profile.loginEmail;
-  sites=sites.map(item=>item.id===site.id?{...item,profile,authentication}:item);
-  persist();
-}
-let googleSimulation;
 function openGoogleSimulation(){
-  googleSimulation=readAuthSettings(true);
-  if(!googleSimulation)return;
+  if(!authAccounts.googleEmail){
+    document.querySelector('#auth-management-notice').textContent='请先选择默认 Google 邮箱。';return;
+  }
+  googleSimulation=authAccounts.googleEmail;
   dialog.innerHTML='<h2 id="editor-title">选择 Google 账号（模拟）</h2>'+
-    '<p class="hint">推广站点 · '+safe(googleSimulation.site.name)+'</p>'+
-    '<label class="field">本次模拟使用的账号<input readonly value="'+safe(googleSimulation.googleEmail)+'"></label>'+
+    '<label class="field">本次模拟使用的账号<input readonly value="'+safe(googleSimulation)+'"></label>'+
     '<p>继续后返回认证方式管理。正式流程在 Google 官方页面选择账号和确认授权。</p>'+
     '<div class="actions">'+btn('用此账号继续（模拟）','finish-google-auth')+btn('取消','close-dialog','secondary')+'</div>';
   dialog.showModal();
@@ -691,8 +685,8 @@ function authDemoRows(item){
 function openAuthStep(item,index){
   authDialogTask={item,index};
   const task=item.authDemo[index],type=task.step==='verify'?'verify':task.type;
-  const guide=authGuides[type],site=item.sites[0];
-  const account=(type==='google'?site.authentication?.googleEmail:site.profile?.loginEmail)||'publisher@brand-3.example';
+  const guide=authGuides[type];
+  const account=(type==='google'?(item.authentication?.googleEmail??authAccounts.googleEmail):(item.authentication?.email??authAccounts.email))||'publisher@brand-3.example';
   let body='<p class="hint links">目标站点 · '+safe(new URL(item.links[index].url).hostname)+'</p>';
   let actionLabel='已完成验证，检查结果';
   if(type==='google'){
@@ -700,9 +694,15 @@ function openAuthStep(item,index){
       '<p class="hint">在目标站点点「使用 Google 登录」。已有且身份匹配的会话可继续；需要选账号或授权时，请在 Google 页面确认。</p>';
     actionLabel='模拟已确认账号并返回';
   }else if(type==='password'){
-    body+='<p class="hint">以下输入仅演示目标站点的表单。请使用示例资料。</p>'+
+    const activePresets=authAccounts.presets.filter(preset=>sessionPasswords.has(preset.id));
+    const defaultPreset=item.authentication?.defaultPreset??authAccounts.defaultPreset;
+    const defaultSource=activePresets.some(preset=>preset.id===defaultPreset)?defaultPreset:'manual';
+    body+='<p class="hint">以下仅演示目标站点表单。选择一种已知的密码来源。登录失败后转回人工处理。</p>'+
       '<label class="field">登录邮箱<input id="auth-email" type="email" value="'+safe(account)+'"></label>'+
-      '<label class="field">站点密码（仅演示）<input id="auth-password" type="password" autocomplete="off"></label>';
+      '<label class="field">密码来源<select id="auth-password-source"><option value="existing">使用站点已保存密码（模拟）</option>'+
+      '<option value="manual" '+(defaultSource==='manual'?'selected':'')+'>手动填写</option>'+activePresets.map(preset=>
+      '<option value="'+safe(preset.id)+'" '+(defaultSource===preset.id?'selected':'')+'>'+safe(preset.name)+'</option>').join('')+'</select></label>'+
+      '<label class="field" id="auth-password-field" '+(defaultSource==='manual'?'':'hidden')+'>站点密码（仅演示）<input id="auth-password" type="password" autocomplete="off"></label>';
     actionLabel='模拟填写并返回';
   }else if(type==='manual'){
     body+='<p>在目标站点完成登录或验证后返回。URLPut 重新读取页面，核对账号与原任务。</p>';
@@ -717,6 +717,7 @@ function openAuthStep(item,index){
   dialog.innerHTML='<h2 id="editor-title">'+guide.title+'（模拟）</h2>'+body+
     '<p id="auth-error" role="status"></p><div class="actions">'+entityButton(actionLabel,'auth-confirm',index)+
     (type==='approval'?entityButton('跳过本条','auth-skip',index):entityButton('模拟完成，稍后统一检查','auth-mark-ready',index))+
+    (type==='password'?btn('模拟登录失败','auth-login-failed','subtle'):'')+
     btn('稍后处理','close-dialog','subtle')+'</div>';
   dialog.showModal();
 }
@@ -1148,7 +1149,19 @@ document.addEventListener('change',event=>{
     if(input.checked)pickedConfirmations.add(input.dataset.confirmation);else pickedConfirmations.delete(input.dataset.confirmation);
     render();
   }
-  if(input.id==='auth-site'){managedAuthSiteId=input.value;notice='';render()}
+  if(input.id==='auth-default-email'||input.id==='auth-google-email'){
+    if(input.id==='auth-default-email')authAccounts.email=input.value;
+    else{
+      if(authAccounts.googleEmail!==input.value)delete authAccounts.simulatedGoogleEmail;
+      authAccounts.googleEmail=input.value;
+    }
+    notice='邮箱设置已保存。';persist();render();
+  }
+  if(input.id==='auth-password-source'){
+    const field=dialog.querySelector('#auth-password-field');
+    field.hidden=input.value!=='manual';
+    if(field.hidden)field.querySelector('input').value='';
+  }
   if(input.id==='content-category')editorCategoryLabels(input.value);
   if(input.id==='content-strategy'){contentStrategy=input.value;render()}
   if(input.dataset.contentId){
@@ -1165,8 +1178,7 @@ document.addEventListener('change',event=>{
   if(input.id==='recurring')recurring=input.checked;
 });
 dialog.addEventListener('close',()=>{
-  const password=dialog.querySelector('#auth-password');
-  if(password)password.value='';
+  for(const password of dialog.querySelectorAll('input[type=password]'))password.value='';
 });
 let lastTick=performance.now();
 document.addEventListener('click',event=>{
@@ -1177,22 +1189,58 @@ document.addEventListener('click',event=>{
     libraryFromSetup=false;templatesFromSetup=false;authFromSetup=false;view=action;notice='';render();window.scrollTo(0,0);return;
   }
   if(action==='manage-auth'){
-    managedAuthSiteId=selected()[0]?.id??managedAuthSiteId;
     authFromSetup=true;view='auth-management';notice='';render();window.scrollTo(0,0);return;
   }
   if(action==='return-auth'){
     authFromSetup=false;view='setup';notice='';render();main.querySelector('[data-action=manage-auth]')?.focus();return;
   }
-  if(action==='save-auth-settings'){
-    const config=readAuthSettings();
-    if(!config)return;
-    saveAuthSettings(config);notice='认证方式已保存。';render();return;
+  if(action==='add-auth-email'){
+    const input=document.querySelector('#manage-login-email'),email=input.value.trim();
+    if(!email||!input.checkValidity()){
+      document.querySelector('#auth-management-notice').textContent='请输入有效邮箱。';return;
+    }
+    if(authAccounts.emails.some(item=>item.toLowerCase()===email.toLowerCase())){
+      document.querySelector('#auth-management-notice').textContent='这个邮箱已添加。';return;
+    }
+    authAccounts.emails.push(email);
+    authAccounts.email||=email;
+    notice='邮箱已添加。';persist();render();return;
+  }
+  if(action==='remove-auth-email'){
+    authAccounts.emails=authAccounts.emails.filter(email=>email!==key);
+    if(authAccounts.email===key)authAccounts.email=authAccounts.emails[0]??'';
+    if(authAccounts.googleEmail===key){authAccounts.googleEmail='';delete authAccounts.simulatedGoogleEmail}
+    notice='邮箱已移除。';persist();render();return;
+  }
+  if(action==='new-auth-preset'||action==='edit-auth-preset'){
+    openPasswordPreset(authAccounts.presets.find(preset=>preset.id===key));return;
+  }
+  if(action==='save-auth-preset'){
+    const name=document.querySelector('#preset-name').value.trim(),secret=document.querySelector('#preset-secret');
+    if(!name||!secret.value){
+      document.querySelector('#preset-error').textContent='请填写方案名称和示例密码。';return;
+    }
+    const id=editingPreset||crypto.randomUUID();
+    sessionPasswords.set(id,secret.value);secret.value='';
+    authAccounts.presets=[...authAccounts.presets.filter(preset=>preset.id!==id),{id,name}];
+    authAccounts.defaultPreset||=id;
+    notice='密码方案已保存。密码仅在本次页面会话保留。';
+    dialog.close();dialog.innerHTML='';persist();render();return;
+  }
+  if(action==='default-auth-preset'){
+    authAccounts.defaultPreset=key;notice='默认密码方案已更新。';persist();render();return;
+  }
+  if(action==='remove-auth-preset'){
+    authAccounts.presets=authAccounts.presets.filter(preset=>preset.id!==key);
+    sessionPasswords.delete(key);
+    if(authAccounts.defaultPreset===key)authAccounts.defaultPreset=authAccounts.presets[0]?.id??'';
+    notice='密码方案已移除。';persist();render();return;
   }
   if(action==='simulate-google-auth'){openGoogleSimulation();return}
   if(action==='finish-google-auth'){
-    saveAuthSettings(googleSimulation,true);
-    notice='模拟 Google 认证登录通过。已保存默认邮箱。';
-    googleSimulation=undefined;dialog.close();dialog.innerHTML='';render();return;
+    authAccounts.simulatedGoogleEmail=googleSimulation;
+    notice='模拟 Google 认证登录通过。';
+    googleSimulation='';dialog.close();dialog.innerHTML='';persist();render();return;
   }
   if(action==='manage-content'){view='templates';templatesFromSetup=true;notice='';render();window.scrollTo(0,0);return}
   if(action==='return-content'){view='setup';templatesFromSetup=false;notice='';render();main.querySelector('[data-action=manage-content]')?.focus();return}
@@ -1271,7 +1319,8 @@ document.addEventListener('click',event=>{
   if(action==='demo-auth'){
     const id=(batches.at(-1)?.id??0)+1;
     const labels=['google','password','manual','verify','approval','public'];
-    batch={id,name:'第三方认证演示',mode:'execute',sites:[savedAuthSite()??demoSites[2]],cursor:0,
+    batch={id,name:'第三方认证演示',mode:'execute',sites:[selected()[0]??demoSites[2]],cursor:0,
+      authentication:{email:authAccounts.email,googleEmail:authAccounts.googleEmail,defaultPreset:authAccounts.defaultPreset},
       links:labels.map((type,index)=>({line:index+1,url:'https://'+type+'.example/submit'})),
       authDemo:labels.map(type=>({type,step:type==='public'?'queued':type==='verify'?'verify':'login'}))};
     batches.push(batch);scope='';view='progress';open.add('report');lastTick=performance.now();
@@ -1304,6 +1353,13 @@ document.addEventListener('click',event=>{
     }
     return;
   }
+  if(action==='auth-login-failed'){
+    const {item,index}=authDialogTask;
+    const row=item.authDemo[index];
+    row.ready=false;
+    row.message='登录未通过，请核对账号或手动选择另一套已知密码。';
+    dialog.close();dialog.innerHTML='';authDialogTask=undefined;updateProgress();return;
+  }
   if(action==='auth-check'){void verifyAuthRow(batch,Number(key));return}
   if(action==='auth-skip'||action==='auth-confirm'||action==='auth-mark-ready'){
     const {item,index}=authDialogTask;
@@ -1314,7 +1370,8 @@ document.addEventListener('click',event=>{
     }else{
       if(row.type==='password'&&row.step==='login'){
         const email=dialog.querySelector('#auth-email'),password=dialog.querySelector('#auth-password');
-        if(!email.value||!email.checkValidity()||!password.value){
+        const source=dialog.querySelector('#auth-password-source').value;
+        if(!email.value||!email.checkValidity()||(source==='manual'?!password.value:source!=='existing'&&!sessionPasswords.has(source))){
           dialog.querySelector('#auth-error').textContent='请输入示例邮箱和密码。';return;
         }
         email.value='';password.value='';
@@ -1431,7 +1488,8 @@ document.addEventListener('click',event=>{
     batch={id:(batches.at(-1)?.id??0)+1,name:batchName.trim(),listName:list.name,sites:selected(),links:list.links.slice(0,perSite()),mode,source:list.source,
       cursor:0,paused:false,interrupted:false,manual:false,resolved:false};batchName='';
     if(mode==='execute'){
-      batch.authentication={...authDraft};
+      batch.authentication={...authDraft,email:authAccounts.email,googleEmail:authAccounts.googleEmail,
+        defaultPreset:authAccounts.defaultPreset};
       batch.publication=contentStrategy==='ai'?{strategy:'ai'}:
         {strategy:contentStrategy,templates:chosenTemplates().map(template=>({...template}))};
       batch.daily={sharedPairs:true,defaultQuota:dailyLimit,recurring,quotas:Object.fromEntries(batch.sites.map(site=>[site.id,Object.hasOwn(overrides,site.id)?overrides[site.id]:dailyLimit])),
