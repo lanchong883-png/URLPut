@@ -326,9 +326,9 @@ let picked=new Set(saved?.picked??[]), view='setup', query='', scope='', limit=1
 let pendingSitesOnly=false, libraryFromSetup=false;
 const importDraft=()=>({text:'',filename:'',format:'txt',read:0});
 const imports={sites:importDraft(),links:importDraft()};
-let open=new Set(['sites']), model={type:'local',endpoint:'http://127.0.0.1:11434/v1',name:'',analysis:false,writing:false};
+let open=new Set(['sites']), model=saved?.model??{type:'system',endpoint:'http://127.0.0.1:11434/v1',name:''};
 const main = document.querySelector('#main'), nav = document.querySelector('#nav'), dialog=document.querySelector('#dialog');
-function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts,pairLedger:[...pairLedger],templateCatalogVersion:2,contentTemplates,defaultTemplateIds,authAccounts}));return true}catch{return false}}
+function persist(){try{localStorage.setItem(storageKey,JSON.stringify({model,sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts,pairLedger:[...pairLedger],templateCatalogVersion:2,contentTemplates,defaultTemplateIds,authAccounts}));return true}catch{return false}}
 const safe = value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const iconPaths={
   plus:'M12 5v14M5 12h14', tasks:'m3 7 2 2 4-5M12 7h9M3 15l2 2 4-5M12 15h9',
@@ -1444,7 +1444,16 @@ function templatesPage(){
   return (templatesFromSetup?'<div class="row" style="margin-bottom:8px">'+btn('返回新建批次','return-content','subtle')+'</div>':'')+templateSettings();
 }
 function modelsPage(){
-  return '<h1>AI 模型</h1><section class="card"><label class="field">模型来源<select id="model-type"><option value="local">本地模型</option><option value="custom">自建模型服务</option></select></label><label class="field">API 地址<input id="endpoint" value="'+safe(model.endpoint)+'"></label><label class="field">模型名<input id="model-name" value="'+safe(model.name)+'"></label><div class="actions"><label class="check"><input id="model-analysis" type="checkbox" '+(model.analysis?'checked':'')+'>AI 分析</label><label class="check"><input id="model-writing" type="checkbox" '+(model.writing?'checked':'')+'>AI 文案</label></div><p class="hint">只演示配置，页面不会发起模型请求。</p>'+btn('模拟保存','save-model','secondary')+'<p class="notice" role="status">'+safe(notice)+'</p></section>';
+  const local=model.type==='local';
+  return '<section class="card"><fieldset><legend>模型来源</legend><div class="actions">'+
+    '<label class="check"><input type="radio" name="model-source" value="system" '+(!local?'checked':'')+'>系统自带</label>'+
+    '<label class="check"><input type="radio" name="model-source" value="local" '+(local?'checked':'')+'>本地模型</label></div></fieldset>'+
+    (local?'<label class="field">API 基础地址（必填）<input type="url" required id="endpoint" value="'+safe(model.endpoint)+'"></label>'+
+      '<label class="field">模型名称（必填）<input required id="model-name" placeholder="例如 qwen2.5:7b" value="'+safe(model.name)+'"></label>'+
+      '<label class="field">API 密钥（可选）<input type="password" autocomplete="off" id="model-key"></label>'+
+      '<p class="hint">使用 OpenAI 兼容接口。模型名称须与本地服务一致。仅在服务要求认证时填写密钥。</p>'+
+      btn('保存本地设置','save-model'):'<p class="hint">使用系统提供的模型，无需配置。</p>')+
+    '<p id="model-notice" class="notice" role="status">'+safe(notice)+'</p></section>';
 }
 function renderNav(){
   const waiting=batches.reduce((sum,item)=>sum+pendingConfirmations(item),0);
@@ -1455,7 +1464,7 @@ function render(){
   renderNav();
   main.innerHTML={setup,tasks,library,progress,confirmations:confirmationPage,templates:templatesPage,models:modelsPage,'auth-management':authManagement}[view]();
   if(view==='setup'){document.querySelector('#mode').value=mode}
-  if(view==='models')document.querySelector('#model-type').value=model.type;
+
 }
 function refreshSection(id){
   if(id==='sites'){
@@ -1592,6 +1601,10 @@ document.addEventListener('change',event=>{
       draft.loading=false;draft.error='未能读取文件。';
       if(view==='library'&&libraryTab===kind)render();
     });
+  }
+  if(input.name==='model-source'){
+    model.type=input.value;
+    notice='';persist();render();return;
   }
   if(input.id==='task-filter'){taskFilter=input.value;taskPageIndex=0;render()}
   if(input.id==='link-preview-price'){linkPrice=input.value;refreshBrowse('links',true)}
@@ -2008,9 +2021,13 @@ document.addEventListener('click',event=>{
   if(action==='resolve')batch.resolved=true;
   if(action==='export'){exportSample();return}
   if(action==='save-model'){
-    model={type:document.querySelector('#model-type').value,endpoint:document.querySelector('#endpoint').value,
-      name:document.querySelector('#model-name').value,analysis:document.querySelector('#model-analysis').checked,writing:document.querySelector('#model-writing').checked};
-    notice='已保存本次演示设置。';render();return;
+    const endpoint=document.querySelector('#endpoint'),name=document.querySelector('#model-name');
+    if(!endpoint.reportValidity()||!name.reportValidity())return;
+    if(!/^https?:$/.test(new URL(endpoint.value).protocol)||!name.value.trim()){
+      document.querySelector('#model-notice').textContent='请填写 HTTP 或 HTTPS 地址及模型名称。';return;
+    }
+    model.endpoint=endpoint.value.trim();model.name=name.value.trim();
+    notice=persist()?'已保存本地设置。演示密钥仅用于本次填写。':'保存失败，请重试。';render();return;
   }
   notice='';persist();render();
 });
