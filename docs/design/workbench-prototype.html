@@ -507,7 +507,7 @@ function reviewMarkup(kind){
     '<button class="button secondary" data-action="review-'+kind+'" '+(draft.loading||rows||!draft.text.trim()?'disabled':'')+'>检查'+label+'</button>'+
     (draft.error?'<p class="hint" role="alert">'+safe(draft.error)+'</p>':'')+
     (rows?'<p class="notice" role="status">已导入 '+n(imported)+' '+(kind==='sites'?'个站点':'条外链')+'</p>':'')+preview+
-    (issues.length?btn('下载问题行 CSV','download-import-'+kind,'secondary'):''));
+    (issues.length?btn('下载未导入的行（CSV）','download-import-'+kind,'secondary'):''));
 }
 function checkAndImport(kind){
   const draft=imports[kind];
@@ -586,8 +586,8 @@ function limitsMarkup(){
   const targets=selected();
   const override=targets.find(site=>site.id===limitSite);
   return '<section class="card"><h2>'+stepTitle(6,'提交频率')+'</h2>'+
-    '<label class="field">每站 24 小时默认尝试上限<input id="daily-limit" type="number" min="1" max="1000" value="'+dailyLimit+'"></label>'+
-    '<label class="field">单站额度可选<select id="limit-site"><option value="">选择站点</option>'+targets.map(site=>'<option value="'+safe(site.id)+'" '+(site.id===limitSite?'selected':'')+'>'+safe(site.name)+'</option>').join('')+'</select></label>'+
+    '<label class="field">每个站点 24 小时内最多尝试提交几次<input id="daily-limit" type="number" min="1" max="1000" value="'+dailyLimit+'"></label>'+
+    '<label class="field">为某个站点单独设置上限（可选）<select id="limit-site"><option value="">选择站点</option>'+targets.map(site=>'<option value="'+safe(site.id)+'" '+(site.id===limitSite?'selected':'')+'>'+safe(site.name)+'</option>').join('')+'</select></label>'+
     (override?'<label class="field">该站 24 小时尝试上限<input id="site-limit" type="number" min="1" max="1000" value="'+(Object.hasOwn(overrides,override.id)?overrides[override.id]:dailyLimit)+'"></label>':'')+
     '<label class="check"><input type="checkbox" id="recurring" '+(recurring?'checked':'')+'>每天执行，自动续跑</label>'+
     '<p class="hint">按滚动 24 小时统计，每站跨批次共享额度。达到上限后保留进度。设定合适的额度并遵守目标平台规则。</p></section>';
@@ -605,7 +605,7 @@ const pairFlights=new Map(), activeCycles=new Set();
 const simulatedResults=['模拟有效外链','模拟待审核','模拟入口已关闭'];
 for(const record of pairLedger.values()){
   if(record.status==='processing'){
-    record.status='verify';record.result='上次处理未确认，等待核验';
+    record.status='verify';record.result='上次处理未确认，等待核对提交结果';
   }
 }
 function updateProgress(){
@@ -761,7 +761,7 @@ function contentOptions(){
     if(!templates.length&&category!=='general')return '';
     return '<fieldset><legend>'+description.label+'</legend>'+
       (templates.length?templates.map(template=>'<label class="check item"><input type="checkbox" data-content-id="'+safe(template.id)+'" '+
-        (selectedIds.has(template.id)?'checked':'')+'><span>'+safe(template.name)+(isDefaultTemplate(template)?' <span class="chip">本类默认</span>':'')+
+        (selectedIds.has(template.id)?'checked':'')+'><span>'+safe(template.name)+(isDefaultTemplate(template)?' <span class="chip">新批次预选</span>':'')+
         '</span></label>').join(''):'<p class="hint">暂无通用文案，可到模板管理新增。</p>')+'</fieldset>';
   }).join('');
   return '<section class="card"><h2>'+stepTitle(4,'投稿内容')+'</h2>'+
@@ -770,7 +770,7 @@ function contentOptions(){
     '<option value="ai" '+(contentStrategy==='ai'?'selected':'')+'>AI 根据目标网页拟写</option>'+
     '<option value="hybrid" '+(contentStrategy==='hybrid'?'selected':'')+'>AI 分析 + 模板</option></select></label>'+
     (mode==='analysis'?'<p class="hint">当前仅分析。切换为「分析后执行」时使用这里的选择。</p>':'')+
-    (contentStrategy!=='ai'?'<p class="hint">'+(contentStrategy==='hybrid'?'按入口选适用模板，再结合网页要求调整。':'每类可多选。先匹配专用模板，匹配不到时从已选的通用文案中随机选。')+'</p>'+
+    (contentStrategy!=='ai'?'<p class="hint">'+(contentStrategy==='hybrid'?'先选适合投稿页面的模板，再由 AI 按网页要求修改文案。':'每类都能多选。系统从适合该页面的模板里随机选一份。没有合适的，就从勾选的通用文案里选。')+'</p>'+
       '<div class="list" aria-label="可选内容模板">'+groups+'</div><p class="hint" id="content-count">已选 '+selectedIds.size+' 份模板</p>':
       '<p class="hint">AI 用目标网页的主题和要求拟写。原型生成示例预览。正式执行遇到模型不可用或网页信息不足时，转人工处理。</p>')+
     btn('管理内容模板','manage-content','secondary')+'</section>';
@@ -781,7 +781,7 @@ function templateRows(){
   if(!filtered.length)return '<p class="hint">没有匹配的模板。</p>';
   return filtered.slice(templatePageIndex*pageSize,(templatePageIndex+1)*pageSize).map(template=>
     '<div class="item"><div class="row"><strong>'+safe(template.name)+'</strong>'+
-    (isDefaultTemplate(template)?'<span class="chip">本类默认</span>':'')+'</div>'+
+    (isDefaultTemplate(template)?'<span class="chip">新批次预选</span>':'')+'</div>'+
     '<p class="hint">'+safe(templateCategories[template.category].label)+' · '+safe(templateCategories[template.category].fields)+'</p>'+
     '<p class="hint">'+safe(templateCategories[template.category].steps)+'</p><div class="actions">'+
     entityButton('编辑','edit-content',template.id)+
@@ -790,7 +790,7 @@ function templateRows(){
 }
 function templateSettings(){
   return '<section class="card"><div class="row"><h1>内容模板</h1>'+btn('新增模板','new-content','secondary')+'</div>'+
-    '<p class="hint">已保存 '+n(contentTemplates.length)+' 份模板。每个分类有自己的默认模板。</p>'+
+    '<p class="hint">已保存 '+n(contentTemplates.length)+' 份模板。每类可设一份默认模板，新建批次时自动勾选。</p>'+
     '<label class="field">搜索模板<input id="template-search" value="'+safe(templateQuery)+'"></label>'+
     '<div id="template-rows" aria-label="内容模板库">'+templateRows()+'</div></section>';
 }
@@ -874,19 +874,19 @@ const authEmailOptions=selected=>'<option value="">请选择邮箱</option>'+aut
 function authManagement(){
   const simulated=authAccounts.googleEmail&&authAccounts.simulatedGoogleEmail===authAccounts.googleEmail;
   return '<div class="row"><h1>认证方式</h1>'+(authFromSetup?btn('返回新建批次','return-auth','subtle'):'')+'</div>'+
-    '<section class="card"><h2>统一邮箱账号</h2>'+
-    '<p class="hint">可添加多个邮箱，供当前工作空间选用。</p>'+
+    '<section class="card"><h2>登录邮箱</h2>'+
+    '<p class="hint">可添加多个邮箱，所有推广站点都能使用。</p>'+
     '<label class="field">添加登录邮箱<input id="manage-login-email" type="email" maxlength="254" placeholder="publisher@example.com"></label>'+
     btn('添加邮箱','add-auth-email','secondary')+
     '<label class="field">默认登录邮箱<select id="auth-default-email">'+authEmailOptions(authAccounts.email)+'</select></label>'+
     '<label class="field">默认密码方案<select id="auth-default-preset"><option value="">手动选择或填写</option>'+
     authAccounts.presets.map(preset=>'<option value="'+safe(preset.id)+'" '+(preset.id===authAccounts.defaultPreset?'selected':'')+'>'+safe(preset.name)+'</option>').join('')+'</select></label>'+
-    '<p class="hint">站点已有同账号密码时优先复用。</p><div class="list" aria-label="已添加邮箱">'+authAccounts.emails.map(email=>'<div class="item row"><span class="links">'+safe(email)+'</span>'+
+    '<p class="hint">如果 Chrome 已保存这个网站和账号的密码，登录时会优先使用。</p><div class="list" aria-label="已添加邮箱">'+authAccounts.emails.map(email=>'<div class="item row"><span class="links">'+safe(email)+'</span>'+
       entityButton('移除','remove-auth-email',email)+'</div>').join('')+'</div></section>'+
     '<section class="card"><div class="row"><h2>Google 认证</h2><span class="chip '+(simulated?'':'warm')+'">'+
       (simulated?'模拟登录通过':authAccounts.googleEmail?'待模拟登录':'未设置邮箱')+'</span></div>'+
     '<label class="field">默认 Google 邮箱<select id="auth-google-email">'+authEmailOptions(authAccounts.googleEmail)+'</select></label>'+
-    btn('模拟 Google 认证登录','simulate-google-auth','secondary')+'</section>'+
+    btn('演示 Google 登录','simulate-google-auth','secondary')+'</section>'+
     '<section class="card"><div class="row"><h2>密码方案</h2>'+btn('添加密码方案','new-auth-preset','secondary')+'</div>'+
     '<p class="hint">优先复用 Chrome 为同一目标站和账号保存的密码，包括 Google 生成并同步的站点密码。需要填写时可选择一套已知密码。演示密码仅在当前页面会话保留。</p>'+
     '<div aria-label="密码方案列表">'+authAccounts.presets.map(preset=>'<div class="item"><div class="row"><strong>'+safe(preset.name)+'</strong>'+
@@ -1015,7 +1015,7 @@ async function verifyAuthRow(item,index){
 
 function authDemoRows(item){
   if(!item.authDemo)return '';
-  return '<section class="card"><h2>第三方认证</h2><p class="hint">模拟目标页面和邮箱验证。一个入口等待时，其他入口可继续。</p>'+
+  return '<section class="card"><h2>第三方认证</h2><p class="hint">这里演示网站登录和邮箱验证。某条任务需要你操作时，其他任务会继续。</p>'+
     item.authDemo.map((row,index)=>{
       const guide=authGuides[row.type];
       const checking=activeAuthChecks.has(item.id+':'+index);
@@ -1103,8 +1103,8 @@ function browseRow(kind,item){
     '</strong><span class="chip">'+safe(websiteType(item))+'</span></div><small class="links">'+safe(item.url)+'</small></div>';
   const counts=siteCounts(item);
   return '<div class="item" role="listitem"><label><input type="checkbox" data-site="'+safe(item.id)+'" '+(picked.has(item.id)?'checked':'')+
-    '><span>'+safe(item.name)+'<small class="truncate">'+safe(item.url)+'</small><small>总外链 '+n(counts.total)+' · 已提交 '+n(counts.submitted)+
-    ' · 待提交 '+n(counts.pending)+'</small></span></label></div>';
+    '><span>'+safe(item.name)+'<small class="truncate">'+safe(item.url)+'</small><small>总外链 '+n(counts.total)+' · 已接收 '+n(counts.submitted)+
+    ' · 尚无接收记录 '+n(counts.pending)+'</small></span></label></div>';
 }
 function browseStatus(count,total){
   return '已显示 '+n(count)+' / '+n(total)+' 条'+(count<total?' · 下滑加载更多':'');
@@ -1144,19 +1144,19 @@ function activeLinkPreview(){
     '<label class="field">搜索域名或外链网址<input id="link-preview-query" value="'+safe(linkQuery)+'"></label>'+
     '<label class="field">网站类型<select id="link-preview-type"><option value="">全部类型</option>'+
     types.map(type=>'<option value="'+safe(type)+'" '+(type===linkType?'selected':'')+'>'+safe(type)+'</option>').join('')+'</select></label>'+
-    browseMarkup('links')+(view==='setup'?'<p class="hint">筛选仅用于查看，批次使用所选清单内的活跃外链。</p>':'');
+    browseMarkup('links')+(view==='setup'?'<p class="hint">筛选方便你查找外链。批次仍从整份清单中选取可用外链。</p>':'');
 }
 
 function setup(){
   return pageBanner('新建批次')+
     detail('sites',stepTitle(1,'推广站点')+' <small>已选 '+n(picked.size)+' / '+n(sites.filter(site=>!site.deleted).length)+'</small>',
-      '<p class="hint">统计按当前共享外链清单计算。示例站点包含模拟历史。</p>'+
+      '<p class="hint">以下按所选外链清单统计。平台已接收的投稿包含正在审核的记录。</p>'+
       '<label class="field">搜索站点<input id="site-search" value="'+safe(query)+'" placeholder="名称或域名"></label>'+
-      '<label class="check"><input type="checkbox" id="pending-sites" '+(pendingSitesOnly?'checked':'')+'>仅看有待提交外链的站点</label>'+
+      '<label class="check"><input type="checkbox" id="pending-sites" '+(pendingSitesOnly?'checked':'')+'>只看还有外链未被平台接收的站点</label>'+
       '<div class="actions" style="margin-top:6px">'+btn('全选搜索结果','select-all','secondary')+btn('清空选择','clear','subtle')+'</div>'+
       browseMarkup('sites')+
       btn('去清单补充站点','manage-sites','secondary'))+
-    detail('links',stepTitle(2,'外链清单')+' <small>'+n(activeLinks(currentList()).length)+' 条可用候选</small>',
+    detail('links',stepTitle(2,'外链清单')+' <small>'+n(activeLinks(currentList()).length)+' 条可用外链</small>',
       '<label class="field">共享外链清单<select id="shared-list"><option value="">请选择清单</option>'+linkLists.map(list=>'<option value="'+safe(list.id)+'" '+(list.id===listId?'selected':'')+'>'+safe(list.name)+' · '+n(activeLinks(list).length)+' 条活跃</option>').join('')+'</select></label>'+
       activeLinkPreview()+btn('去清单补充外链','manage-links','secondary'))+
     '<section class="card"><h2>'+stepTitle(3,'执行方式')+'</h2>'+
@@ -1166,14 +1166,14 @@ function setup(){
     '</section>'+contentOptions()+authOptions()+limitsMarkup()+
     '<section class="card"><h2>'+stepTitle(mode==='analysis'?5:7,'批次设置')+'</h2>'+
     '<label class="field">批次名称（可选）<input id="batch-name" value="'+safe(batchName)+'"></label>'+
-    '<label class="field">每站最多使用<input id="limit" type="number" min="1" max="10000" value="'+safe(limit)+'"></label></section>'+
+    '<label class="field">每个站点最多处理几条外链<input id="limit" type="number" min="1" max="10000" value="'+safe(limit)+'"></label></section>'+
     '<section class="card launch-card" aria-labelledby="launch-summary">'+
     '<h2 id="launch-summary">'+stepTitle(mode==='analysis'?6:8,'启动前确认')+'</h2><p class="hint">执行方式 · '+(mode==='analysis'?'仅分析':'分析后执行（模拟）')+'</p>'+
     '<div class="stats"><div><strong id="selected-sites">'+n(picked.size)+'</strong><small>已选推广站点</small></div>'+
-    '<div><strong id="per-site">'+n(perSite())+'</strong><small>每站候选</small></div>'+
-    '<div><strong id="combinations">'+n(picked.size*perSite())+'</strong><small>站点 × 外链组合</small></div>'+
-    '<div><strong id="pending-combinations">'+n(selectedPending())+'</strong><small>其中待提交</small></div></div>'+
-    '<p class="hint">'+(mode==='analysis'?'本批次只分析，待提交数供核对。':'历史投稿与同平台去重会影响实际尝试数。')+'</p>'+
+    '<div><strong id="per-site">'+n(perSite())+'</strong><small>每站外链数</small></div>'+
+    '<div><strong id="combinations">'+n(picked.size*perSite())+'</strong><small>合计处理条数</small></div>'+
+    '<div><strong id="pending-combinations">'+n(selectedPending())+'</strong><small>尚无接收记录</small></div></div>'+
+    '<p class="hint">'+(mode==='analysis'?'每个站点和每条外链算一条。本次只检查投稿要求，不会提交。':'每个站点和每条外链算一条。已被平台接收或已尝试过同一平台的投稿会跳过。')+'</p>'+
     '<button class="button full" data-action="start" '+(!canStartBatch()?'disabled':'')+'>启动模拟批次</button><p class="notice" role="status">'+safe(notice)+'</p></section>';
 }
 function unverified(item,site){
@@ -1215,7 +1215,7 @@ function sample(site){
     const waiting=shared?.status==='processing';
     const retry=shared?.status==='retry'||batch.daily?.retry?.siteId===target.id&&batch.daily.retry.offset===offset;
     const blocked=batch.daily?.contentBlocked?.[target.id]?.includes(link.url);
-    const status=blocked?'需人工':shared?.status==='verify'?'待核验':skipped?'已跳过':pending?'需人工':complete?'已处理':waiting?(sameWork?'等待共享结果':'处理中'):retry?'待重试':'排队中';
+    const status=blocked?'需人工':shared?.status==='verify'?'待核对提交结果':skipped?'已跳过':pending?'需人工':complete?'已处理':waiting?(sameWork?'等待另一批次的处理结果':'处理中'):retry?'待重试':'排队中';
     const result=blocked?'缺少适用模板 · '+templateCategories[simulatedEntryType(link)].label:shared?.status==='verify'?shared.result:skipped?(shared?.result?'复用批次 '+shared.owner+' 的结果 · '+shared.result:'历史已提交'):
       waiting?(sameWork?'批次 '+shared.owner+' 正在处理':'正在等待处理结果'):
       retry?'提交前临时失败，等下一周期':pending?'等待核对账号':!complete?'等待继续':batch.mode==='analysis'?'仅分析 · 已检查入口':
@@ -1233,7 +1233,7 @@ function progress(){
     '<div class="row"><h2 class="chip '+statusTone(state)+'">'+status+'</h2><span class="chip neutral">'+(batch.mode==='analysis'?'仅分析':'模拟执行')+'</span></div>'+
     cycleMarkup(batch)+
     (batch.interrupted?'<p class="hint">本批次已停止。继续时从保存的进度恢复。</p>':'')+
-    '<p class="hint">'+n(batch.sites.length)+' 个推广站点 · 每站 '+n(batch.links.length)+' 条 · 批次快照</p>'+
+    '<p class="hint">'+n(batch.sites.length)+' 个推广站点 · 每站 '+n(batch.links.length)+' 条 · 按启动时的清单统计</p>'+
     (batch.publication?'<p class="hint">投稿内容 · '+(batch.publication.strategy==='ai'?'AI 网页拟写（模拟）':
       (batch.publication.strategy==='hybrid'?'AI + 模板 · ':'')+safe(batch.publication.templates.map(template=>template.name).join('、'))+(batch.publication.templates.length>1?'（逐条随机）':''))+'</p>':'')+
     (batch.listName?'<p class="hint">外链清单 · '+safe(batch.listName)+'</p>':'')+
@@ -1248,8 +1248,8 @@ function progress(){
       (state==='stopped'?'':btn('停止','stop','subtle'))+'</div>':'')+'</section>'+
     authDemoRows(batch)+
     (missingContent(batch,site)?'<section class="card attention-card"><h2>待人工 · 缺少适用模板</h2><p>'+n(missingContent(batch,site))+' 条。可新建批次选用对应模板。这些条目未占提交额度。</p></section>':'')+
-    (m.pending&&!['interrupted','stopped'].includes(state)?'<section class="card attention-card"><div class="row"><h2>人工待办</h2><span class="chip warm">1 条</span></div><p>'+safe(batch.sites[0].name)+' → '+safe(batch.links[0].url)+'</p><p class="hint">核对站点专用账号。其他组合继续运行。</p>'+btn('已确认，恢复该条','resolve','secondary')+'</section>':'')+
-    detail('report','记录与导出 <small>· 当前范围抽样</small>',
+    (m.pending&&!['interrupted','stopped'].includes(state)?'<section class="card attention-card"><div class="row"><h2>人工待办</h2><span class="chip warm">1 条</span></div><p>'+safe(batch.sites[0].name)+' → '+safe(batch.links[0].url)+'</p><p class="hint">请核对这个站点的登录账号。其他任务会继续运行。</p>'+btn('已确认，恢复该条','resolve','secondary')+'</section>':'')+
+    detail('report','记录与导出 <small>· 示例记录</small>',
       '<p class="hint">每条都保留推广站点、来源行和外链网址。</p>'+
       '<div class="list">'+records.map(({target,link,status,result,content})=>'<div class="item"><div class="row"><strong>'+safe(target.name)+'</strong><span class="chip">'+status+'</span></div><small class="links">第 '+link.line+' 行 · '+safe(link.url)+'</small><p class="hint">'+safe(result)+'</p>'+
       (content?'<details><summary>'+safe(contentLabel(content))+'</summary>'+(content.pageSummary?'<p class="hint">'+safe(content.pageSummary)+'</p>':'')+'<strong>'+safe(content.title)+'</strong><p class="links">'+safe(content.body)+'</p>'+
@@ -1266,8 +1266,8 @@ function batchStatus(item){
   if(item.interrupted)return ['interrupted','已中断'];
   if(item.paused)return ['paused','已暂停'];
   if(item.authDemo?.every(row=>row.step!=='queued'))return ['waiting','待确认'];
-  if(item.cursor===total)return unverified(item)?['verification','待核验']:['waiting','待人工'];
-  if(item.daily?.nextAt&&(item.daily.nextAt>demoNow()||!item.daily.recurring&&!item.daily.allowed))return ['budget','待下轮'];
+  if(item.cursor===total)return unverified(item)?['verification','待核对提交结果']:['waiting','待人工'];
+  if(item.daily?.nextAt&&(item.daily.nextAt>demoNow()||!item.daily.recurring&&!item.daily.allowed))return ['budget','等待下一轮'];
   return ['running','执行中'];
 }
 function matches(value,term){return value.toLowerCase().includes(term.trim().toLowerCase())}
@@ -1299,7 +1299,7 @@ function taskRows(){
 }
 function tasks(){
   return pageBanner('任务')+'<section class="card"><label class="field">搜索批次<input id="task-search" placeholder="批次名称或编号" value="'+safe(taskQuery)+'"></label>'+
-    '<label class="field">任务状态<select id="task-filter">'+[['all','全部'],['running','执行中'],['waiting','待人工'],['confirmations','待确认'],['verification','待核验'],['paused','已暂停'],['interrupted','已中断'],['stopped','已停止'],['budget','待下轮'],['completed','已完成']].map(([id,label])=>'<option value="'+id+'" '+(id===taskFilter?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
+    '<label class="field">任务状态<select id="task-filter">'+[['all','全部'],['running','执行中'],['waiting','待人工'],['confirmations','待确认'],['verification','待核对提交结果'],['paused','已暂停'],['interrupted','已中断'],['stopped','已停止'],['budget','等待下一轮'],['completed','已完成']].map(([id,label])=>'<option value="'+id+'" '+(id===taskFilter?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
     '<div class="actions">'+btn('待确认清单','show-confirmations','secondary')+'</div>'+
     '<div id="task-rows">'+taskRows()+'</div>'+(!batches.length?btn('载入历史任务示例','demo-history','secondary'):'')+'</section>'+
     '<section class="card"><p class="hint">查看目标站登录、注册和邮箱验证如何衔接。</p>'+'<div class="actions">'+btn('运行认证流程演示','demo-auth','secondary')+
@@ -1430,7 +1430,7 @@ function templatesPage(){
   return (templatesFromSetup?'<div class="row" style="margin-bottom:8px">'+btn('返回新建批次','return-content','subtle')+'</div>':'')+templateSettings();
 }
 function modelsPage(){
-  return '<h1>AI 模型</h1><section class="card"><label class="field">服务类型<select id="model-type"><option value="local">本地模型</option><option value="custom">自建模型服务</option></select></label><label class="field">API 地址<input id="endpoint" value="'+safe(model.endpoint)+'"></label><label class="field">模型名<input id="model-name" value="'+safe(model.name)+'"></label><div class="actions"><label class="check"><input id="model-analysis" type="checkbox" '+(model.analysis?'checked':'')+'>AI 分析</label><label class="check"><input id="model-writing" type="checkbox" '+(model.writing?'checked':'')+'>AI 文案</label></div><p class="hint">只演示配置，页面不会发起模型请求。</p>'+btn('模拟保存','save-model','secondary')+'<p class="notice" role="status">'+safe(notice)+'</p></section>';
+  return '<h1>AI 模型</h1><section class="card"><label class="field">模型来源<select id="model-type"><option value="local">本地模型</option><option value="custom">自建模型服务</option></select></label><label class="field">API 地址<input id="endpoint" value="'+safe(model.endpoint)+'"></label><label class="field">模型名<input id="model-name" value="'+safe(model.name)+'"></label><div class="actions"><label class="check"><input id="model-analysis" type="checkbox" '+(model.analysis?'checked':'')+'>AI 分析</label><label class="check"><input id="model-writing" type="checkbox" '+(model.writing?'checked':'')+'>AI 文案</label></div><p class="hint">只演示配置，页面不会发起模型请求。</p>'+btn('模拟保存','save-model','secondary')+'<p class="notice" role="status">'+safe(notice)+'</p></section>';
 }
 function renderNav(){
   const waiting=batches.reduce((sum,item)=>sum+pendingConfirmations(item),0);
@@ -1678,7 +1678,7 @@ document.addEventListener('click',event=>{
   if(action==='simulate-google-auth'){openGoogleSimulation();return}
   if(action==='finish-google-auth'){
     authAccounts.simulatedGoogleEmail=googleSimulation;
-    notice='模拟 Google 认证登录通过。';
+    notice='演示 Google 登录通过。';
     googleSimulation='';dialog.close();dialog.innerHTML='';persist();render();return;
   }
   if(action==='manage-content'){view='templates';templatesFromSetup=true;notice='';render();window.scrollTo(0,0);return}
@@ -1920,7 +1920,7 @@ document.addEventListener('click',event=>{
       document.querySelector('#editor-error').textContent='请输入同域名的有效网址。更换域名请添加新站点。';return;
     }
     if(!isSite&&rows.some(row=>simulatedLinkIssue(new URL(row.url)))){
-      document.querySelector('#editor-error').textContent='清单含访问失败或失效的外链。请用导入检查定位问题行。';return;
+      document.querySelector('#editor-error').textContent='有些外链无法打开或已失效。请在「录入或导入外链」里点击「检查外链」，查看具体网址。';return;
     }
     if(!isSite&&!rows.length){
       document.querySelector('#editor-error').textContent='请填写有效外链网址。';return;
