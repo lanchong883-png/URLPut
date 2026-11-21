@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>URLPut</title>
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+<main>
+  <h1>URLPut</h1>
+  <section>
+    <h2>推广站点</h2>
+    <label>当前站点 <select id="sites"></select></label>
+    <form id="site-form">
+      <label>站点名称 <input id="name" required></label>
+      <label>官网地址 <input id="homepage" type="url" placeholder="https://example.com" required></label>
+      <button>添加站点</button>
+    </form>
+  </section>
+  <section>
+    <h2>导入 CSV</h2>
+    <label>CSV 文件 <input id="file" type="file" accept=".csv,.tsv,text/csv"></label>
+    <label>分隔符 <select id="delimiter"><option value=",">逗号</option><option value=";">分号</option><option value="tab">制表符</option></select></label>
+    <label><input id="header" type="checkbox" checked> 首行是表头</label>
+    <label>URL 列 <select id="column"></select></label>
+    <pre id="preview" aria-label="导入预览"></pre>
+    <button id="import" type="button" disabled>导入到当前站点</button>
+  </section>
+  <p id="status" role="status"></p>
+  <section>
+    <h2>逐行台账</h2>
+    <p id="count"></p>
+    <button id="export" type="button" disabled>导出 CSV</button>
+    <div class="scroll"><table><thead></thead><tbody></tbody></table></div>
+  </section>
+</main>
+<script type="module" src="panel.js"></script>
+</body>
+</html>

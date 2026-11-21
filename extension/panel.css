@@ -1,0 +1,15 @@
+:root { color-scheme: light dark; font: 14px system-ui, sans-serif; }
+body { margin: 0; background: Canvas; color: CanvasText; }
+main { padding: 18px; }
+h1 { margin: 0 0 16px; font-size: 24px; }
+h2 { margin: 0 0 12px; font-size: 16px; }
+section { padding: 14px; margin-bottom: 12px; border: 1px solid GrayText; border-radius: 10px; }
+label { display: block; margin-bottom: 8px; }
+form { margin-top: 14px; }
+input, select, button { max-width: 100%; font: inherit; }
+button { padding: 5px 9px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.scroll { overflow: auto; margin-top: 12px; }
+table { border-collapse: collapse; }
+th, td { padding: 6px 8px; border-bottom: 1px solid GrayText; text-align: left; min-width: 5ch; }
+td:nth-child(4), td:last-child { min-width: 16ch; overflow-wrap: anywhere; }
