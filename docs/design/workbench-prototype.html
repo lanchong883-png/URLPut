@@ -40,7 +40,7 @@ const importDraft=()=>({text:'',filename:'',format:'txt',read:0});
 const imports={sites:importDraft(),links:importDraft()};
 let open=new Set(['sites']), model={type:'local',endpoint:'http://127.0.0.1:11434/v1',name:'',analysis:false,writing:false};
 const main = document.querySelector('#main'), nav = document.querySelector('#nav'), dialog=document.querySelector('#dialog');
-function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts,pairLedger:[...pairLedger],contentTemplates,defaultTemplateId}));return true}catch{return false}}
+function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts,pairLedger:[...pairLedger],contentTemplates,defaultTemplateIds}));return true}catch{return false}}
 const safe = value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const btn = (label,action,style='')=>'<button class="button '+style+'" data-action="'+action+'">'+label+'</button>';
 const detail = (id,title,body)=>'<details data-section="'+id+'" '+(open.has(id)?'open':'')+'><summary>'+title+'</summary>'+body+'</details>';
@@ -400,12 +400,23 @@ let contentTemplates=(saved?.contentTemplates??starterTemplates).map(template=>{
   if(starter&&template.revision===1)return starter;
   return {...template,category:starter?.category??'general'};
 });
-let defaultTemplateId=saved?.defaultTemplateId??'intro';
+const oldDefault=contentTemplates.find(template=>template.id===saved?.defaultTemplateId);
+let defaultTemplateIds=currentTemplateDefaults(saved?.defaultTemplateIds??(oldDefault?{[oldDefault.category]:oldDefault.id}:{}));
+function currentTemplateDefaults(previous){
+  const defaults={};
+  for(const template of contentTemplates){
+    if(defaults[template.category]===undefined||previous[template.category]===template.id){
+      defaults[template.category]=template.id;
+    }
+  }
+  return defaults;
+}
+function isDefaultTemplate(template){return defaultTemplateIds[template.category]===template.id}
 let contentStrategy='templates', pickedTemplates=null, editingTemplate='', templatesFromSetup=false;
 let templateQuery='',templatePageIndex=0;
 
 function chosenTemplates(){
-  const ids=pickedTemplates??new Set([defaultTemplateId]);
+  const ids=pickedTemplates??new Set(Object.values(defaultTemplateIds));
   return contentTemplates.filter(template=>ids.has(template.id));
 }
 function canStartBatch(){
@@ -415,10 +426,11 @@ function contentOptions(){
   const selectedIds=new Set(chosenTemplates().map(template=>template.id));
   const choices=contentTemplates.map(template=>
     '<label class="check item"><input type="checkbox" data-content-id="'+safe(template.id)+'" '+(selectedIds.has(template.id)?'checked':'')+'>'+
-    '<span>'+safe(template.name)+(template.id===defaultTemplateId?' <span class="chip">默认</span>':'')+
+    '<span>'+safe(template.name)+(isDefaultTemplate(template)?' <span class="chip">本类默认</span>':'')+
     '<small class="truncate">'+safe(templateCategories[template.category].label)+'</small></span></label>'
   ).join('');
   return '<section class="card"><h2>投稿内容</h2>'+
+    '<p class="hint">新批次预选每个分类的默认模板，可以调整。</p>'+
     '<label class="field">内容来源<select id="content-strategy"><option value="templates" '+(contentStrategy==='templates'?'selected':'')+'>仅用内容模板</option>'+
     '<option value="ai" '+(contentStrategy==='ai'?'selected':'')+'>AI 根据目标网页拟写</option>'+
     '<option value="hybrid" '+(contentStrategy==='hybrid'?'selected':'')+'>AI 分析 + 模板</option></select></label>'+
@@ -434,16 +446,16 @@ function templateRows(){
   if(!filtered.length)return '<p class="hint">没有匹配的模板。</p>';
   return filtered.slice(templatePageIndex*pageSize,(templatePageIndex+1)*pageSize).map(template=>
     '<div class="item"><div class="row"><strong>'+safe(template.name)+'</strong>'+
-    (template.id===defaultTemplateId?'<span class="chip">默认</span>':'')+'</div>'+
+    (isDefaultTemplate(template)?'<span class="chip">本类默认</span>':'')+'</div>'+
     '<p class="hint">'+safe(templateCategories[template.category].label)+' · '+safe(templateCategories[template.category].fields)+'</p>'+
     '<p class="hint">'+safe(templateCategories[template.category].steps)+'</p><div class="actions">'+
     entityButton('编辑','edit-content',template.id)+
-    (template.id===defaultTemplateId?'':entityButton('设为默认','default-content',template.id))+entityButton('删除','delete-content',template.id)+'</div></div>'
+    (isDefaultTemplate(template)?'':entityButton('设为本类默认','default-content',template.id))+entityButton('删除','delete-content',template.id)+'</div></div>'
   ).join('')+paging('template',filtered.length,templatePageIndex);
 }
 function templateSettings(){
   return '<section class="card"><div class="row"><h2>内容模板</h2>'+btn('新增模板','new-content','secondary')+'</div>'+
-    '<p class="hint">已保存 '+n(contentTemplates.length)+' 份模板。新建批次可选一份或多份。</p>'+
+    '<p class="hint">已保存 '+n(contentTemplates.length)+' 份模板。每个分类有自己的默认模板。</p>'+
     '<label class="field">搜索模板<input id="template-search" value="'+safe(templateQuery)+'"></label>'+
     '<div id="template-rows" aria-label="内容模板库">'+templateRows()+'</div></section>';
 }
@@ -913,7 +925,7 @@ document.addEventListener('change',event=>{
   if(input.id==='content-category')editorCategoryLabels(input.value);
   if(input.id==='content-strategy'){contentStrategy=input.value;render()}
   if(input.dataset.contentId){
-    pickedTemplates??=new Set([defaultTemplateId]);
+    pickedTemplates??=new Set(Object.values(defaultTemplateIds));
     if(input.checked)pickedTemplates.add(input.dataset.contentId);else pickedTemplates.delete(input.dataset.contentId);
     document.querySelector('#content-count').textContent='已选 '+pickedTemplates.size+' 份模板';
     main.querySelector('[data-action=start]').disabled=!canStartBatch();
@@ -959,10 +971,15 @@ document.addEventListener('click',event=>{
   if(action==='confirm-delete-content'){
     contentTemplates=contentTemplates.filter(template=>template.id!==key);
     pickedTemplates?.delete(key);
-    if(defaultTemplateId===key)defaultTemplateId=contentTemplates[0]?.id??null;
+    defaultTemplateIds=currentTemplateDefaults(defaultTemplateIds);
     dialog.close();persist();render();return;
   }
-  if(action==='default-content'){defaultTemplateId=key;persist();render();return}
+  if(action==='default-content'){
+    const template=contentTemplates.find(item=>item.id===key);
+    if(!template)return;
+    defaultTemplateIds[template.category]=template.id;
+    persist();render();return;
+  }
   if(action==='save-content'){
     const name=document.querySelector('#content-name').value.trim();
     const title=document.querySelector('#content-title').value.trim();
@@ -977,10 +994,10 @@ document.addEventListener('click',event=>{
         {...template,name,title,body,category,revision:template.revision+1}:template);
     }else{
       contentTemplates=[...contentTemplates,{id:crypto.randomUUID(),revision:1,name,title,body,category}];
-      if(!contentTemplates.some(template=>template.id===defaultTemplateId))defaultTemplateId=contentTemplates.at(-1).id;
       templateQuery='';templatePageIndex=0;
       if(view==='progress')view='templates';
     }
+    defaultTemplateIds=currentTemplateDefaults(defaultTemplateIds);
     dialog.close();persist();render();return;
   }
   if(action==='return-setup'){notice='';returnToSetup();return}
