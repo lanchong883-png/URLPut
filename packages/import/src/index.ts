@@ -94,3 +94,11 @@ export function buildLedger(rows: ImportBatch['rows']): LedgerRow[] {
     return { ...base, disposition: 'candidate', reason: '待分析' };
   });
 }
+
+export function encodeCsv(columns: readonly string[], rows: ReadonlyArray<ReadonlyArray<string | number>>) {
+  return '\uFEFF' + [columns, ...rows].map(row => row.map(value => {
+    const text = String(value);
+    const safe = /^[\t\r\n]|^\s*[=+@-]/.test(text) ? "'" + text : text;
+    return '"' + safe.replaceAll('"', '""') + '"';
+  }).join(',')).join('\r\n') + '\r\n';
+}

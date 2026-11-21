@@ -1,5 +1,5 @@
 import type { Workspace } from '@urlput/contracts';
-import type { LedgerRow } from '@urlput/import';
+import { encodeCsv, type LedgerRow } from '@urlput/import';
 import type { Batch } from './api';
 
 export type ReportSite = Pick<Workspace['sites'][number], 'name' | 'homepage'>;
@@ -22,16 +22,15 @@ export function reportCells(row: LedgerRow, site: ReportSite) {
 export function downloadLedger(batch: Batch, site: ReportSite) {
   const headings = [...reportColumns, '来源文件'];
   const rows = batch.rows.map(row => [...reportCells(row, site), batch.filename ?? '']);
-  const csv = '\uFEFF' + [headings, ...rows].map(row => row.map(value => {
-    const text = String(value);
-    const safe = /^[\t\r\n]|^\s*[=+@-]/.test(text) ? "'" + text : text;
-    return '"' + safe.replaceAll('"', '""') + '"';
-  }).join(',')).join('\r\n') + '\r\n';
+  const csv = encodeCsv(headings, rows);
+  downloadCsv(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `URLPut-台账-${batch.id}.csv`);
+}
 
-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+export function downloadCsv(file: Blob, filename: string) {
+  const url = URL.createObjectURL(file);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `URLPut-台账-${batch.id}.csv`;
+  link.download = filename;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

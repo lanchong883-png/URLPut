@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { request } from '../lib/api';
+import { request, requestCsv } from '../lib/api';
+import { downloadCsv } from '../lib/report';
 
 type LinkRecord = { url: string; observedAt: string };
 type CatalogPage = { links: LinkRecord[]; nextOffset: number | null };
@@ -7,12 +8,43 @@ const pageSize = 5;
 
 export function LinkCatalog({ workspaceId }: { workspaceId: string }) {
   const [search, setSearch] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const exportRequest = useRef<AbortController | null>(null);
+  const query = search.trim();
+
+  useEffect(() => () => exportRequest.current?.abort(), []);
+
+  async function exportLinks(term: string) {
+    if (exportRequest.current) return;
+    const controller = new AbortController();
+    exportRequest.current = controller;
+    setExporting(true);
+    setExportError('');
+    try {
+      const params = new URLSearchParams({ q: term });
+      const file = await requestCsv(`/workspaces/${workspaceId}/link-catalog/export.csv?${params}`, controller.signal);
+      if (!controller.signal.aborted) downloadCsv(file, term ? 'URLPut-搜索结果.csv' : 'URLPut-活跃外链.csv');
+    } catch (error) {
+      if (!controller.signal.aborted) setExportError(error instanceof Error ? error.message : '无法导出外链清单。');
+    } finally {
+      exportRequest.current = null;
+      if (!controller.signal.aborted) setExporting(false);
+    }
+  }
+
   return <section className="card stack">
     <h2>活跃外链</h2>
     <label>搜索网址或域名
       <input type="search" value={search} maxLength={200} onChange={event => setSearch(event.target.value)} />
     </label>
-    <CatalogResults key={search.trim()} workspaceId={workspaceId} query={search.trim()} />
+    <div className="controls">
+      <button type="button" className="secondary" disabled={exporting} onClick={() => void exportLinks('')}>导出全部 CSV</button>
+      {query && <button type="button" className="secondary" disabled={exporting} onClick={() => void exportLinks(query)}>导出搜索结果 CSV</button>}
+    </div>
+    {exporting && <p role="status">正在准备 CSV…</p>}
+    {exportError && <p role="alert" className="error">{exportError}</p>}
+    <CatalogResults key={query} workspaceId={workspaceId} query={query} />
   </section>;
 }
 

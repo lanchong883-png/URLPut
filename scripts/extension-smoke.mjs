@@ -143,6 +143,12 @@ try {
   const catalog = page.getByRole('region', { name: '活跃外链列表' });
   await catalog.getByText('catalog5.example', { exact: true }).waitFor();
   assert.equal(await catalog.getByRole('listitem').count(), 5);
+  const allLinksDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出全部 CSV' }).click();
+  const allLinksCsv = await readFile(await (await allLinksDownload).path(), 'utf8');
+  assert.match(allLinksCsv, /catalog1\.example/);
+  assert.match(allLinksCsv, /catalog6\.example/);
+  assert.doesNotMatch(allLinksCsv, /inactive\.example|expired\.example/);
   await catalog.evaluate(element => { element.scrollTop = element.scrollHeight; });
   await catalog.getByText('catalog6.example', { exact: true }).waitFor();
   assert.equal(await catalog.getByRole('listitem').count(), 6);
@@ -150,6 +156,11 @@ try {
   await search.fill('CATALOG6.EXAMPLE');
   await catalog.getByText('catalog6.example', { exact: true }).waitFor();
   assert.equal(await catalog.getByRole('listitem').count(), 1);
+  const filteredLinksDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出搜索结果 CSV' }).click();
+  const filteredLinksCsv = await readFile(await (await filteredLinksDownload).path(), 'utf8');
+  assert.match(filteredLinksCsv, /catalog6\.example/);
+  assert.doesNotMatch(filteredLinksCsv, /catalog1\.example/);
   for (const term of ['inactive', 'expired']) {
     await search.fill(term);
     await page.getByText('没有匹配的活跃外链。').waitFor();
@@ -190,7 +201,7 @@ try {
     ['/local/v1/chat/completions', undefined, 'local-model'],
     ['/custom/v1/chat/completions', 'Bearer test-session-key', 'custom-model'],
   ]);
-  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV export, site isolation, catalog search and scrolling, legacy workbench and two model profiles.`);
+  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV export, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
 } finally {
   try {
     await context?.close();

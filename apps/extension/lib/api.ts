@@ -27,7 +27,7 @@ export type Batch = {
 };
 export type BatchSummary = Omit<Batch, 'rows'> & { rowCount: number };
 
-export async function request<T>(path: string, body?: ImportBatch, signal?: AbortSignal): Promise<T> {
+async function sendRequest(path: string, body?: ImportBatch, signal?: AbortSignal) {
   const { data } = (await auth?.auth.getSession()) ?? {};
   const headers = new Headers();
   if (body) headers.set('Content-Type', 'application/json');
@@ -43,7 +43,15 @@ export async function request<T>(path: string, body?: ImportBatch, signal?: Abor
     const error = await response.json().catch(() => ({}));
     throw new Error(error.message ?? `请求失败（${response.status}）`);
   }
-  return response.json();
+  return response;
+}
+
+export async function request<T>(path: string, body?: ImportBatch, signal?: AbortSignal): Promise<T> {
+  return (await sendRequest(path, body, signal)).json();
+}
+
+export async function requestCsv(path: string, signal: AbortSignal) {
+  return (await sendRequest(path, undefined, signal)).blob();
 }
 
 export function requestServiceAccess(baseUrl: string) {

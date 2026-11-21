@@ -1,15 +1,15 @@
 import { createHash } from 'node:crypto';
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { normalizeUrl } from '@urlput/import';
+import { encodeCsv, normalizeUrl } from '@urlput/import';
 import type { Database } from './database.ts';
 
 const workspaceParams = z.object({ workspaceId: z.uuid() });
-const catalogQuery = z.object({
+const searchQuery = z.object({ q: z.string().trim().max(200).default('') });
+const catalogQuery = searchQuery.extend({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).safe().default(0),
-  q: z.string().trim().max(200).default(''),
 });
 const observationSchema = z.object({
   url: z.string().max(8192),
@@ -32,29 +32,35 @@ export function registerLinkCatalog(
   subjectOf: (request: FastifyRequest) => string,
 ) {
   const path = '/workspaces/:workspaceId/link-catalog';
+  const exportColumns = ['外链 URL', '网站域名', '最近核验时间'];
+
+  function readLinks(workspaceId: string, subject: string, q: string, due: boolean, pagination: SQL) {
+    const eligibility = due
+      ? sql`l.observed_at <= now() - interval '7 days'`
+      : sql`l.status = 'active' AND l.observed_at > now() - interval '30 days'`;
+    const sort = due ? sql`l.observed_at ASC` : sql`l.observed_at DESC`;
+    return db.query<{ links: LinkRecord[] }>(sql`
+      SELECT ARRAY(
+        SELECT jsonb_build_object('url', l.normalized_url, 'origin', l.origin,
+          'status', l.status, 'observedAt', l.observed_at, 'reason', l.reason)
+        FROM external_link_catalog l
+        WHERE l.workspace_id = m.workspace_id AND ${eligibility}
+          AND (${q} = '' OR strpos(lower(l.normalized_url), lower(${q})) > 0)
+        ORDER BY ${sort}, l.url_fingerprint
+        ${pagination}
+      ) AS links
+      FROM workspace_members m
+      WHERE m.workspace_id = ${workspaceId} AND m.subject = ${subject}
+    `);
+  }
+
   for (const due of [false, true]) {
     api.get(due ? `${path}/recheck` : path, async (request, reply) => {
       const params = workspaceParams.safeParse(request.params);
       const query = catalogQuery.safeParse(request.query);
       if (!params.success || !query.success) return reply.code(400).send({ message: '清单参数无效。' });
       const { limit, offset, q } = query.data;
-      const eligibility = due
-        ? sql`l.observed_at <= now() - interval '7 days'`
-        : sql`l.status = 'active' AND l.observed_at > now() - interval '30 days'`;
-      const sort = due ? sql`l.observed_at ASC` : sql`l.observed_at DESC`;
-      const [membership] = await db.query<{ links: LinkRecord[] }>(sql`
-        SELECT ARRAY(
-          SELECT jsonb_build_object('url', l.normalized_url, 'origin', l.origin,
-            'status', l.status, 'observedAt', l.observed_at, 'reason', l.reason)
-          FROM external_link_catalog l
-          WHERE l.workspace_id = m.workspace_id AND ${eligibility}
-            AND (${q} = '' OR strpos(lower(l.normalized_url), lower(${q})) > 0)
-          ORDER BY ${sort}, l.url_fingerprint
-          LIMIT ${limit + 1} OFFSET ${offset}
-        ) AS links
-        FROM workspace_members m
-        WHERE m.workspace_id = ${params.data.workspaceId} AND m.subject = ${subjectOf(request)}
-      `);
+      const [membership] = await readLinks(params.data.workspaceId, subjectOf(request), q, due, sql`LIMIT ${limit + 1} OFFSET ${offset}`);
       if (!membership) return reply.code(404).send({ message: '找不到工作空间。' });
       return {
         links: membership.links.slice(0, limit),
@@ -62,6 +68,18 @@ export function registerLinkCatalog(
       };
     });
   }
+
+  api.get(`${path}/export.csv`, async (request, reply) => {
+    const params = workspaceParams.safeParse(request.params);
+    const query = searchQuery.safeParse(request.query);
+    if (!params.success || !query.success) return reply.code(400).send({ message: '清单参数无效。' });
+    const [membership] = await readLinks(params.data.workspaceId, subjectOf(request), query.data.q, false, sql.empty());
+    if (!membership) return reply.code(404).send({ message: '找不到工作空间。' });
+    const rows = membership.links.map(link => [link.url, new URL(link.url).hostname, link.observedAt]);
+    return reply.type('text/csv; charset=utf-8')
+      .header('Content-Disposition', 'attachment; filename="URLPut-link-catalog.csv"')
+      .send(encodeCsv(exportColumns, rows));
+  });
 
   api.post(`${path}/observations`, async (request, reply) => {
     const params = workspaceParams.safeParse(request.params);
