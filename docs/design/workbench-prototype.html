@@ -21,7 +21,7 @@ dialog{width:min(360px,calc(100% - 24px));border:1px solid var(--line);border-ra
 const numbers = new Intl.NumberFormat('zh-CN');
 const n = value => numbers.format(value);
 const demoSites = Array.from({length:100},(_,i)=>({id:'site-'+(i+1),name:'brand-'+(i+1)+'.example',url:'https://brand-'+(i+1)+'.example/'}));
-const demoLinks = Array.from({length:1000},(_,i)=>({id:'row-'+(i+1),line:i+1,url:'https://channel-'+(i+1)+'.example/submit',entryType:i%2===0?'directory':'resource'}));
+const demoLinks = Array.from({length:1000},(_,i)=>({id:'row-'+(i+1),line:i+1,url:'https://channel-'+(i+1)+'.example/submit',entryType:i%2===0?'directory':'resource',siteType:i%2===0?'目录站':'内容社区',status:'active'}));
 const storageKey = 'urlput-panel-prototype-v2';
 let saved;
 try {saved=JSON.parse(localStorage.getItem(storageKey))}catch{}
@@ -32,7 +32,7 @@ let sites=(saved?.sites??demoSites).map(({archived,...site})=>({
 let batches=saved?.batches??[];
 let linkLists=saved?.linkLists??[{id:'initial',name:'示例外链清单',source:'csv',links:saved?.links??demoLinks}];
 let listId=saved?.listId??'initial';
-let taskQuery='',taskFilter='all',taskPageIndex=0,libraryTab='sites',libraryQuery='',libraryPageIndex=0,editing='',batchName='';
+let taskQuery='',taskFilter='all',taskPageIndex=0,libraryTab='sites',libraryQuery='',editing='',batchName='';
 let batch=batches.find(item=>item.id===saved?.batchId)??batches.at(-1)??null;
 let picked=new Set(saved?.picked??[]), view='setup', query='', scope='', limit=1000, mode='analysis', notice='';
 let pendingSitesOnly=false, libraryFromSetup=false;
@@ -47,7 +47,7 @@ const detail = (id,title,body)=>'<details data-section="'+id+'" '+(open.has(id)?
 const matchSites=()=>sites.filter(site=>!site.deleted&&matches(site.name+' '+site.url,query)&&(!pendingSitesOnly||siteCounts(site).pending>0));
 const selected=()=>sites.filter(site=>!site.deleted&&picked.has(site.id));
 const currentList=()=>linkLists.find(list=>list.id===listId);
-const perSite=()=>Math.min(currentList()?.links.length??0,limit);
+const perSite=()=>Math.min(activeLinks(currentList()).length,limit);
 const reviewLabels={new:'新增',existing:'已有',duplicate:'清单内重复',error:'有问题'};
 function checkedUrl(value,kind){
   const raw=value.trim();
@@ -204,12 +204,12 @@ function checkAndImport(kind){
     if(libraryFromSetup)listId=id;
     const name=draft.filename.replace(/\.[^.]+$/,'')||'外链清单 '+(linkLists.length+1);
     linkLists=[...linkLists,{id,name,source:draft.filename?draft.format:'paste',
-      links:fresh.map(row=>({id:'row-'+row.line,line:row.line,url:row.url}))}];
+      links:fresh.map(row=>({id:'row-'+row.line,line:row.line,url:row.url,status:'active'}))}];
   }
   draft.rows=rows;
   draft.error='';
   libraryQuery='';
-  libraryPageIndex=0;
+  browseCounts.library=browseStep;
   persist();
   render();
 }
@@ -236,13 +236,13 @@ function submittedForSite(site){
   }
   return urls;
 }
-function siteCounts(site,pool=currentList()?.links??[],submitted=submittedForSite(site)){
+function siteCounts(site,pool=activeLinks(currentList()),submitted=submittedForSite(site)){
   const total=new Set(pool.map(link=>link.url));
   const count=[...total].filter(url=>submitted.has(url)).length;
   return {total:total.size,submitted:count,pending:total.size-count};
 }
 function selectedPending(){
-  const pool=(currentList()?.links??[]).slice(0,perSite());
+  const pool=activeLinks(currentList()).slice(0,perSite());
   if(!pool.length)return 0;
   return selected().reduce((total,site)=>total+siteCounts(site,pool).pending,0);
 }
@@ -256,7 +256,7 @@ function limitsMarkup(){
   if(mode!=='execute')return '';
   const targets=selected();
   const override=targets.find(site=>site.id===limitSite);
-  return '<section class="card"><h2>提交频率</h2>'+
+  return '<section class="card"><h2>6. 提交频率</h2>'+
     '<label class="field">每站 24 小时默认尝试上限<input id="daily-limit" type="number" min="1" max="1000" value="'+dailyLimit+'"></label>'+
     '<label class="field">单站额度可选<select id="limit-site"><option value="">选择站点</option>'+targets.map(site=>'<option value="'+safe(site.id)+'" '+(site.id===limitSite?'selected':'')+'>'+safe(site.name)+'</option>').join('')+'</select></label>'+
     (override?'<label class="field">该站 24 小时尝试上限<input id="site-limit" type="number" min="1" max="1000" value="'+(Object.hasOwn(overrides,override.id)?overrides[override.id]:dailyLimit)+'"></label>':'')+
@@ -427,19 +427,22 @@ function canStartBatch(){
 }
 function contentOptions(){
   const selectedIds=new Set(chosenTemplates().map(template=>template.id));
-  const choices=contentTemplates.map(template=>
-    '<label class="check item"><input type="checkbox" data-content-id="'+safe(template.id)+'" '+(selectedIds.has(template.id)?'checked':'')+'>'+
-    '<span>'+safe(template.name)+(isDefaultTemplate(template)?' <span class="chip">本类默认</span>':'')+
-    '<small class="truncate">'+safe(templateCategories[template.category].label)+'</small></span></label>'
-  ).join('');
-  return '<section class="card"><h2>投稿内容</h2>'+
+  const groups=Object.entries(templateCategories).map(([category,description])=>{
+    const templates=contentTemplates.filter(template=>template.category===category);
+    if(!templates.length&&category!=='general')return '';
+    return '<fieldset><legend>'+description.label+'</legend>'+
+      (templates.length?templates.map(template=>'<label class="check item"><input type="checkbox" data-content-id="'+safe(template.id)+'" '+
+        (selectedIds.has(template.id)?'checked':'')+'><span>'+safe(template.name)+(isDefaultTemplate(template)?' <span class="chip">本类默认</span>':'')+
+        '</span></label>').join(''):'<p class="hint">暂无通用文案，可到模板管理新增。</p>')+'</fieldset>';
+  }).join('');
+  return '<section class="card"><h2>4. 投稿内容</h2>'+
     '<p class="hint">新批次预选每个分类的默认模板，可以调整。</p>'+
     '<label class="field">内容来源<select id="content-strategy"><option value="templates" '+(contentStrategy==='templates'?'selected':'')+'>仅用内容模板</option>'+
     '<option value="ai" '+(contentStrategy==='ai'?'selected':'')+'>AI 根据目标网页拟写</option>'+
     '<option value="hybrid" '+(contentStrategy==='hybrid'?'selected':'')+'>AI 分析 + 模板</option></select></label>'+
     (mode==='analysis'?'<p class="hint">当前仅分析。切换为「分析后执行」时使用这里的选择。</p>':'')+
-    (contentStrategy!=='ai'?'<p class="hint">'+(contentStrategy==='hybrid'?'按入口选适用模板，再结合网页要求调整。':'可以多选。先匹配入口类型，再在同类模板中随机取一份。')+'</p>'+
-      '<div class="list" aria-label="可选内容模板">'+choices+'</div><p class="hint" id="content-count">已选 '+selectedIds.size+' 份模板</p>':
+    (contentStrategy!=='ai'?'<p class="hint">'+(contentStrategy==='hybrid'?'按入口选适用模板，再结合网页要求调整。':'每类可多选。先匹配专用模板，匹配不到时从已选的通用文案中随机选。')+'</p>'+
+      '<div class="list" aria-label="可选内容模板">'+groups+'</div><p class="hint" id="content-count">已选 '+selectedIds.size+' 份模板</p>':
       '<p class="hint">AI 用目标网页的主题和要求拟写。原型生成示例预览。正式执行遇到模型不可用或网页信息不足时，转人工处理。</p>')+
     btn('管理内容模板','manage-content','secondary')+'</section>';
 }
@@ -596,7 +599,7 @@ const authGuides={
 function authOptions(){
   if(mode!=='execute')return '';
   const checkbox=(id,label)=>'<label class="check"><input type="checkbox" data-auth-setting="'+id+'" '+(authDraft[id]?'checked':'')+'>'+label+'</label>';
-  return detail('auth','认证与二次确认 <small>· '+(authDraft.register?'允许新注册':'仅登录已有账号')+'</small>',
+  return detail('auth','5. 认证与二次确认 <small>· '+(authDraft.register?'允许新注册':'仅登录已有账号')+'</small>',
     '<div class="stack">'+checkbox('google','允许使用目标站点的 Google 登录')+
     checkbox('savedCredentials','允许复用 Chrome／Google 保存的站点密码')+
     checkbox('register','允许注册新账号')+checkbox('gmail','允许使用已授权的 Gmail 检查验证邮件')+checkbox('confirmPublish','正式发表前需要我确认')+'</div>'+
@@ -748,28 +751,98 @@ function openAuthStep(item,index){
   dialog.showModal();
 }
 
+const browseStep=5;
+const browseCounts={sites:browseStep,links:browseStep,library:browseStep};
+let libraryPreviewId='',linkQuery='',linkType='';
+const resetLinkBrowse=()=>{linkQuery='';linkType='';browseCounts.links=browseStep};
+const demoTypes=new Map(demoLinks.map(link=>[link.url,link.siteType]));
+const websiteType=link=>link.siteType||demoTypes.get(link.url)||'未识别';
+const linkDomain=link=>new URL(link.url).hostname;
+const activeLinks=list=>(list?.links??[]).filter(link=>!link.status||link.status==='active');
+const previewList=()=>view==='library'?
+  linkLists.find(list=>list.id===libraryPreviewId)??linkLists[0]:currentList();
+function browseData(kind){
+  if(kind==='sites')return matchSites();
+  if(kind==='library')return libraryItems();
+  return activeLinks(previewList()).filter(link=>
+    (!linkType||websiteType(link)===linkType)&&matches(linkDomain(link)+' '+link.url,linkQuery));
+}
+const browseLabels={sites:'推广站点可选列表',links:'活跃外链明细',library:'已保存清单'};
+function browseRow(kind,item){
+  if(kind==='library')return libraryOptionRow(item);
+  if(kind==='links')return '<div class="item" role="listitem"><div class="row"><strong class="truncate">'+safe(linkDomain(item))+
+    '</strong><span class="chip">'+safe(websiteType(item))+'</span></div><small class="links">'+safe(item.url)+'</small></div>';
+  const counts=siteCounts(item);
+  return '<div class="item" role="listitem"><label><input type="checkbox" data-site="'+safe(item.id)+'" '+(picked.has(item.id)?'checked':'')+
+    '><span>'+safe(item.name)+'<small class="truncate">'+safe(item.url)+'</small><small>总外链 '+n(counts.total)+' · 已提交 '+n(counts.submitted)+
+    ' · 待提交 '+n(counts.pending)+'</small></span></label></div>';
+}
+function browseStatus(count,total){
+  return '已显示 '+n(count)+' / '+n(total)+' 条'+(count<total?' · 下滑加载更多':'');
+}
+function browseMarkup(kind){
+  const items=browseData(kind),count=Math.min(items.length,browseCounts[kind]);
+  const label=browseLabels[kind];
+  return '<div class="list" tabindex="0" role="list" data-browse="'+kind+'" aria-label="'+label+'">'+
+    (items.length?items.slice(0,count).map(item=>browseRow(kind,item)).join(''):'<p class="hint">没有匹配的记录。</p>')+'</div>'+
+    '<p class="hint" id="browse-status-'+kind+'" aria-live="polite">'+browseStatus(count,items.length)+'</p>'+
+    '<button class="button subtle" id="browse-more-'+kind+'" data-action="browse-more" data-key="'+kind+'" '+(count>=items.length?'hidden':'')+'>加载更多</button>';
+}
+function refreshBrowse(kind,reset=false){
+  if(reset)browseCounts[kind]=browseStep;
+  const list=main.querySelector('[data-browse="'+kind+'"]');
+  if(!list)return;
+  const scroll=reset?0:list.scrollTop;
+  const items=browseData(kind),count=Math.min(items.length,browseCounts[kind]);
+  list.innerHTML=items.length?items.slice(0,count).map(item=>browseRow(kind,item)).join(''):'<p class="hint">没有匹配的记录。</p>';
+  list.scrollTop=scroll;
+  main.querySelector('#browse-status-'+kind).textContent=browseStatus(count,items.length);
+  main.querySelector('#browse-more-'+kind).hidden=count>=items.length;
+}
+function growBrowse(kind){
+  const list=main.querySelector('[data-browse="'+kind+'"]');
+  if(!list)return;
+  const items=browseData(kind),before=browseCounts[kind];
+  if(before>=items.length)return;
+  const count=Math.min(items.length,before+browseStep);
+  browseCounts[kind]=count;
+  list.insertAdjacentHTML('beforeend',items.slice(before,count).map(item=>browseRow(kind,item)).join(''));
+  main.querySelector('#browse-status-'+kind).textContent=browseStatus(count,items.length);
+  main.querySelector('#browse-more-'+kind).hidden=count>=items.length;
+}
+function activeLinkPreview(){
+  const list=previewList();
+  if(!list)return '';
+  const types=[...new Set(activeLinks(list).map(websiteType))].sort();
+  return '<h3>活跃外链 · '+safe(list.name)+'</h3>'+
+    '<label class="field">搜索域名或外链网址<input id="link-preview-query" value="'+safe(linkQuery)+'"></label>'+
+    '<label class="field">网站类型<select id="link-preview-type"><option value="">全部类型</option>'+
+    types.map(type=>'<option value="'+safe(type)+'" '+(type===linkType?'selected':'')+'>'+safe(type)+'</option>').join('')+'</select></label>'+
+    browseMarkup('links')+(view==='setup'?'<p class="hint">筛选仅用于查看，批次使用所选清单内的活跃外链。</p>':'');
+}
+
 function setup(){
-  const visible=matchSites();
-  const selectors=visible.slice(0,20).map(site=>{const counts=siteCounts(site);return '<div class="item"><label><input type="checkbox" data-site="'+safe(site.id)+'" '+(picked.has(site.id)?'checked':'')+'><span>'+safe(site.name)+'<small class="truncate">'+safe(site.url)+'</small><small>总外链 '+n(counts.total)+' · 已提交 '+n(counts.submitted)+' · 待提交 '+n(counts.pending)+'</small></span></label></div>'}).join('');
   return '<h1>新建批次</h1>'+
     detail('sites','1. 推广站点 <small>· 已选 '+n(picked.size)+' / '+n(sites.filter(site=>!site.deleted).length)+'</small>',
       '<p class="hint">统计按当前共享外链清单计算。示例站点包含模拟历史。</p>'+
       '<label class="field">搜索站点<input id="site-search" value="'+safe(query)+'" placeholder="名称或域名"></label>'+
       '<label class="check"><input type="checkbox" id="pending-sites" '+(pendingSitesOnly?'checked':'')+'>仅看有待提交外链的站点</label>'+
       '<div class="actions" style="margin-top:6px">'+btn('全选搜索结果','select-all','secondary')+btn('清空选择','clear','subtle')+'</div>'+
-      '<div class="list">'+(selectors||'<p class="hint">没有匹配站点。</p>')+'</div>'+
-      (visible.length>20?'<p class="hint result-count">展示前 20 个，共 '+n(visible.length)+' 个匹配。全选包含所有匹配站点。</p>':'')+
+      browseMarkup('sites')+
       btn('去清单补充站点','manage-sites','secondary'))+
-    detail('links','2. 外链清单 <small>· '+n(currentList()?.links.length??0)+' 条可用候选</small>',
-      '<label class="field">共享外链清单<select id="shared-list"><option value="">请选择清单</option>'+linkLists.map(list=>'<option value="'+safe(list.id)+'" '+(list.id===listId?'selected':'')+'>'+safe(list.name)+' · '+n(list.links.length)+' 条</option>').join('')+'</select></label>'+
-      btn('去清单补充外链','manage-links','secondary'))+
-    '<section class="card"><h2>批次设置</h2><label class="field">批次名称（可选）<input id="batch-name" value="'+safe(batchName)+'"></label>'+
-    '<label class="field">每站最多使用<input id="limit" type="number" min="1" max="10000" value="'+safe(limit)+'"></label>'+
+    detail('links','2. 外链清单 <small>· '+n(activeLinks(currentList()).length)+' 条可用候选</small>',
+      '<label class="field">共享外链清单<select id="shared-list"><option value="">请选择清单</option>'+linkLists.map(list=>'<option value="'+safe(list.id)+'" '+(list.id===listId?'selected':'')+'>'+safe(list.name)+' · '+n(activeLinks(list).length)+' 条活跃</option>').join('')+'</select></label>'+
+      activeLinkPreview()+btn('去清单补充外链','manage-links','secondary'))+
+    '<section class="card"><h2>3. 执行方式</h2>'+
     '<label class="field">执行方式<select id="mode" aria-describedby="mode-help"><option value="analysis">仅分析</option><option value="execute">分析后执行（模拟）</option></select></label>'+
     '<p class="hint" id="mode-help">'+(mode==='analysis'?'检查外链入口可用性与投稿要求，记录结果，不填写或提交。':
       '分析通过后，按投稿内容、认证规则和每日额度继续。需要你确认的条目会进入待办。')+'</p>'+
-    '</section>'+contentOptions()+authOptions()+limitsMarkup()+'<section class="card" aria-labelledby="launch-summary">'+
-    '<h2 id="launch-summary">启动前确认</h2><p class="hint">执行方式 · '+(mode==='analysis'?'仅分析':'分析后执行（模拟）')+'</p>'+
+    '</section>'+contentOptions()+authOptions()+limitsMarkup()+
+    '<section class="card"><h2>'+(mode==='analysis'?'5':'7')+'. 批次设置</h2>'+
+    '<label class="field">批次名称（可选）<input id="batch-name" value="'+safe(batchName)+'"></label>'+
+    '<label class="field">每站最多使用<input id="limit" type="number" min="1" max="10000" value="'+safe(limit)+'"></label></section>'+
+    '<section class="card" aria-labelledby="launch-summary">'+
+    '<h2 id="launch-summary">'+(mode==='analysis'?'6':'8')+'. 启动前确认</h2><p class="hint">执行方式 · '+(mode==='analysis'?'仅分析':'分析后执行（模拟）')+'</p>'+
     '<div class="stats"><div><strong id="selected-sites">'+n(picked.size)+'</strong><small>已选推广站点</small></div>'+
     '<div><strong id="per-site">'+n(perSite())+'</strong><small>每站候选</small></div>'+
     '<div><strong id="combinations">'+n(picked.size*perSite())+'</strong><small>站点 × 外链组合</small></div>'+
@@ -902,17 +975,18 @@ function tasks(){
     '<section class="card"><p class="hint">两个示例任务使用同一推广站点和同一外链。</p>'+btn('运行并发去重演示','demo-concurrent','secondary')+'</section>';
 }
 const entityButton=(label,action,key)=>'<button class="button secondary" data-action="'+action+'" data-key="'+safe(key)+'">'+label+'</button>';
-function libraryRows(){
+function libraryItems(){
   const isSites=libraryTab==='sites';
-  const items=isSites?sites:linkLists;
-  const filtered=items.filter(item=>!item.deleted&&matches(item.name+' '+(isSites?item.url:''),libraryQuery));
-  libraryPageIndex=Math.min(libraryPageIndex,Math.max(0,Math.ceil(filtered.length/pageSize)-1));
-  return filtered.length?'<div>'+filtered.slice(libraryPageIndex*pageSize,(libraryPageIndex+1)*pageSize).map(item=>
-    '<div class="item"><strong>'+safe(item.name)+'</strong><p class="hint truncate">'+(isSites?safe(item.url):n(item.links.length)+' 条 · '+safe(sourceNames[item.source]??'清单'))+'</p>'+
+  return (isSites?sites:linkLists).filter(item=>!item.deleted&&matches(item.name+' '+(isSites?item.url:''),libraryQuery));
+}
+function libraryOptionRow(item){
+  const isSites=libraryTab==='sites';
+  return '<div class="item" role="listitem"><strong>'+safe(item.name)+'</strong><p class="hint truncate">'+
+    (isSites?safe(item.url):n(activeLinks(item).length)+' 条活跃 · '+safe(sourceNames[item.source]??'清单'))+'</p>'+
     (isSites?'<p class="hint">'+(missingDirectoryProfile(item.profile).length?'投稿资料待补 '+missingDirectoryProfile(item.profile).length+' 项':'投稿资料已齐备')+'</p>':'')+
-    '<div class="actions">'+entityButton('查看／编辑','edit-library',item.id)+(isSites?entityButton('删除','delete-site',item.id):entityButton('导出 CSV','export-link-list',item.id))+
-    (libraryFromSetup?entityButton(isSites?'选中并返回':'使用并返回','use-library',item.id):'')+'</div></div>'
-  ).join('')+'</div>'+paging('library',filtered.length,libraryPageIndex):'<p class="hint">没有符合条件的记录。</p>';
+    '<div class="actions">'+entityButton('查看／编辑','edit-library',item.id)+(isSites?entityButton('删除','delete-site',item.id):
+      entityButton('查看活跃外链','preview-library-links',item.id)+entityButton('导出 CSV','export-link-list',item.id))+
+    (libraryFromSetup?entityButton(isSites?'选中并返回':'使用并返回','use-library',item.id):'')+'</div></div>';
 }
 function library(){
   const isSites=libraryTab==='sites';
@@ -922,10 +996,10 @@ function library(){
     reviewMarkup(libraryTab)+
     '<section class="card"><label class="field">搜索'+(isSites?'站点':'清单')+'<input id="library-search" value="'+safe(libraryQuery)+'"></label>'+
     (!isSites&&linkLists.length?'<div class="actions">'+btn('导出全部外链','export-all-links','secondary')+'</div>':'')+
-    '<div id="library-rows">'+libraryRows()+'</div></section><p class="notice" role="status">'+safe(notice)+'</p>';
+    browseMarkup('library')+'</section>'+(!isSites&&previewList()?'<section class="card" id="library-link-preview">'+activeLinkPreview()+'</section>':'')+'<p class="notice" role="status">'+safe(notice)+'</p>';
 }
 function returnToSetup(){
-  libraryFromSetup=false;view='setup';open.add(libraryTab);persist();render();window.scrollTo(0,0);
+  libraryFromSetup=false;view='setup';open.add(libraryTab);if(libraryTab==='links')resetLinkBrowse();persist();render();window.scrollTo(0,0);
   main.querySelector('[data-action="manage-'+libraryTab+'"]')?.focus();
 }
 
@@ -1014,7 +1088,7 @@ function openEditor(item){
   profileImageRead++;loadingProfileImages=false;
   dialog.innerHTML='<h2 id="editor-title">'+(site?'维护推广站点':'维护外链清单')+'</h2>'+
     (site?'<p class="hint">站点名称 · '+safe(item.name)+'</p><label class="field">站点网址<input id="edit-url" value="'+safe(item.url)+'"></label>'+profileMarkup(item):
-      '<label class="field">外链网址，每行一条<textarea id="edit-links" rows="6">'+safe(item.links.map(link=>link.url).join('\n'))+'</textarea></label>')+
+      '<label class="field">外链网址，每行一条<textarea id="edit-links" rows="6">'+safe(activeLinks(item).map(link=>link.url).join('\n'))+'</textarea></label>')+
     '<p class="hint">'+(site?'可先保存已有资料，缺项会标出。修改用于后续批次。':'修改用于后续批次。已启动批次使用原清单。')+'</p><p role="status" id="editor-error"></p>'+
     '<div class="actions">'+btn('保存修改','save-edit')+btn('关闭','close-dialog','secondary')+'</div>';
   dialog.showModal();
@@ -1038,20 +1112,9 @@ function render(){
   if(view==='models')document.querySelector('#model-type').value=model.type;
 }
 function refreshSection(id){
-  const before=main.querySelector('[data-section="'+id+'"]');
-  const template=document.createElement('template');
-  template.innerHTML=setup();
-  const after=template.content.querySelector('[data-section="'+id+'"]');
   if(id==='sites'){
-    before.querySelector('summary').innerHTML=after.querySelector('summary').innerHTML;
-    before.querySelector('.list').innerHTML=after.querySelector('.list').innerHTML;
-    const oldHint=before.querySelector('.result-count');
-    if(oldHint)oldHint.remove();
-    if(matchSites().length>20){
-      const text=document.createElement('p');text.className='hint result-count';
-      text.textContent='展示前 20 个，共 '+n(matchSites().length)+' 个匹配。全选包含所有匹配站点。';
-      before.querySelector('.list').after(text);
-    }
+    main.querySelector('[data-section="sites"] summary').innerHTML='1. 推广站点 <small>· 已选 '+n(picked.size)+' / '+n(sites.filter(site=>!site.deleted).length)+'</small>';
+    refreshBrowse('sites');
   }
   document.querySelector('#selected-sites').textContent=n(picked.size);
   document.querySelector('#per-site').textContent=n(perSite());
@@ -1107,6 +1170,11 @@ function exportSample(){
   downloadCsv(rows,'URLPut-批次-'+batch.id+'-演示记录.csv');
   document.querySelector('#export-notice').textContent='已导出 '+(rows.length-1)+' 条演示记录。';
 }
+document.addEventListener('scroll',event=>{
+  const list=event.target;
+  const kind=list.dataset?.browse;
+  if(kind&&list.scrollHeight-list.clientHeight-list.scrollTop<=12)growBrowse(kind);
+},true);
 document.addEventListener('toggle',event=>{
   const id=event.target.dataset?.section;
   if(!id||!event.target.isConnected)return;
@@ -1120,10 +1188,11 @@ document.addEventListener('input',event=>{
     if(draft.rows||draft.error){draft.rows=null;draft.error='';render();document.querySelector('#input-'+kind)?.focus()}
     main.querySelector('[data-action=review-'+kind+']').disabled=!draft.text.trim();
   }
-  if(event.target.id==='site-search'){query=event.target.value;refreshSection('sites')}
+  if(event.target.id==='site-search'){query=event.target.value;refreshBrowse('sites',true)}
+  if(event.target.id==='link-preview-query'){linkQuery=event.target.value;refreshBrowse('links',true)}
   if(event.target.id==='template-search'){templateQuery=event.target.value;templatePageIndex=0;document.querySelector('#template-rows').innerHTML=templateRows()}
   if(event.target.id==='task-search'){taskQuery=event.target.value;taskPageIndex=0;document.querySelector('#task-rows').innerHTML=taskRows()}
-  if(event.target.id==='library-search'){libraryQuery=event.target.value;libraryPageIndex=0;document.querySelector('#library-rows').innerHTML=libraryRows()}
+  if(event.target.id==='library-search'){libraryQuery=event.target.value;refreshBrowse('library',true)}
   if(event.target.id==='batch-name')batchName=event.target.value;
   if(event.target.id==='limit'){limit=Math.max(0,Math.min(10000,Math.floor(Number(event.target.value)||0)));refreshSection('limit')}
 });
@@ -1156,7 +1225,7 @@ document.addEventListener('change',event=>{
     }).catch(()=>{if(input.isConnected&&read===profileImageRead)error.textContent='无法读取产品图片。'})
       .finally(()=>{if(read===profileImageRead){loadingProfileImages=false;input.value=''}});
   }
-  if(input.id==='pending-sites'){pendingSitesOnly=input.checked;refreshSection('sites')}
+  if(input.id==='pending-sites'){pendingSitesOnly=input.checked;refreshBrowse('sites',true)}
   if(input.id.startsWith('file-')&&input.files[0]){
     const kind=input.id.slice(5),draft=imports[kind],file=input.files[0];
     const read=++draft.read;
@@ -1178,7 +1247,8 @@ document.addEventListener('change',event=>{
     });
   }
   if(input.id==='task-filter'){taskFilter=input.value;taskPageIndex=0;render()}
-  if(input.id==='shared-list'){listId=input.value;persist();render()}
+  if(input.id==='shared-list'){listId=input.value;resetLinkBrowse();persist();render()}
+  if(input.id==='link-preview-type'){linkType=input.value;refreshBrowse('links',true)}
   if(input.id==='scope'){scope=input.value;render()}
   if(input.dataset.confirmation){
     if(input.checked)pickedConfirmations.add(input.dataset.confirmation);else pickedConfirmations.delete(input.dataset.confirmation);
@@ -1224,6 +1294,8 @@ document.addEventListener('click',event=>{
   const action=control?.dataset.action,key=control?.dataset.key;
   if(!action)return;
   if(['setup','tasks','library','templates','models','auth-management'].includes(action)){
+    if(view!==action&&action==='setup'){browseCounts.sites=browseStep;resetLinkBrowse()}
+    if(view!==action&&action==='library'){browseCounts.library=browseStep;resetLinkBrowse()}
     libraryFromSetup=false;templatesFromSetup=false;authFromSetup=false;view=action;notice='';render();window.scrollTo(0,0);return;
   }
   if(action==='manage-auth'){
@@ -1461,13 +1533,14 @@ document.addEventListener('click',event=>{
     batches=examples.map(([name,cursor,paused,interrupted],index)=>({id:index+1,name,sites:demoSites.slice(0,1),links:demoLinks.slice(0,5),
       mode:'analysis',cursor,paused,interrupted,manual:cursor>0,resolved:cursor===5}));
   }
-  if(['task-prev','task-next','library-prev','library-next'].includes(action)){
-    const step=action.endsWith('-next')?1:-1;
-    if(action.startsWith('task-'))taskPageIndex+=step;else libraryPageIndex+=step;
+  if(action==='task-prev'||action==='task-next'){taskPageIndex+=action==='task-next'?1:-1}
+  if(action==='browse-more'){growBrowse(key);return}
+  if(action==='preview-library-links'){
+    libraryPreviewId=key;resetLinkBrowse();render();main.querySelector('#library-link-preview').scrollIntoView({block:'nearest'});return;
   }
   if(['manage-sites','manage-links','library-sites','library-links'].includes(action)){
     const fromSetup=action.startsWith('manage-');
-    view='library';libraryTab=action.endsWith('sites')?'sites':'links';libraryQuery='';libraryPageIndex=0;
+    view='library';libraryTab=action.endsWith('sites')?'sites':'links';libraryQuery='';browseCounts.library=browseStep;resetLinkBrowse();
     if(fromSetup){
       libraryFromSetup=true;
       open.add('import-'+libraryTab);
@@ -1478,9 +1551,9 @@ document.addEventListener('click',event=>{
   if(action==='export-link-list'||action==='export-all-links'){
     const lists=action==='export-all-links'?linkLists:linkLists.filter(list=>list.id===key);
     if(!lists.length)return;
-    const rows=lists.flatMap(list=>list.links.map(link=>[list.name,sourceNames[list.source]??'',link.line,link.url]));
+    const rows=lists.flatMap(list=>activeLinks(list).map(link=>[list.name,sourceNames[list.source]??'',link.line,link.url,linkDomain(link),websiteType(link)]));
     const label=(action==='export-all-links'?'全部外链清单':lists[0].name).replace(/[\\/:*?"<>|]/g,'_');
-    downloadCsv([['外链清单','来源类型','来源行','外链 URL'],...rows],'URLPut-'+label+'.csv');
+    downloadCsv([['外链清单','来源类型','来源行','外链 URL','网站域名','网站类型'],...rows],'URLPut-'+label+'.csv');
     return;
   }
   if(action==='remove-profile-image'){
@@ -1537,14 +1610,19 @@ document.addEventListener('click',event=>{
     }
     else linkLists=linkLists.map(list=>{
       if(list.id!==editing)return list;
-      const unchanged=rows.length===list.links.length&&rows.every((row,index)=>row.url===list.links[index].url);
-      return {...list,links:unchanged?list.links:rows.map(row=>({...row,id:'row-'+row.line}))};
+      const visible=activeLinks(list);
+      if(rows.length===visible.length&&rows.every((row,index)=>row.url===visible[index].url))return list;
+      const previous=new Map(list.links.map(link=>[link.url,link]));
+      const edited=new Set(rows.map(row=>row.url));
+      const inactive=list.links.filter(link=>link.status&&link.status!=='active'&&!edited.has(link.url));
+      const links=rows.map(row=>previous.get(row.url)??{...row,id:crypto.randomUUID(),status:'active'});
+      return {...list,links:[...inactive,...links]};
     });
     dialog.close();
   }
   if(action==='start'&&canStartBatch()){
     const list=currentList();
-    batch={id:(batches.at(-1)?.id??0)+1,name:batchName.trim(),listName:list.name,sites:selected(),links:list.links.slice(0,perSite()),mode,source:list.source,
+    batch={id:(batches.at(-1)?.id??0)+1,name:batchName.trim(),listName:list.name,sites:selected(),links:activeLinks(list).slice(0,perSite()),mode,source:list.source,
       cursor:0,paused:false,interrupted:false,manual:false,resolved:false};batchName='';
     if(mode==='execute'){
       batch.authentication={...authDraft,email:authAccounts.email,googleEmail:authAccounts.googleEmail,
