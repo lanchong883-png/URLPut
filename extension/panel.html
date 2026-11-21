@@ -19,11 +19,20 @@
     </form>
   </section>
   <section>
-    <h2>导入 CSV</h2>
-    <label>CSV 文件 <input id="file" type="file" accept=".csv,.tsv,text/csv"></label>
-    <label>分隔符 <select id="delimiter"><option value=",">逗号</option><option value=";">分号</option><option value="tab">制表符</option></select></label>
-    <label><input id="header" type="checkbox" checked> 首行是表头</label>
-    <label>URL 列 <select id="column"></select></label>
+    <h2>导入清单</h2>
+    <label>来源 <select id="source">
+      <option value="csv">CSV 文件</option>
+      <option value="txt">TXT 文件</option>
+      <option value="paste-text">粘贴网址或文本</option>
+      <option value="paste-table">粘贴表格</option>
+    </select></label>
+    <label id="file-input">文件 <input id="file" type="file" accept=".csv,.tsv,text/csv"></label>
+    <label id="paste-input" hidden>粘贴内容 <textarea id="paste" rows="4"></textarea></label>
+    <div id="mapping">
+      <label>分隔符 <select id="delimiter"><option value=",">逗号</option><option value=";">分号</option><option value="tab">制表符</option></select></label>
+      <label><input id="header" type="checkbox" checked> 首行是表头</label>
+      <label>URL 列 <select id="column"></select></label>
+    </div>
     <pre id="preview" aria-label="导入预览"></pre>
     <button id="import" type="button" disabled>导入到当前站点</button>
   </section>

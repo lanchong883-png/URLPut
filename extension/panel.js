@@ -1,9 +1,12 @@
-import { exportCsv, headings, importRows, normalizeUrl, parseCsv, reportCells } from './ledger.js';
+import { exportCsv, headings, importRows, normalizeUrl, parseCsv, parseText, reportCells } from './ledger.js';
 
 const get = (id) => document.getElementById(id);
 const key = 'urlputLedger';
-let state;
+let state = { sites: [] };
 let records = [];
+let sourceName = '';
+const usesColumns = () => ['csv', 'paste-table'].includes(get('source').value);
+const hasHeader = () => usesColumns() && get('header').checked;
 let previewRevision = 0;
 let busy = false;
 
@@ -30,7 +33,7 @@ function render() {
   document.querySelector('tbody').replaceChildren(body);
   get('count').textContent = `${rows.length} 条原始记录`;
   get('export').disabled = !rows.length;
-  get('import').disabled = busy || !selectedSite() || records.length <= Number(get('header').checked);
+  get('import').disabled = busy || !selectedSite() || records.length <= Number(hasHeader());
 }
 
 async function withStateChange(change) {
@@ -63,23 +66,29 @@ async function preview() {
   render();
   get('column').replaceChildren();
   get('preview').textContent = '';
+  const source = get('source').value;
+  const pasted = source.startsWith('paste-');
   const file = get('file').files[0];
-  if (!file) return;
+  if (!pasted && !file) return;
   try {
-    const content = await file.text();
+    const content = pasted ? get('paste').value : await file.text();
     if (revision !== previewRevision) return;
-    const delimiter = get('delimiter').value;
-    records = parseCsv(content, delimiter === 'tab' ? '\t' : delimiter);
-    const width = records.reduce((max, row) => Math.max(max, row.length), 0);
-    const hasHeader = get('header').checked;
-    for (let column = 0; column < width; column++) {
-      const label = hasHeader && records[0][column] ? records[0][column] : `第 ${column + 1} 列`;
-      get('column').add(new Option(label, column));
+    sourceName = pasted ? '粘贴' : file.name;
+    if (usesColumns()) {
+      const delimiter = get('delimiter').value;
+      records = parseCsv(content, delimiter === 'tab' ? '\t' : delimiter);
+      const width = records.reduce((max, row) => Math.max(max, row.length), 0);
+      for (let column = 0; column < width; column++) {
+        const label = hasHeader() && records[0][column] ? records[0][column] : `第 ${column + 1} 列`;
+        get('column').add(new Option(label, column));
+      }
+      const urlColumn = hasHeader() ? records[0]?.findIndex((cell) => /^(url|网址|链接)$/i.test(cell.trim())) : 0;
+      if (urlColumn >= 0) get('column').value = urlColumn;
+    } else {
+      records = parseText(content);
     }
-    const urlColumn = hasHeader ? records[0]?.findIndex((cell) => /^(url|网址|链接)$/i.test(cell.trim())) : 0;
-    if (urlColumn >= 0) get('column').value = urlColumn;
-    get('preview').textContent = records.slice(0, 4).map((row) => row.join(' ｜ ')).join('\n');
-    showStatus(records.length > Number(hasHeader) ? '' : '文件中没有可导入的记录。');
+    get('preview').textContent = records.slice(0, 4).map((row) => (row.cells ?? row).join(' ｜ ')).join('\n');
+    showStatus(records.length > Number(hasHeader()) || !content ? '' : '没有可导入的记录。');
   } catch (error) {
     if (revision === previewRevision) showStatus(error.message);
   }
@@ -109,17 +118,32 @@ get('sites').addEventListener('change', (event) => {
   });
 });
 
+get('source').addEventListener('change', () => {
+  const source = get('source').value;
+  const pasted = source.startsWith('paste-');
+  get('file-input').hidden = pasted;
+  get('paste-input').hidden = !pasted;
+  get('mapping').hidden = !usesColumns();
+  get('file').value = '';
+  get('file').accept = source === 'txt' ? '.txt,text/plain' : '.csv,.tsv,text/csv';
+  if (usesColumns()) {
+    get('delimiter').value = pasted ? 'tab' : ',';
+    get('header').checked = !pasted;
+  }
+  preview();
+});
 for (const id of ['file', 'delimiter', 'header']) get(id).addEventListener('change', preview);
+get('paste').addEventListener('input', preview);
 
 get('import').addEventListener('click', () => {
   const siteId = selectedSite().id;
-  const filename = get('file').files[0].name;
+  const filename = sourceName;
   const source = records;
   const column = Number(get('column').value);
-  const hasHeader = get('header').checked;
+  const skipHeader = hasHeader();
   withStateChange((next) => {
     const site = next.sites.find(({ id }) => id === siteId);
-    const added = importRows(source, column, hasHeader, site.rows, filename);
+    const added = importRows(source, column, skipHeader, site.rows, filename);
     site.rows = site.rows.concat(added);
     next.selectedId = siteId;
     return `已导入 ${added.length} 条记录。`;

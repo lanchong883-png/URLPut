@@ -45,6 +45,15 @@ export function parseCsv(text, delimiter = ',') {
   return rows;
 }
 
+export function parseText(text) {
+  return text.replace(/^\uFEFF/, '').split(/\r\n|\n|\r/).flatMap((sourceText, index) => {
+    if (!sourceText.trim()) return [];
+    const tokens = sourceText.match(/https?:\/\/[^\s<>"'`，。；！？、）》】」]+/gi) ?? [];
+    const values = tokens.length ? tokens : [sourceText];
+    return values.map((value) => ({ cells: [value], sourceRow: index + 1, sourceText }));
+  });
+}
+
 export function normalizeUrl(value) {
   const url = new URL(value.trim());
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
@@ -62,8 +71,12 @@ export function importRows(rows, column, hasHeader, existing, filename) {
 
   return rows.slice(Number(hasHeader)).map((source, index) => {
     const number = existing.length + index + 1;
-    const raw = source[column] ?? '';
-    const provenance = { number, raw, filename, sourceRow: index + 1 + Number(hasHeader) };
+    const { cells, sourceRow, sourceText } = Array.isArray(source)
+      ? { cells: source, sourceRow: index + 1 + Number(hasHeader) }
+      : source;
+    const raw = cells[column] ?? '';
+    const provenance = { number, raw, filename, sourceRow };
+    if (sourceText !== undefined) provenance.sourceText = sourceText;
     try {
       const url = normalizeUrl(raw);
       const normalized = url.href;
@@ -90,7 +103,7 @@ export function exportCsv(rows) {
     const safe = /^[\t\r\n]|^\s*[=+@-]/.test(cell) ? "'" + cell : cell;
     return '"' + safe.replaceAll('"', '""') + '"';
   };
-  const data = rows.map((row) => [...reportCells(row), row.filename, row.sourceRow]);
-  return '\uFEFF' + [[...headings, '源文件', '源记录行号'], ...data]
+  const data = rows.map((row) => [...reportCells(row), row.filename, row.sourceRow, row.sourceText ?? '']);
+  return '\uFEFF' + [[...headings, '来源', '源记录行号', '原始文本'], ...data]
     .map((row) => row.map(encode).join(',')).join('\r\n') + '\r\n';
 }
