@@ -2,18 +2,345 @@
 <html lang="zh-CN">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>URLPut · 侧边栏交互原型</title>
+<title>URLPut · Chrome 侧边栏</title>
 <style>
-:root{color-scheme:light;font:14px/1.5 Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:#172c2b;background:#e8eeed;--muted:#536866;--line:#d5e2de;--accent:#14604f;--soft:#e8f4ee;--warm:#fff3db}
-*{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer}button:disabled{cursor:default;opacity:.55}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid #188568;outline-offset:3px}
-.panel{max-width:392px;margin:0 auto;min-height:100vh;background:#f3f7f6;border-inline:1px solid var(--line);box-shadow:0 3px 25px #203f3420}
-header{padding:14px 15px 10px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}.brand{font-weight:800;font-size:19px;letter-spacing:-.035em}.bar,.row,.actions{display:flex;align-items:center;gap:8px;min-width:0}.bar,.row{justify-content:space-between}.actions{flex-wrap:wrap}.grow{flex:1}.muted,small{color:var(--muted)}.hint{font-size:12px;color:var(--muted)}nav{display:flex;justify-content:space-between;gap:4px;flex-wrap:wrap;margin-top:7px}nav button{background:none;border:0;padding:6px 2px;color:var(--muted);border-bottom:2px solid transparent}nav button[aria-current]{font-weight:750;color:var(--accent);border-bottom-color:var(--accent)}
-main{padding:12px 14px 20px}h1,h2,h3,p{margin:0}h1{font-size:18px;margin-bottom:8px}h2{font-size:14px}h3{font-size:13px}.card,details{background:#fff;border:1px solid var(--line);border-radius:10px;margin-bottom:9px;padding:10px 11px}.card p,details p{margin:5px 0}summary{cursor:pointer;font-weight:700;overflow-wrap:anywhere}summary small{font-weight:500}details[open] summary{margin-bottom:9px}.stack{display:grid;gap:7px}.list{max-height:186px;overflow:auto}.item{padding:6px 0;border-bottom:1px solid #e7eeeb;overflow-wrap:anywhere}.item:last-child{border-bottom:none}.item label{display:flex;align-items:flex-start;gap:7px}.truncate{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
-input:not([type=radio],[type=checkbox]),select,textarea{width:100%;min-width:0;padding:6px 7px;border:1px solid #b9cbc4;border-radius:6px;background:#fff}textarea{resize:vertical}label.field[hidden]{display:none}.field{display:grid;gap:3px;margin:5px 0}.check{display:flex;align-items:center;gap:6px}.check input{margin:0}.button{background:var(--accent);color:#fff;border:1px solid var(--accent);padding:5px 9px;border-radius:7px;font-weight:700}.secondary{background:#fff;color:var(--accent);border-color:#b8cec5}.subtle{background:transparent;color:var(--accent);border-color:transparent}.full{width:100%;padding:8px}.chip{display:inline-block;border-radius:99px;background:var(--soft);padding:2px 7px;color:var(--accent);font-size:11px;font-weight:700;white-space:nowrap}.chip.warm{background:var(--warm);color:#755316}.stats{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:7px 0}.stats div{background:#edf5f2;border-radius:7px;padding:6px 8px}.stats strong{display:block;font-size:19px;line-height:1.1}.meter{height:8px;background:#e2ece8;border-radius:99px;overflow:hidden;margin:7px 0}.meter div{height:100%;background:#248366}.notice{min-height:1em;color:var(--accent);font-size:12px;margin-top:6px}.links{overflow-wrap:anywhere}
-dialog{width:min(360px,calc(100% - 24px));border:1px solid var(--line);border-radius:10px;padding:14px;color:inherit;background:#fff}.product-image{max-width:100%;max-height:110px;object-fit:contain;border:1px solid var(--line);border-radius:7px}dialog::backdrop{background:#183a3466}
+:root {
+  color-scheme: light;
+  font: 14px/1.55 "Inter", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  color: #20233a;
+  background: #e9e9f3;
+  --text: #20233a;
+  --muted: #5e637b;
+  --line: #e1e3ef;
+  --accent: #4e36b5;
+  --accent-deep: #392589;
+  --soft: #eeebff;
+  --warm: #fff1d9;
+  --warm-text: #77470d;
+  --success: #dff4eb;
+  --success-text: #176448;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: .55; }
+:focus-visible { outline: 2px solid #694de5; outline-offset: 2px; }
+
+.panel {
+  max-width: 392px;
+  min-height: 100vh;
+  margin: 0 auto;
+  background: #f5f5fb;
+  border-inline: 1px solid #dddded;
+  box-shadow: 0 0 42px #28205016;
+}
+header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+header .bar { padding: 12px 15px 10px; }
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -.055em;
+  line-height: 1;
+}
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  border-radius: 8px;
+  background: #4e36b5;
+  box-shadow: inset 0 1px 0 #ffffff44;
+}
+.brand-mark::before {
+  content: "";
+  width: 13px;
+  height: 10px;
+  border: solid #fff;
+  border-width: 0 0 2px 2px;
+  transform: translateY(-2px) rotate(-45deg);
+}
+.brand-mark::after {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border: solid #fff;
+  border-width: 2px 2px 0 0;
+  transform: translate(4px, -4px);
+}
+.demo-label { color: #5e637b; background: #f4f4fa; }
+nav {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 2px;
+  padding: 0 8px;
+}
+nav button {
+  position: relative;
+  min-height: 40px;
+  padding: 0 1px 2px;
+  border: 0;
+  border-radius: 7px 7px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+nav button:hover { background: #f7f5ff; color: var(--accent); }
+nav button[aria-current] { background: #f2efff; color: var(--accent-deep); }
+nav button[aria-current]::after {
+  content: "";
+  position: absolute;
+  inset: auto 8px 0;
+  height: 3px;
+  border-radius: 5px 5px 0 0;
+  background: #6244d3;
+}
+nav .chip {
+  position: absolute;
+  top: 2px;
+  right: 1px;
+  min-width: 14px;
+  padding: 0 3px;
+  font-size: 9px;
+}
+
+main { padding: 14px 13px 24px; }
+h1, h2, h3, p { margin: 0; }
+h1 { margin-bottom: 12px; font-size: 23px; line-height: 1.35; overflow-wrap: anywhere; }
+h2 { font-size: 15px; }
+h3 { font-size: 13px; }
+.page-banner {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 93px;
+  margin-bottom: 13px;
+  padding: 15px 18px;
+  border: 1px solid #423091;
+  border-radius: 13px;
+  background: linear-gradient(112deg, #262050 0%, #3c2885 64%, #5740b3 100%);
+  color: white;
+}
+.page-banner h1 { position: relative; z-index: 1; margin: 0; font-size: 24px; letter-spacing: .02em; }
+.page-banner::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  right: -9px;
+  top: -35px;
+  width: 168px;
+  height: 170px;
+  background: radial-gradient(circle, #c7bbff55 1px, transparent 1.5px) 0 0 / 11px 11px;
+  mask-image: linear-gradient(90deg, transparent, #000 49%);
+}
+.banner-mark { position: absolute; inset: 0 14px 0 auto; width: 132px; pointer-events: none; }
+.banner-mark::before, .banner-mark::after {
+  content: "";
+  position: absolute;
+  top: 28px;
+  width: 58px;
+  height: 30px;
+  border: 2px solid #b3a0ff;
+  border-radius: 30px;
+  transform: rotate(-35deg);
+  box-shadow: 0 0 22px #aa90ff55, inset 0 0 14px #bbabff24;
+}
+.banner-mark::before { right: 37px; top: 38px; }
+.banner-mark::after { right: 7px; top: 17px; border-color: #e2dcff; }
+
+.bar, .row, .actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.bar, .row { justify-content: space-between; }
+.row > :first-child { min-width: 0; }
+.row > :is(.chip, .button):last-child { flex: none; }
+main > .row:has(> h1) { margin-bottom: 12px; }
+.row > h1 { margin: 0; }
+.actions { flex-wrap: wrap; }
+.grow { flex: 1; }
+.muted, small, .hint { color: var(--muted); }
+.hint, small { font-size: 12px; }
+.card, details {
+  margin-bottom: 9px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: 0 1px 2px #29224b06;
+}
+.card p, details p { margin: 5px 0; }
+summary { cursor: pointer; font-weight: 700; overflow-wrap: anywhere; }
+summary small { font-weight: 500; }
+details[open] > summary { margin-bottom: 9px; }
+details[data-section]:not([open]):hover { border-color: #c8bdf5; }
+details[data-section] > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 25px;
+  list-style: none;
+}
+details[data-section] > summary::-webkit-details-marker { display: none; }
+details[data-section] > summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin: 0 3px 0 auto;
+  border: solid #746d94;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg) translateY(-2px);
+  flex: none;
+}
+details[data-section][open] > summary::after { transform: rotate(225deg) translate(-2px, -1px); }
+details[data-section] > summary > small { line-height: 1.3; }
+.step-title { display: inline-flex; align-items: center; gap: 8px; vertical-align: middle; }
+.step-title b {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 7px;
+  background: var(--soft);
+  color: var(--accent-deep);
+  font-size: 12px;
+  font-weight: 750;
+}
+details[open]:has(> summary .step-title) { border-color: #d2c8f7; }
+details[open] > summary .step-title b, .launch-card .step-title b { color: white; background: var(--accent); }
+.launch-card { border-color: #d2c8f7; }
+.stack { display: grid; gap: 7px; }
+.list { max-height: 186px; overflow: auto; overscroll-behavior: contain; scrollbar-color: #c8c2de transparent; scrollbar-width: thin; }
+.item { padding: 7px 0; border-bottom: 1px solid #ededf5; overflow-wrap: anywhere; }
+.item:last-child { border-bottom: 0; }
+.item label { display: flex; align-items: flex-start; gap: 7px; cursor: pointer; }
+.item label input { margin-top: 3px; }
+.item details { margin-top: 7px; margin-bottom: 0; background: #faf9ff; }
+.truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+fieldset { min-width: 0; margin: 6px 0; padding: 3px 8px 6px; border: 1px solid var(--line); border-radius: 8px; }
+legend { padding: 0 4px; color: var(--muted); font-size: 12px; font-weight: 650; }
+
+input:not([type=radio],[type=checkbox]), select, textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 35px;
+  padding: 6px 9px;
+  border: 1px solid #cacde0;
+  border-radius: 7px;
+  background: #fcfcff;
+}
+input::placeholder, textarea::placeholder { color: #6c7089; }
+input[type=file]::file-selector-button {
+  margin-inline-end: 8px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--soft);
+  color: var(--accent-deep);
+  cursor: pointer;
+}
+input:is([type=checkbox], [type=radio]) { width: 15px; height: 15px; flex: none; accent-color: var(--accent); }
+textarea { resize: vertical; }
+label.field[hidden] { display: none; }
+.field { display: grid; gap: 3px; margin: 7px 0; font-size: 13px; font-weight: 650; }
+.field :is(input, select, textarea) { font-size: 14px; font-weight: 400; }
+.check { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.check input { margin: 0; }
+.button {
+  min-height: 34px;
+  padding: 5px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 680;
+}
+.button:not(:disabled):hover { background: var(--accent-deep); border-color: var(--accent-deep); }
+.secondary { background: #f9f7ff; color: var(--accent-deep); border-color: #d9cef9; }
+.secondary:not(:disabled):hover, .subtle:not(:disabled):hover { background: var(--soft); color: var(--accent-deep); border-color: #cbbcf6; }
+.subtle { background: transparent; color: var(--accent-deep); border-color: transparent; }
+.full { width: 100%; min-height: 40px; }
+.chip {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 99px;
+  background: var(--soft);
+  color: var(--accent-deep);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.chip.warm { background: var(--warm); color: var(--warm-text); }
+.chip.success { background: var(--success); color: var(--success-text); }
+.chip.neutral { background: #eeeff5; color: #535870; }
+.stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 9px 0;
+}
+.stats div { padding: 8px 9px; border-radius: 7px; background: #f3f0ff; }
+.stats strong { display: block; color: var(--accent-deep); font-size: 22px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.meter { height: 8px; overflow: hidden; margin: 7px 0; border-radius: 99px; background: #e9e5fa; }
+.meter div { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #5338ba, #8a69ee); }
+.progress-card { padding: 13px; border-color: #d7cdf8; }
+.progress-caption { color: var(--muted); font-size: 12px; }
+.progress-caption strong { color: var(--accent-deep); font-size: 17px; font-variant-numeric: tabular-nums; }
+.attention-card { border-color: #ead4a9; background: #fffcf5; }
+.attention-card h2 { color: var(--warm-text); }
+.confirmation-toolbar { border-color: #d7cdf8; }
+.library-tabs {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 9px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #eeedf7;
+}
+.library-tabs .button { flex: 1; min-width: 0; }
+.library-tabs .secondary { border-color: transparent; background: transparent; }
+.task-meter { height: 4px; margin: 4px 0 8px; }
+.notice { color: var(--accent-deep); font-size: 12px; }
+.notice:empty { display: none; }
+.links { overflow-wrap: anywhere; }
+
+dialog {
+  width: min(360px, calc(100% - 24px));
+  max-height: calc(100dvh - 28px);
+  padding: 16px;
+  border: 1px solid #d5cef2;
+  border-radius: 13px;
+  background: #fff;
+  color: var(--text);
+  box-shadow: 0 18px 54px #21153944;
+}
+dialog::backdrop { background: #21153966; }
+.product-image { max-width: 100%; max-height: 110px; object-fit: contain; border: 1px solid var(--line); border-radius: 7px; }
+
+@media (max-width: 350px) {
+  nav { padding-inline: 4px; }
+  nav button { font-size: 11px; }
+  main { padding-inline: 9px; }
+  .card, details { padding-inline: 10px; }
+}
 </style>
 <div class="panel">
-<header><div class="bar"><div class="brand">URLPut</div><span class="chip">模拟演示</span></div><nav id="nav" aria-label="插件导航"></nav></header>
+<header><div class="bar"><div class="brand"><span class="brand-mark" aria-hidden="true"></span>URLPut</div><span class="chip demo-label">模拟演示</span></div><nav id="nav" aria-label="插件导航"></nav></header>
 <main id="main"></main>
 </div>
 <dialog id="dialog" aria-labelledby="editor-title"></dialog>
@@ -43,6 +370,8 @@ const main = document.querySelector('#main'), nav = document.querySelector('#nav
 function persist(){try{localStorage.setItem(storageKey,JSON.stringify({sites,linkLists,listId,batches,batchId:batch?.id,picked:[...picked],clockShift,attempts,pairLedger:[...pairLedger],contentTemplates,defaultTemplateIds,authAccounts}));return true}catch{return false}}
 const safe = value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const btn = (label,action,style='')=>'<button class="button '+style+'" data-action="'+action+'">'+label+'</button>';
+const stepTitle = (number,label)=>'<span class="step-title"><b>'+number+'</b> '+label+'</span>';
+const pageBanner = title=>'<div class="page-banner"><h1>'+title+'</h1><span class="banner-mark" aria-hidden="true"></span></div>';
 const detail = (id,title,body)=>'<details data-section="'+id+'" '+(open.has(id)?'open':'')+'><summary>'+title+'</summary>'+body+'</details>';
 const matchSites=()=>sites.filter(site=>!site.deleted&&matches(site.name+' '+site.url,query)&&(!pendingSitesOnly||siteCounts(site).pending>0));
 const selected=()=>sites.filter(site=>!site.deleted&&picked.has(site.id));
@@ -256,7 +585,7 @@ function limitsMarkup(){
   if(mode!=='execute')return '';
   const targets=selected();
   const override=targets.find(site=>site.id===limitSite);
-  return '<section class="card"><h2>6. 提交频率</h2>'+
+  return '<section class="card"><h2>'+stepTitle(6,'提交频率')+'</h2>'+
     '<label class="field">每站 24 小时默认尝试上限<input id="daily-limit" type="number" min="1" max="1000" value="'+dailyLimit+'"></label>'+
     '<label class="field">单站额度可选<select id="limit-site"><option value="">选择站点</option>'+targets.map(site=>'<option value="'+safe(site.id)+'" '+(site.id===limitSite?'selected':'')+'>'+safe(site.name)+'</option>').join('')+'</select></label>'+
     (override?'<label class="field">该站 24 小时尝试上限<input id="site-limit" type="number" min="1" max="1000" value="'+(Object.hasOwn(overrides,override.id)?overrides[override.id]:dailyLimit)+'"></label>':'')+
@@ -435,7 +764,7 @@ function contentOptions(){
         (selectedIds.has(template.id)?'checked':'')+'><span>'+safe(template.name)+(isDefaultTemplate(template)?' <span class="chip">本类默认</span>':'')+
         '</span></label>').join(''):'<p class="hint">暂无通用文案，可到模板管理新增。</p>')+'</fieldset>';
   }).join('');
-  return '<section class="card"><h2>4. 投稿内容</h2>'+
+  return '<section class="card"><h2>'+stepTitle(4,'投稿内容')+'</h2>'+
     '<p class="hint">新批次预选每个分类的默认模板，可以调整。</p>'+
     '<label class="field">内容来源<select id="content-strategy"><option value="templates" '+(contentStrategy==='templates'?'selected':'')+'>仅用内容模板</option>'+
     '<option value="ai" '+(contentStrategy==='ai'?'selected':'')+'>AI 根据目标网页拟写</option>'+
@@ -460,7 +789,7 @@ function templateRows(){
   ).join('')+paging('template',filtered.length,templatePageIndex);
 }
 function templateSettings(){
-  return '<section class="card"><div class="row"><h2>内容模板</h2>'+btn('新增模板','new-content','secondary')+'</div>'+
+  return '<section class="card"><div class="row"><h1>内容模板</h1>'+btn('新增模板','new-content','secondary')+'</div>'+
     '<p class="hint">已保存 '+n(contentTemplates.length)+' 份模板。每个分类有自己的默认模板。</p>'+
     '<label class="field">搜索模板<input id="template-search" value="'+safe(templateQuery)+'"></label>'+
     '<div id="template-rows" aria-label="内容模板库">'+templateRows()+'</div></section>';
@@ -599,7 +928,7 @@ const authGuides={
 function authOptions(){
   if(mode!=='execute')return '';
   const checkbox=(id,label)=>'<label class="check"><input type="checkbox" data-auth-setting="'+id+'" '+(authDraft[id]?'checked':'')+'>'+label+'</label>';
-  return detail('auth','5. 认证与二次确认 <small>· '+(authDraft.register?'允许新注册':'仅登录已有账号')+'</small>',
+  return detail('auth',stepTitle(5,'认证与二次确认')+' <small>'+(authDraft.register?'允许新注册':'仅登录已有账号')+'</small>',
     '<div class="stack">'+checkbox('google','允许使用目标站点的 Google 登录')+
     checkbox('savedCredentials','允许复用 Chrome／Google 保存的站点密码')+
     checkbox('register','允许注册新账号')+checkbox('gmail','允许使用已授权的 Gmail 检查验证邮件')+checkbox('confirmPublish','正式发表前需要我确认')+'</div>'+
@@ -635,7 +964,7 @@ function confirmationPage(){
   const selected=eligible.filter(entry=>pickedConfirmations.has(entry.key)).length;
   const other=batches.filter(item=>canDispatch(item)&&(item.manual&&!item.resolved||missingContent(item)));
   return '<div class="row"><h1>待确认清单</h1>'+btn('返回任务','tasks','subtle')+'</div>'+
-    '<section class="card"><p class="hint">在对应页面处理完成后，可单条检查或批量检查。发表授权和保存密码需单独确认。</p>'+
+    '<section class="card confirmation-toolbar"><p class="hint">在对应页面处理完成后，可单条检查或批量检查。发表授权和保存密码需单独确认。</p>'+
     '<div class="actions"><button class="button secondary" data-action="select-confirmations" '+(!eligible.length?'disabled':'')+'>'+
     (selected&&selected===eligible.length?'取消全选':'全选可检查项')+'</button>'+
     '<button class="button" data-action="check-confirmations" '+(!selected?'disabled':'')+'>检查所选并继续（'+n(selected)+'）</button></div>'+
@@ -643,7 +972,7 @@ function confirmationPage(){
     entries.map(({item,row,key,index})=>{
       const guide=authGuides[authStage(row)];
       const checking=activeAuthChecks.has(key);
-      return '<section class="card"><div class="row"><h2>'+guide.title+'</h2>'+
+      return '<section class="card'+(authCanCheck(row)?'':' attention-card')+'"><div class="row"><h2>'+guide.title+'</h2>'+
         (!authCanCheck(row)?'<span class="chip warm">'+(row.step==='save'?'单独确认':'单独授权')+'</span>':
           '<label class="check"><input type="checkbox" data-confirmation="'+safe(key)+'" '+(pickedConfirmations.has(key)?'checked':'')+' '+(checking?'disabled':'')+'>选择</label>')+'</div>'+
         '<p class="hint links">'+'批次 '+item.id+' · '+safe(item.name)+' · '+safe(item.sites[0].name)+' · '+safe(item.links[index].url)+'</p>'+
@@ -822,27 +1151,27 @@ function activeLinkPreview(){
 }
 
 function setup(){
-  return '<h1>新建批次</h1>'+
-    detail('sites','1. 推广站点 <small>· 已选 '+n(picked.size)+' / '+n(sites.filter(site=>!site.deleted).length)+'</small>',
+  return pageBanner('新建批次')+
+    detail('sites',stepTitle(1,'推广站点')+' <small>已选 '+n(picked.size)+' / '+n(sites.filter(site=>!site.deleted).length)+'</small>',
       '<p class="hint">统计按当前共享外链清单计算。示例站点包含模拟历史。</p>'+
       '<label class="field">搜索站点<input id="site-search" value="'+safe(query)+'" placeholder="名称或域名"></label>'+
       '<label class="check"><input type="checkbox" id="pending-sites" '+(pendingSitesOnly?'checked':'')+'>仅看有待提交外链的站点</label>'+
       '<div class="actions" style="margin-top:6px">'+btn('全选搜索结果','select-all','secondary')+btn('清空选择','clear','subtle')+'</div>'+
       browseMarkup('sites')+
       btn('去清单补充站点','manage-sites','secondary'))+
-    detail('links','2. 外链清单 <small>· '+n(activeLinks(currentList()).length)+' 条可用候选</small>',
+    detail('links',stepTitle(2,'外链清单')+' <small>'+n(activeLinks(currentList()).length)+' 条可用候选</small>',
       '<label class="field">共享外链清单<select id="shared-list"><option value="">请选择清单</option>'+linkLists.map(list=>'<option value="'+safe(list.id)+'" '+(list.id===listId?'selected':'')+'>'+safe(list.name)+' · '+n(activeLinks(list).length)+' 条活跃</option>').join('')+'</select></label>'+
       activeLinkPreview()+btn('去清单补充外链','manage-links','secondary'))+
-    '<section class="card"><h2>3. 执行方式</h2>'+
+    '<section class="card"><h2>'+stepTitle(3,'执行方式')+'</h2>'+
     '<label class="field">执行方式<select id="mode" aria-describedby="mode-help"><option value="analysis">仅分析</option><option value="execute">分析后执行（模拟）</option></select></label>'+
     '<p class="hint" id="mode-help">'+(mode==='analysis'?'检查外链入口可用性与投稿要求，记录结果，不填写或提交。':
       '分析通过后，按投稿内容、认证规则和每日额度继续。需要你确认的条目会进入待办。')+'</p>'+
     '</section>'+contentOptions()+authOptions()+limitsMarkup()+
-    '<section class="card"><h2>'+(mode==='analysis'?'5':'7')+'. 批次设置</h2>'+
+    '<section class="card"><h2>'+stepTitle(mode==='analysis'?5:7,'批次设置')+'</h2>'+
     '<label class="field">批次名称（可选）<input id="batch-name" value="'+safe(batchName)+'"></label>'+
     '<label class="field">每站最多使用<input id="limit" type="number" min="1" max="10000" value="'+safe(limit)+'"></label></section>'+
-    '<section class="card" aria-labelledby="launch-summary">'+
-    '<h2 id="launch-summary">'+(mode==='analysis'?'6':'8')+'. 启动前确认</h2><p class="hint">执行方式 · '+(mode==='analysis'?'仅分析':'分析后执行（模拟）')+'</p>'+
+    '<section class="card launch-card" aria-labelledby="launch-summary">'+
+    '<h2 id="launch-summary">'+stepTitle(mode==='analysis'?6:8,'启动前确认')+'</h2><p class="hint">执行方式 · '+(mode==='analysis'?'仅分析':'分析后执行（模拟）')+'</p>'+
     '<div class="stats"><div><strong id="selected-sites">'+n(picked.size)+'</strong><small>已选推广站点</small></div>'+
     '<div><strong id="per-site">'+n(perSite())+'</strong><small>每站候选</small></div>'+
     '<div><strong id="combinations">'+n(picked.size*perSite())+'</strong><small>站点 × 外链组合</small></div>'+
@@ -903,8 +1232,8 @@ function progress(){
   const m=metrics(site);
   const [state,status]=batchStatus(batch);
   const records=sample(site);
-  return '<div class="row"><h1>'+safe(batch.name||'批次 '+batch.id)+'</h1>'+btn('返回任务','tasks','subtle')+'</div><section class="card">'+
-    '<div class="row"><h2>'+status+'</h2><span class="chip">'+(batch.mode==='analysis'?'仅分析':'模拟执行')+'</span></div>'+
+  return '<div class="row"><h1>'+safe(batch.name||'批次 '+batch.id)+'</h1>'+btn('返回任务','tasks','subtle')+'</div><section class="card progress-card">'+
+    '<div class="row"><h2 class="chip '+statusTone(state)+'">'+status+'</h2><span class="chip neutral">'+(batch.mode==='analysis'?'仅分析':'模拟执行')+'</span></div>'+
     cycleMarkup(batch)+
     (batch.interrupted?'<p class="hint">本批次已停止。继续时从保存的进度恢复。</p>':'')+
     '<p class="hint">'+n(batch.sites.length)+' 个推广站点 · 每站 '+n(batch.links.length)+' 条 · 批次快照</p>'+
@@ -913,7 +1242,7 @@ function progress(){
     (batch.listName?'<p class="hint">外链清单 · '+safe(batch.listName)+'</p>':'')+
     '<label class="field">查看范围<select id="scope"><option value="">全部站点</option>'+batch.sites.map(site=>'<option value="'+safe(site.id)+'" '+(site.id===scope?'selected':'')+'>'+safe(site.name)+'</option>').join('')+'</select></label>'+
     '<div class="meter" role="progressbar" aria-label="已处理比例" aria-valuenow="'+m.percent+'"><div style="width:'+m.percent+'%"></div></div>'+
-    '<div class="row"><span>已处理 '+n(m.dealt)+' / '+n(m.total)+'</span><strong>'+m.percent+'%</strong></div>'+
+    '<div class="row progress-caption"><span>已处理 '+n(m.dealt)+' / '+n(m.total)+'</span><strong>'+m.percent+'%</strong></div>'+
     (state!=='completed'?'<div class="actions" style="margin-top:7px">'+
       (['paused','interrupted','stopped'].includes(state)?btn('继续','resume','secondary'):
         state==='budget'?btn('模拟 24 小时后','next-cycle','secondary')+btn('暂停','pause','subtle'):
@@ -921,8 +1250,8 @@ function progress(){
       (['interrupted','stopped'].includes(state)?'':btn('中断','interrupt','subtle'))+
       (state==='stopped'?'':btn('停止','stop','subtle'))+'</div>':'')+'</section>'+
     authDemoRows(batch)+
-    (missingContent(batch,site)?'<section class="card"><h2>待人工 · 缺少适用模板</h2><p>'+n(missingContent(batch,site))+' 条。可新建批次选用对应模板。这些条目未占提交额度。</p></section>':'')+
-    (m.pending&&!['interrupted','stopped'].includes(state)?'<section class="card"><div class="row"><h2>人工待办</h2><span class="chip warm">1 条</span></div><p>'+safe(batch.sites[0].name)+' → '+safe(batch.links[0].url)+'</p><p class="hint">核对站点专用账号。其他组合继续运行。</p>'+btn('已确认，恢复该条','resolve','secondary')+'</section>':'')+
+    (missingContent(batch,site)?'<section class="card attention-card"><h2>待人工 · 缺少适用模板</h2><p>'+n(missingContent(batch,site))+' 条。可新建批次选用对应模板。这些条目未占提交额度。</p></section>':'')+
+    (m.pending&&!['interrupted','stopped'].includes(state)?'<section class="card attention-card"><div class="row"><h2>人工待办</h2><span class="chip warm">1 条</span></div><p>'+safe(batch.sites[0].name)+' → '+safe(batch.links[0].url)+'</p><p class="hint">核对站点专用账号。其他组合继续运行。</p>'+btn('已确认，恢复该条','resolve','secondary')+'</section>':'')+
     detail('report','记录与导出 <small>· 当前范围抽样</small>',
       '<p class="hint">每条都保留推广站点、来源行和外链网址。</p>'+
       '<div class="list">'+records.map(({target,link,status,result,content})=>'<div class="item"><div class="row"><strong>'+safe(target.name)+'</strong><span class="chip">'+status+'</span></div><small class="links">第 '+link.line+' 行 · '+safe(link.url)+'</small><p class="hint">'+safe(result)+'</p>'+
@@ -950,6 +1279,11 @@ function paging(type,count,index){
   if(pages===1)return '';
   return '<div class="row" style="margin-top:8px"><button class="button secondary" data-action="'+type+'-prev" '+(index===0?'disabled':'')+'>上一页</button><small>第 '+(index+1)+' / '+pages+' 页</small><button class="button secondary" data-action="'+type+'-next" '+(index+1>=pages?'disabled':'')+'>下一页</button></div>';
 }
+function statusTone(state){
+  if(state==='completed')return 'success';
+  if(['waiting','verification','budget'].includes(state))return 'warm';
+  return state==='running'?'':'neutral';
+}
 function taskRows(){
   const filtered=[...batches].reverse().filter(item=>{
     const [status]=batchStatus(item);
@@ -959,14 +1293,15 @@ function taskRows(){
   return filtered.length?'<div>'+filtered.slice(taskPageIndex*pageSize,(taskPageIndex+1)*pageSize).map(item=>{
     const [status,label]=batchStatus(item);
     const m=metrics(undefined,item);
-    return '<div class="item"><div class="row"><strong>'+safe(item.name||'批次 '+item.id)+'</strong><span class="chip '+(status==='waiting'||status==='interrupted'?'warm':'')+'">'+label+'</span></div>'+
+    return '<div class="item"><div class="row"><strong>'+safe(item.name||'批次 '+item.id)+'</strong><span class="chip '+statusTone(status)+'">'+label+'</span></div>'+
       '<p class="hint">'+n(item.sites.length)+' 站 · '+n(m.dealt)+' / '+n(m.total)+' 条已处理</p>'+
+      '<div class="meter task-meter" aria-hidden="true"><div style="width:'+m.percent+'%"></div></div>'+
       (pendingConfirmations(item)?'<p class="hint">待确认 '+pendingConfirmations(item)+' 条</p>':'')+
       entityButton(status==='completed'?'查看结果':'查看进度','open-task',item.id)+'</div>';
   }).join('')+'</div>'+paging('task',filtered.length,taskPageIndex):'<p class="hint">没有符合条件的批次。</p>';
 }
 function tasks(){
-  return '<h1>任务</h1><section class="card"><label class="field">搜索批次<input id="task-search" placeholder="批次名称或编号" value="'+safe(taskQuery)+'"></label>'+
+  return pageBanner('任务')+'<section class="card"><label class="field">搜索批次<input id="task-search" placeholder="批次名称或编号" value="'+safe(taskQuery)+'"></label>'+
     '<label class="field">任务状态<select id="task-filter">'+[['all','全部'],['running','执行中'],['waiting','待人工'],['confirmations','待确认'],['verification','待核验'],['paused','已暂停'],['interrupted','已中断'],['stopped','已停止'],['budget','待下轮'],['completed','已完成']].map(([id,label])=>'<option value="'+id+'" '+(id===taskFilter?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
     '<div class="actions">'+btn('待确认清单','show-confirmations','secondary')+'</div>'+
     '<div id="task-rows">'+taskRows()+'</div>'+(!batches.length?btn('载入历史任务示例','demo-history','secondary'):'')+'</section>'+
@@ -992,7 +1327,7 @@ function library(){
   const isSites=libraryTab==='sites';
   return '<div class="row"><h1>清单</h1>'+(libraryFromSetup?btn('返回新建批次','return-setup','subtle'):'')+'</div>'+
     (libraryFromSetup?'<p class="hint" style="margin-bottom:8px">批次草稿已保留，补充后可直接返回。</p>':'')+
-    '<section class="card"><div class="actions">'+btn('推广站点','library-sites',isSites?'':'secondary')+btn('外链清单','library-links',isSites?'secondary':'')+'</div></section>'+
+    '<div class="library-tabs" role="group" aria-label="清单类型">'+btn('推广站点','library-sites',isSites?'':'secondary')+btn('外链清单','library-links',isSites?'secondary':'')+'</div>'+
     reviewMarkup(libraryTab)+
     '<section class="card"><label class="field">搜索'+(isSites?'站点':'清单')+'<input id="library-search" value="'+safe(libraryQuery)+'"></label>'+
     (!isSites&&linkLists.length?'<div class="actions">'+btn('导出全部外链','export-all-links','secondary')+'</div>':'')+
@@ -1103,7 +1438,7 @@ function modelsPage(){
 function renderNav(){
   const waiting=batches.reduce((sum,item)=>sum+pendingConfirmations(item),0);
   nav.innerHTML=[['setup','新建批次'],['tasks','任务'],['library','清单'],['templates','内容模板'],['models','AI 模型'],['auth-management','认证方式']].map(([id,label])=>'<button data-action="'+id+'" '+((view===id||['progress','confirmations'].includes(view)&&id==='tasks')?'aria-current="page"':'')+(id==='tasks'&&waiting?' aria-description="'+n(waiting)+' 条待确认"':'')+'>'+label+
-    (id==='tasks'&&waiting?' <span class="chip warm" aria-hidden="true">'+n(waiting)+'</span>':'')+'</button>').join('');
+    (id==='tasks'&&waiting?' <span class="chip warm" aria-hidden="true">'+(waiting>99?'99+':n(waiting))+'</span>':'')+'</button>').join('');
 }
 function render(){
   renderNav();
@@ -1113,7 +1448,7 @@ function render(){
 }
 function refreshSection(id){
   if(id==='sites'){
-    main.querySelector('[data-section="sites"] summary').innerHTML='1. 推广站点 <small>· 已选 '+n(picked.size)+' / '+n(sites.filter(site=>!site.deleted).length)+'</small>';
+    main.querySelector('[data-section="sites"] summary').innerHTML=stepTitle(1,'推广站点')+' <small>已选 '+n(picked.size)+' / '+n(sites.filter(site=>!site.deleted).length)+'</small>';
     refreshBrowse('sites');
   }
   document.querySelector('#selected-sites').textContent=n(picked.size);
