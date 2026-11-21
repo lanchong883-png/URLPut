@@ -318,6 +318,10 @@ let sites=(saved?.sites??demoSites).map(({archived,...site})=>({
   ...site,name:new URL(site.url).hostname,deleted:Boolean(site.deleted??archived)
 }));
 let batches=saved?.batches??[];
+// Earlier read-only demos marked their first row as waiting for account confirmation.
+for(const item of batches){
+  if(item.mode==='analysis'&&!item.authDemo)item.manual=false;
+}
 let linkLists=saved?.linkLists??[{id:'initial',name:'示例外链清单',source:'csv',links:saved?.links??demoLinks}];
 let listId=saved?.listId??'initial';
 let taskQuery='',taskFilter='all',taskPageIndex=0,libraryTab='sites',libraryQuery='',editing='',batchName='';
@@ -763,6 +767,11 @@ function chosenTemplates(){
 function canStartBatch(){
   return picked.size&&perSite()&&(mode!=='execute'||contentStrategy==='ai'||chosenTemplates().length);
 }
+function publicationSummary(strategy,templates=[]){
+  if(strategy==='ai')return 'AI 根据目标网页拟写';
+  const names=templates.map(template=>template.name).join('、')||'尚未选择模板';
+  return (strategy==='hybrid'?'AI 分析 + 模板':'仅用内容模板')+' · '+names;
+}
 const selectionHint=count=>count?'已选 '+count+' 份模板':'请至少选择一份模板才能启动。';
 function contentOptions(){
   if(mode!=='execute')return '';
@@ -1204,6 +1213,7 @@ function setup(){
     '<label class="field">每个站点最多处理几条外链<input id="limit" type="number" min="1" max="10000" value="'+safe(limit)+'"></label></section>'+
     '<section class="card launch-card" aria-labelledby="launch-summary">'+
     '<h2 id="launch-summary">'+stepTitle(mode==='analysis'?5:8,'启动前确认')+'</h2><p class="hint">执行方式 · '+(mode==='analysis'?'仅分析':'分析后执行（模拟）')+'</p>'+
+    (mode==='execute'?'<p class="hint" id="launch-content">投稿内容 · '+safe(publicationSummary(contentStrategy,chosenTemplates()))+'</p>':'')+
     '<div class="stats"><div><strong id="selected-sites">'+n(picked.size)+'</strong><small>已选推广站点</small></div>'+
     '<div><strong id="per-site">'+n(perSite())+'</strong><small>每站外链数</small></div>'+
     '<div><strong id="combinations">'+n(picked.size*perSite())+'</strong><small>合计处理条数</small></div>'+
@@ -1267,10 +1277,9 @@ function progress(){
   return '<div class="row"><h1>'+safe(batch.name||'批次 '+batch.id)+'</h1>'+btn('返回任务','tasks','subtle')+'</div><section class="card progress-card">'+
     '<div class="row"><h2 class="chip '+statusTone(state)+'">'+status+'</h2><span class="chip neutral">'+(batch.mode==='analysis'?'仅分析':'模拟执行')+'</span></div>'+
     cycleMarkup(batch)+
-    (batch.interrupted?'<p class="hint">本批次已停止。继续时从保存的进度恢复。</p>':'')+
+    (batch.interrupted?'<p class="hint">本批次已中断。点击「继续」可从保存的进度恢复。</p>':'')+
     '<p class="hint">'+n(batch.sites.length)+' 个推广站点 · 每站 '+n(batch.links.length)+' 条 · 按启动时的清单统计</p>'+
-    (batch.publication?'<p class="hint">投稿内容 · '+(batch.publication.strategy==='ai'?'AI 网页拟写（模拟）':
-      (batch.publication.strategy==='hybrid'?'AI + 模板 · ':'')+safe(batch.publication.templates.map(template=>template.name).join('、'))+(batch.publication.templates.length>1?'（逐条随机）':''))+'</p>':'')+
+    (batch.publication?'<p class="hint">投稿内容 · '+safe(publicationSummary(batch.publication.strategy,batch.publication.templates))+'</p>':'')+
     (batch.listName?'<p class="hint">外链清单 · '+safe(batch.listName)+'</p>':'')+
     '<label class="field">查看范围<select id="scope"><option value="">全部站点</option>'+batch.sites.map(site=>'<option value="'+safe(site.id)+'" '+(site.id===scope?'selected':'')+'>'+safe(site.name)+'</option>').join('')+'</select></label>'+
     '<div class="meter" role="progressbar" aria-label="已处理比例" aria-valuenow="'+m.percent+'"><div style="width:'+m.percent+'%"></div></div>'+
@@ -1548,8 +1557,9 @@ function downloadCsv(rows,filename){
 }
 function exportSample(){
   const site=batch.sites.find(site=>site.id===scope);
-  const rows=[['推广站点','推广站点网址','外链 URL','外链来源行','状态','结论'],
-    ...sample(site).map(({target,link,status,result})=>[target.name,target.url,link.url,link.line,status,result])];
+  const rows=[['推广站点','推广站点网址','外链 URL','外链来源行','状态','结论','执行方式','本条文案来源'],
+    ...sample(site).map(({target,link,status,result,content})=>[target.name,target.url,link.url,link.line,status,result,
+      batch.mode==='analysis'?'仅分析':'分析后执行（模拟）',content?contentLabel(content):''])];
   downloadCsv(rows,'URLPut-批次-'+batch.id+'-演示记录.csv');
   document.querySelector('#export-notice').textContent='已导出 '+(rows.length-1)+' 条演示记录。';
 }
@@ -1671,6 +1681,7 @@ document.addEventListener('change',event=>{
     pickedTemplates??=new Set(Object.values(defaultTemplateIds));
     if(input.checked)pickedTemplates.add(input.dataset.contentId);else pickedTemplates.delete(input.dataset.contentId);
     document.querySelector('#content-count').textContent=selectionHint(pickedTemplates.size);
+    document.querySelector('#launch-content').textContent='投稿内容 · '+publicationSummary(contentStrategy,chosenTemplates());
     main.querySelector('[data-action=start]').disabled=!canStartBatch();
   }
   if(input.dataset.authSetting){authDraft[input.dataset.authSetting]=input.checked;render()}
