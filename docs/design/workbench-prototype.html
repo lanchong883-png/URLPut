@@ -351,7 +351,7 @@ dialog::backdrop { background: #21153966; }
 const numbers = new Intl.NumberFormat('zh-CN');
 const n = value => numbers.format(value);
 const demoSites = Array.from({length:100},(_,i)=>({id:'site-'+(i+1),name:'brand-'+(i+1)+'.example',url:'https://brand-'+(i+1)+'.example/'}));
-const demoLinks = Array.from({length:1000},(_,i)=>({id:'row-'+(i+1),line:i+1,url:'https://channel-'+(i+1)+'.example/submit',entryType:i%2===0?'directory':'resource',siteType:i%2===0?'目录站':'内容社区',status:'active'}));
+const demoLinks = Array.from({length:1000},(_,i)=>({id:'row-'+(i+1),line:i+1,url:'https://channel-'+(i+1)+'.example/submit',entryType:i%2===0?'directory':'resource',siteType:i%2===0?'目录站':'内容社区',description:i%2===0?'收录产品官网和工具简介':'分享资源与使用心得',status:'active'}));
 const storageKey = 'urlput-panel-prototype-v2';
 let saved;
 try {saved=JSON.parse(localStorage.getItem(storageKey))}catch{}
@@ -406,7 +406,7 @@ const btn = (label,action,style='')=>'<button class="button '+style+'" data-acti
 const stepTitle = (number,label)=>'<span class="step-title"><b>'+number+'</b> '+label+'</span>';
 const pageBanner = title=>'<div class="page-banner"><h1>'+title+'</h1><span class="banner-mark" aria-hidden="true"></span></div>';
 const detail = (id,title,body)=>'<details data-section="'+id+'" '+(open.has(id)?'open':'')+'><summary>'+title+'</summary>'+body+'</details>';
-const matchSites=()=>sites.filter(site=>!site.deleted&&matches(site.name+' '+site.url,query)&&(!pendingSitesOnly||siteCounts(site).pending>0));
+const matchSites=()=>sites.filter(site=>!site.deleted&&matchesSite(site,query)&&(!pendingSitesOnly||siteCounts(site).pending>0));
 const selected=()=>sites.filter(site=>!site.deleted&&picked.has(site.id));
 const currentList=()=>linkLists.find(list=>list.id===listId)??linkLists[0];
 const perSite=()=>Math.min(activeLinks(currentList()).length,limit);
@@ -1120,8 +1120,17 @@ let libraryPreviewId='',linkQuery='',linkType='',linkPrice='';
 const resetLinkBrowse=()=>{linkQuery='';linkType='';linkPrice='';browseCounts.links=browseStep};
 const demoPrices=new Map(demoLinks.map((link,index)=>[link.url,priceTypes[index%priceTypes.length]]));
 const priceType=link=>link.priceType||demoPrices.get(link.url)||'价格未知';
-const demoTypes=new Map(demoLinks.map(link=>[link.url,link.siteType]));
-const websiteType=link=>link.siteType||demoTypes.get(link.url)||'未识别';
+const demoByUrl=new Map(demoLinks.map(link=>[link.url,link]));
+const websiteType=link=>link.siteType||demoByUrl.get(link.url)?.siteType||'未识别';
+const linkDescription=link=>link.description??demoByUrl.get(link.url)?.description??'';
+function matchesSite(site,term){
+  const profile=site.profile??{};
+  return matches([site.name,site.url,profile.productName,profile.category,profile.summary,
+    profile.description,profile.highlights,profile.keywords,profile.landingPage].join(' '),term);
+}
+function matchesLink(link,term){
+  return matches([link.url,websiteType(link),priceType(link),linkDescription(link)].join(' '),term);
+}
 const linkDomain=link=>new URL(link.url).hostname;
 const activeLinks=list=>(list?.links??[]).filter(link=>!link.status||link.status==='active');
 const previewList=()=>view==='library'?
@@ -1130,13 +1139,13 @@ function browseData(kind){
   if(kind==='sites')return matchSites();
   if(kind==='library')return libraryItems();
   return activeLinks(previewList()).filter(link=>
-    (!linkType||websiteType(link)===linkType)&&(!linkPrice||priceType(link)===linkPrice)&&matches(linkDomain(link)+' '+link.url,linkQuery));
+    (!linkType||websiteType(link)===linkType)&&(!linkPrice||priceType(link)===linkPrice)&&matchesLink(link,linkQuery));
 }
 const browseLabels={sites:'推广站点可选列表',links:'活跃外链明细',library:'已保存清单'};
 function browseRow(kind,item){
   if(kind==='library')return libraryOptionRow(item);
   if(kind==='links')return '<div class="item" role="listitem"><div class="row"><strong class="truncate">'+safe(linkDomain(item))+
-    '</strong><span class="chip">'+safe(websiteType(item))+' · '+safe(priceType(item))+'</span></div><small class="links">'+safe(item.url)+'</small></div>';
+    '</strong><span class="chip">'+safe(websiteType(item))+' · '+safe(priceType(item))+'</span></div><small class="links">'+safe(item.url)+'</small>'+(linkDescription(item)?'<p class="hint">'+safe(linkDescription(item))+'</p>':'')+'</div>';
   const counts=siteCounts(item);
   return '<div class="item" role="listitem"><label><input type="checkbox" data-site="'+safe(item.id)+'" '+(picked.has(item.id)?'checked':'')+
     '><span>'+safe(item.name)+'<small class="truncate">'+safe(item.url)+'</small><small>总外链 '+n(counts.total)+' · 已接收 '+n(counts.submitted)+
@@ -1177,7 +1186,7 @@ function activeLinkPreview(){
   if(!list)return '';
   const types=[...new Set(activeLinks(list).map(websiteType))].sort();
   return '<h3>活跃外链 · '+safe(list.name)+'</h3>'+
-    '<label class="field"><span>'+icon('search')+'搜索域名或外链网址</span><input id="link-preview-query" value="'+safe(linkQuery)+'"></label>'+
+    '<label class="field"><span>'+icon('search')+'搜索外链</span><input id="link-preview-query" placeholder="网址、域名、类别或描述" value="'+safe(linkQuery)+'"></label>'+
     '<label class="field">网站类型<select id="link-preview-type"><option value="">全部类型</option>'+
     types.map(type=>'<option value="'+safe(type)+'" '+(type===linkType?'selected':'')+'>'+safe(type)+'</option>').join('')+'</select></label>'+
     '<label class="field">价格类别<select id="link-preview-price"><option value="">全部价格</option>'+
@@ -1189,7 +1198,7 @@ function setup(){
   return pageBanner('新建批次')+
     detail('sites',stepTitle(1,'推广站点')+' <small>已选 '+n(picked.size)+' / '+n(sites.filter(site=>!site.deleted).length)+'</small>',
       '<p class="hint">按所选清单统计。平台已收件就算已接收，包括审核中的投稿。</p>'+
-      '<label class="field"><span>'+icon('search')+'搜索站点</span><input id="site-search" value="'+safe(query)+'" placeholder="名称或域名"></label>'+
+      '<label class="field"><span>'+icon('search')+'搜索站点</span><input id="site-search" value="'+safe(query)+'" placeholder="网址、域名、类别或产品描述"></label>'+
       '<label class="check"><input type="checkbox" id="pending-sites" '+(pendingSitesOnly?'checked':'')+'>只看有待接收外链的站点</label>'+
       '<div class="actions" style="margin-top:6px">'+btn('全选搜索结果','select-all','secondary')+btn('清空选择','clear','subtle')+'</div>'+
       browseMarkup('sites')+
@@ -1346,7 +1355,9 @@ function tasks(){
 const entityButton=(label,action,key)=>'<button class="button secondary" data-action="'+action+'" data-key="'+safe(key)+'">'+actionLabel(label,action)+'</button>';
 function libraryItems(){
   const isSites=libraryTab==='sites';
-  return (isSites?sites:linkLists).filter(item=>!item.deleted&&matches(item.name+' '+(isSites?item.url:''),libraryQuery));
+  if(isSites)return sites.filter(site=>!site.deleted&&matchesSite(site,libraryQuery));
+  return linkLists.filter(list=>!list.deleted&&(matches(list.name,libraryQuery)||
+    activeLinks(list).some(link=>matchesLink(link,libraryQuery))));
 }
 function libraryOptionRow(item){
   const isSites=libraryTab==='sites';
@@ -1363,7 +1374,7 @@ function library(){
     (libraryFromSetup?'<p class="hint" style="margin-bottom:8px">批次草稿已保留，补充后可直接返回。</p>':'')+
     '<div class="library-tabs" role="group" aria-label="清单类型">'+btn('推广站点','library-sites',isSites?'':'secondary')+btn('外链清单','library-links',isSites?'secondary':'')+'</div>'+
     reviewMarkup(libraryTab)+
-    '<section class="card"><label class="field"><span>'+icon('search')+'搜索'+(isSites?'站点':'清单')+'</span><input id="library-search" value="'+safe(libraryQuery)+'"></label>'+
+    '<section class="card"><label class="field"><span>'+icon('search')+'搜索'+(isSites?'站点':'清单')+'</span><input id="library-search" placeholder="名称、网址、域名、类别或描述" value="'+safe(libraryQuery)+'"></label>'+
     (!isSites&&linkLists.length?'<div class="actions">'+btn('导出全部外链','export-all-links','secondary')+'</div>':'')+
     browseMarkup('library')+'</section>'+(!isSites&&previewList()?'<section class="card" id="library-link-preview">'+activeLinkPreview()+'</section>':'')+'<p class="notice" role="status">'+safe(notice)+'</p>';
 }
@@ -1457,7 +1468,7 @@ function openEditor(item){
   profileImageRead++;loadingProfileImages=false;
   dialog.innerHTML='<h2 id="editor-title">'+(site?'维护推广站点':'维护外链清单')+'</h2>'+
     (site?'<p class="hint">站点名称 · '+safe(item.name)+'</p><label class="field">站点网址<input id="edit-url" value="'+safe(item.url)+'"></label>'+profileMarkup(item):
-      '<label class="field">外链网址，每行一条<textarea id="edit-links" rows="6">'+safe(activeLinks(item).map(link=>link.url).join('\n'))+'</textarea></label>')+
+      '<label class="field">每行一个外链网址，可在网址后用空格添加描述<textarea id="edit-links" rows="6">'+safe(activeLinks(item).map(link=>[link.url,linkDescription(link)].filter(Boolean).join(' ')).join('\n'))+'</textarea></label>')+
     '<p class="hint">'+(site?'可先保存已有资料，缺项会标出。修改用于后续批次。':'修改用于后续批次。已启动批次使用原清单。')+'</p><p role="status" id="editor-error"></p>'+
     '<div class="actions">'+btn('保存修改','save-edit')+btn('关闭','close-dialog','secondary')+'</div>';
   dialog.showModal();
@@ -1495,13 +1506,14 @@ function parseLines(value){
   const urls=new Map();
   for(const [index,line] of value.split(/\r?\n/).entries()){
     try {
-      const url=new URL(line.trim());
+      const [address,...words]=line.trim().split(/\s+/);
+      const url=new URL(address);
       if(!['https:','http:'].includes(url.protocol)||url.username||url.password)continue;
       url.hash='';
-      if(!urls.has(url.href))urls.set(url.href,index+1);
+      if(!urls.has(url.href))urls.set(url.href,{url:url.href,line:index+1,description:words.join(' ')});
     }catch{}
   }
-  return [...urls].map(([url,line])=>({url,line}));
+  return [...urls.values()];
 }
 function advance(targets=batches){
   let changed=false;
@@ -1979,11 +1991,11 @@ document.addEventListener('click',event=>{
     else linkLists=linkLists.map(list=>{
       if(list.id!==editing)return list;
       const visible=activeLinks(list);
-      if(rows.length===visible.length&&rows.every((row,index)=>row.url===visible[index].url))return list;
+      if(rows.length===visible.length&&rows.every((row,index)=>row.url===visible[index].url&&row.description===linkDescription(visible[index])))return list;
       const previous=new Map(list.links.map(link=>[link.url,link]));
       const edited=new Set(rows.map(row=>row.url));
       const inactive=list.links.filter(link=>link.status&&link.status!=='active'&&!edited.has(link.url));
-      const links=rows.map(row=>previous.get(row.url)??{...row,id:crypto.randomUUID(),status:'active'});
+      const links=rows.map(row=>({...row,...previous.get(row.url),description:row.description,id:previous.get(row.url)?.id??crypto.randomUUID(),status:'active'}));
       return {...list,links:[...inactive,...links]};
     });
     dialog.close();
