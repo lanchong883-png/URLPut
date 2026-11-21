@@ -883,13 +883,13 @@ function authManagement(){
     '<p class="hint">'+(sessionPasswords.has(preset.id)?'本次已填写密码':'本次尚未填写密码')+'</p><div class="actions">'+
     entityButton('编辑','edit-auth-preset',preset.id)+entityButton('移除','remove-auth-preset',preset.id)+'</div></div>').join('');
   return (authFromSetup?btn('返回新建批次','return-auth','subtle'):'')+
-    '<section class="card"><h1>默认登录设置</h1><div class="actions">'+
+    '<section class="card"><h1>默认登录设置</h1><p class="hint">选择后自动保存，新批次会使用这些默认项。</p><div class="actions">'+
     btn('新增邮箱','new-auth-email','secondary')+btn('新增密码','new-auth-preset','secondary')+'</div>'+
-    '<label class="field">登录邮箱<select id="auth-default-email">'+authEmailOptions(authAccounts.email)+'</select></label>'+
-    '<label class="field">密码方案<select id="auth-default-preset"><option value="">手动选择或填写</option>'+
+    '<label class="field">默认登录邮箱<select id="auth-default-email">'+authEmailOptions(authAccounts.email)+'</select></label>'+
+    '<label class="field">默认密码方案<select id="auth-default-preset"><option value="">手动选择或填写</option>'+
     authAccounts.presets.map(preset=>'<option value="'+safe(preset.id)+'" '+(preset.id===authAccounts.defaultPreset?'selected':'')+'>'+safe(preset.name)+'</option>').join('')+'</select></label>'+
     '<p class="hint">Chrome 已为该网站和账号保存密码时，优先使用已保存的密码。</p>'+
-    '<label class="field">Google 登录邮箱<select id="auth-google-email">'+authEmailOptions(authAccounts.googleEmail)+'</select></label>'+
+    '<label class="field">默认 Google 邮箱<select id="auth-google-email">'+authEmailOptions(authAccounts.googleEmail)+'</select></label>'+
     (authAccounts.googleEmail?btn('演示 Google 登录','simulate-google-auth','subtle'):'')+
     (simulated?'<span class="chip success">演示已通过</span>':'')+'</section>'+
     (emails||passwords?detail('auth-accounts','管理邮箱和密码',
