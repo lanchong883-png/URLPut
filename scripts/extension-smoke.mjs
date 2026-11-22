@@ -12,6 +12,7 @@ const api = createApp(database, async () => localIdentity.subject, /^chrome-exte
 const userData = await mkdtemp(join(tmpdir(), 'urlput-chrome-'));
 const calls = [];
 const webSmoke = process.env.URLPUT_WEB_SMOKE === '1';
+const measureLongQueue = process.env.URLPUT_LONG_QUEUE === '1';
 api.post('/:provider/v1/chat/completions', async request => {
   calls.push({ url: request.url, authorization: request.headers.authorization, body: request.body });
   return { choices: [{ message: { content: 'OK' } }] };
@@ -48,7 +49,7 @@ try {
       channel: 'chromium',
       ignoreDefaultArgs: ['--disable-extensions'],
       executablePath: process.env.CHROMIUM_PATH,
-      args: webSmoke ? [] : [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
+      args: webSmoke ? (measureLongQueue ? ['--enable-precise-memory-info'] : []) : [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
     });
     let origin;
     if (webSmoke) {
@@ -429,6 +430,7 @@ try {
         return (await (await dir.getFileHandle('workspace.json')).getFile()).text();
       }));
     }).then(files => files.map(content => content.includes('restored-only.example'))), [false, false, true]);
+    const limitedRows = measureLongQueue ? 4998 : 33;
     const queueRequests = [];
     let releaseTimeoutRoute;
     const holdResponse = new Promise(resolve => { releaseTimeoutRoute = resolve; });
@@ -440,29 +442,74 @@ try {
         await holdResponse;
         return route.abort().catch(() => {});
       }
-      if (queueRequests.length === 1) return route.fulfill({ status: 429, headers: { ...headers, 'Retry-After': '8' } });
+      if (queueRequests.length === 1) return route.fulfill({ status: 429, headers: { ...headers, 'Retry-After': measureLongQueue ? '600' : '8' } });
       return route.fulfill({ status: 200, headers });
     });
-    await page.getByLabel('或粘贴表格及网址').fill([
-      ...Array.from({ length: 33 }, (_, index) => `https://limited-queue.example/${index}`),
+    const queueUrls = [
+      ...Array.from({ length: limitedRows }, (_, index) => `https://limited-queue.example/${index}`),
       'https://slow-queue.example/',
       'https://healthy-queue.example/',
-    ].join('\n'));
+    ].join('\n');
+    if (measureLongQueue) {
+      await page.getByLabel('CSV 或 TXT 文件').setInputFiles({
+        name: 'long-queue.csv', mimeType: 'text/csv', buffer: Buffer.from('URL\n' + queueUrls),
+      });
+      await page.getByText('来源文件：long-queue.csv').waitFor();
+    } else await page.getByLabel('或粘贴表格及网址').fill(queueUrls);
     await page.getByRole('button', { name: '预览导入' }).click();
     await page.getByRole('button', { name: '确认并保存' }).click();
+    if (measureLongQueue) await page.evaluate(() => {
+      const stats = { resultReads: 0, resultWrites: 0, resultBytes: 0,
+        initialHeap: performance.memory.usedJSHeapSize, peakHeap: 0 };
+      const getFile = FileSystemFileHandle.prototype.getFile;
+      const createWritable = FileSystemFileHandle.prototype.createWritable;
+      const segment = /^checks-.*-\d+\.json$/;
+      const sample = () => { stats.peakHeap = Math.max(stats.peakHeap, performance.memory.usedJSHeapSize); };
+      const encoder = new TextEncoder();
+      FileSystemFileHandle.prototype.getFile = function () {
+        if (segment.test(this.name)) stats.resultReads++;
+        return getFile.call(this);
+      };
+      FileSystemFileHandle.prototype.createWritable = async function (...args) {
+        const stream = await createWritable.apply(this, args);
+        if (segment.test(this.name)) {
+          const write = stream.write.bind(stream);
+          stream.write = value => {
+            stats.resultWrites++;
+            stats.resultBytes += encoder.encode(value).byteLength;
+            sample();
+            return write(value);
+          };
+        }
+        return stream;
+      };
+      window.queueStats = stats;
+    });
     try {
+      const start = Date.now();
       await page.getByRole('button', { name: '加入只读检查队列' }).click();
-      await page.getByText(/本轮结束。/).waitFor({ timeout: 35000 });
+      await page.getByText(/本轮结束。/).waitFor({ timeout: measureLongQueue ? 180000 : 35000 });
       assert.deepEqual(queueRequests.map(item => item.host), ['limited-queue.example', 'slow-queue.example', 'healthy-queue.example']);
       assert.ok(queueRequests[2].at - queueRequests[1].at >= 14900);
       await page.getByText(/HTTP 429，等待站点解除限流/).waitFor();
       assert.equal(await page.getByText(/站点处于限流等待期/).count(), 31);
-      await page.getByRole('button', { name: '下一组结果' }).click();
-      await page.getByText(/检查超时，请核对网址/).waitFor();
-      await page.getByText('已检查 · 第 35 条').waitFor();
-      await page.getByRole('button', { name: '上一组结果' }).click();
+      if (measureLongQueue) {
+        await page.getByLabel('只看待处理项（4999）').waitFor();
+        const stats = await page.evaluate(() => window.queueStats);
+        assert.equal(stats.resultWrites, 5000);
+        assert.ok(stats.resultReads >= Math.ceil(5000 / 32));
+        console.log('Long queue metrics:', JSON.stringify({ rows: 5000, elapsedMs: Date.now() - start, ...stats }));
+        await page.evaluate(() => localStorage.removeItem('urlput-check-cooldown:https://limited-queue.example'));
+      } else {
+        await page.getByRole('button', { name: '下一组结果' }).click();
+        await page.getByText(/检查超时，请核对网址/).waitFor();
+        await page.getByText('已检查 · 第 35 条').waitFor();
+        await page.getByRole('button', { name: '上一组结果' }).click();
+      }
+      const retryStart = Date.now();
       await page.getByRole('button', { name: '恢复此条' }).first().click();
       await page.getByText('已检查 · 第 1 条', { exact: true }).waitFor();
+      if (measureLongQueue) console.log('Long queue item retry ms:', Date.now() - retryStart);
       assert.equal(queueRequests.at(-1).path, '/0');
       assert.ok(queueRequests.at(-1).at - queueRequests[0].at >= 8000);
     } finally { releaseTimeoutRoute(); }
