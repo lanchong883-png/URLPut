@@ -132,7 +132,7 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
     setGeneration(value => value + 1);
   }
 
-  async function choose(operation: 'bind' | 'backup' | 'source' | 'restore') {
+  async function choose(operation: 'create' | 'bind' | 'backup' | 'source' | 'restore') {
     revision.current++;
     setChoosing(true);
     setError('');
@@ -142,8 +142,8 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
       const picker = window as Window & { showDirectoryPicker?(options: { mode: string }): Promise<FileSystemDirectoryHandle> };
       if (!picker.showDirectoryPicker) throw new Error('请在支持目录选择的桌面 Chrome 工作台中打开。');
       const parent = await picker.showDirectoryPicker({ mode: operation === 'source' ? 'read' : 'readwrite' });
-      if (operation === 'bind') {
-        await bind(await prepareDirectory(parent));
+      if (operation === 'create' || operation === 'bind') {
+        await bind(await (operation === 'create' ? prepareDirectory(parent) : openDirectory(parent)));
         setBackupSource(undefined);
       } else if (operation === 'source') {
         setBackupSource(await openDirectory(parent));
@@ -166,7 +166,8 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
         sessionStorage.setItem('urlput-source', event.target.value);
         setLegacy(event.target.value === 'legacy');
       }}><option value="local">本机目录</option><option value="legacy">旧版服务工作空间</option></select></label>
-      {!legacy && <button disabled={choosing} onClick={() => void choose('bind')}>{binding ? '重新选择数据目录' : '选择数据目录'}</button>}
+      {!legacy && <button disabled={choosing} onClick={() => void choose(binding ? 'bind' : 'create')}>{binding ? '重新选择数据目录' : '选择数据目录'}</button>}
+      {!legacy && binding && <button disabled={choosing} onClick={() => void choose('create')}>初始化空数据目录</button>}
       {!legacy && binding && !authorized && <button disabled={choosing} onClick={() => void authorize()}>重新授权原目录</button>}
       {!legacy && dir && <span>{label}</span>}
       {!legacy && dir && <button disabled={choosing} onClick={() => void choose('backup')}>备份数据目录</button>}

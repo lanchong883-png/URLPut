@@ -470,7 +470,7 @@ try {
       const data = await partial.getDirectoryHandle('URLPut-data-v1', { create: true });
       await data.getFileHandle('unfinished.json', { create: true });
     });
-    await pickDirectory('partial-data', '重新选择数据目录');
+    await pickDirectory('partial-data', '初始化空数据目录');
     await page.getByRole('alert').filter({ hasText: '可能是未完成的副本' }).waitFor();
     await pickDirectory('backup-data', '选择备份来源');
     await page.getByText('已选备份：backup-data。请选择恢复目标。').waitFor();
@@ -494,6 +494,25 @@ try {
     assert.ok(Object.keys(snapshots[0]).some(name => name.startsWith('analysis-')));
     assert.deepEqual(snapshots[1], snapshots[0]);
     assert.deepEqual(snapshots[2], snapshots[0]);
+    await page.evaluate(async () => {
+      const root = await navigator.storage.getDirectory();
+      const original = await root.getDirectoryHandle('restored-data');
+      const target = await root.getDirectoryHandle('moved-data', { create: true });
+      const input = await original.getDirectoryHandle('URLPut-data-v1');
+      const output = await target.getDirectoryHandle('URLPut-data-v1', { create: true });
+      for await (const [name, handle] of input.entries()) {
+        const destination = await output.getFileHandle(name, { create: true });
+        await (await handle.getFile()).stream().pipeTo(await destination.createWritable());
+      }
+      await root.removeEntry('restored-data', { recursive: true });
+    });
+    await page.reload();
+    await page.getByRole('button', { name: '重新授权原目录' }).waitFor();
+    assert.equal(await page.getByLabel('导入批次').count(), 0);
+    await pickDirectory('empty-data', '重新选择数据目录');
+    await page.getByRole('alert').filter({ hasText: '所选位置没有 URLPut 数据' }).waitFor();
+    await pickDirectory('moved-data', '重新选择数据目录');
+    await page.getByLabel('导入批次').waitFor();
     await page.reload();
     await page.getByLabel('导入批次').selectOption({ index: 2 });
     await page.getByRole('row').filter({ has: page.getByRole('cell', { name: 'https://ok-offline.example', exact: true }) })
@@ -503,7 +522,7 @@ try {
     await page.getByRole('option', { name: 'restored-only.example' }).waitFor({ state: 'attached' });
     assert.deepEqual(await page.evaluate(async () => {
       const root = await navigator.storage.getDirectory();
-      return Promise.all(['test-data', 'backup-data', 'restored-data'].map(async name => {
+      return Promise.all(['test-data', 'backup-data', 'moved-data'].map(async name => {
         const dir = await (await root.getDirectoryHandle(name)).getDirectoryHandle('URLPut-data-v1');
         return (await (await dir.getFileHandle('workspace.json')).getFile()).text();
       }));

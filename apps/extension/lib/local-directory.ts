@@ -52,7 +52,12 @@ async function requireEmpty(dir: Directory, error: string) {
 }
 
 export async function openDirectory(parent: Directory) {
-  const dir = await parent.getDirectoryHandle(directoryName);
+  const dir = await parent.getDirectoryHandle(directoryName).catch(error => {
+    if (error instanceof DOMException && error.name === 'NotFoundError') {
+      throw new Error('所选位置没有 URLPut 数据，请选择包含 URLPut-data-v1 的上级目录。');
+    }
+    throw error;
+  });
   await workspaceFor(dir);
   return dir;
 }
