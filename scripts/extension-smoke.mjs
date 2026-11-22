@@ -310,6 +310,19 @@ try {
     ['/local/v1/chat/completions', undefined, 'local-model'],
     ['/custom/v1/chat/completions', 'Bearer test-session-key', 'custom-model'],
   ]);
+  await page.getByRole('button', { name: '清单', exact: true }).click();
+  await page.getByLabel('推广站点').selectOption({ label: '示例站点' });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await page.getByRole('button', { name: '将本站历史批次复制到本机目录' }).click();
+    await page.getByText('已核对并保存 2 个批次。').waitFor();
+  }
+  await page.getByLabel('数据来源').selectOption('local');
+  await page.getByLabel('推广站点').selectOption({ label: '示例站点' });
+  const migrated = page.getByLabel('导入批次');
+  await migrated.getByRole('option', { name: /candidates.csv/ }).waitFor({ state: 'attached' });
+  assert.equal(await migrated.locator('option').count(), 3);
+  await migrated.selectOption({ index: 1 });
+  await page.getByRole('cell', {name: 'https://example.net', exact: true}).waitFor();
   console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, serial URL checks and issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
 } finally {
   try {

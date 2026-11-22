@@ -94,18 +94,19 @@ export async function recordPendingReview(dir: Directory, site: string, id: stri
   });
 }
 
-export async function saveLocalBatch(dir: Directory, site: string, input: ImportBatch) {
+export async function saveLocalBatch(dir: Directory, site: string, input: ImportBatch, createdAt = new Date().toISOString()) {
   return navigator.locks.request(lock, async () => {
     const filename = site + '-' + input.requestId + '.json';
     const existing = await read<StoredBatch>(dir, filename);
-    const stored = existing ?? { site, createdAt: new Date().toISOString(), input };
+    const stored = existing ?? { site, createdAt, input };
     if (existing && JSON.stringify(existing.input) !== JSON.stringify(input)) throw new Error('该批次编号已被使用。');
     const batch = restore(stored, site, input.requestId);
     const history = await localHistory(dir, site);
     if (!existing) await write(dir, filename, stored);
     if (!history.some(item => item.id === batch.id)) {
       const { rows, ...summary } = batch;
-      history.unshift({ ...summary, rowCount: rows.length });
+      history.push({ ...summary, rowCount: rows.length });
+      history.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
       await write(dir, site + '.index.json', history);
     }
     return { batch, history };
@@ -125,5 +126,17 @@ export async function directoryBinding(handle?: Directory): Promise<Directory | 
       tx.oncomplete = () => { db.close(); resolve(handle ?? op.result); };
       tx.onabort = () => { db.close(); reject(tx.error); };
     };
+  });
+}
+
+export async function registerMigratedSite(dir: Directory, site: Workspace['sites'][number]) {
+  return navigator.locks.request(lock, async () => {
+    const workspace = await workspaceFor(dir);
+    const existing = workspace.sites.find(item => item.id === site.id);
+    if (existing && existing.homepage !== site.homepage) throw new Error('本机站点 ID 与原站点网址冲突。');
+    if (!existing) {
+      workspace.sites.push(site);
+      await write(dir, 'workspace.json', { version: 1, workspace });
+    }
   });
 }

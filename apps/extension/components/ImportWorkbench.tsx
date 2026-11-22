@@ -7,7 +7,7 @@ import { remoteAuth, request, requestConfiguredAccess, type Batch, type BatchSum
 import { LinkCatalog } from './LinkCatalog';
 import { downloadLedger, reportCells, reportColumns, type ReportSite } from '../lib/report';
 
-import { addSite, directoryBinding, localBatch, localHistory, prepareDirectory, recordPendingReview, saveLocalBatch, workspaceFor } from '../lib/local-directory';
+import { addSite, directoryBinding, localBatch, localHistory, prepareDirectory, recordPendingReview, registerMigratedSite, saveLocalBatch, workspaceFor } from '../lib/local-directory';
 
 const fields: Record<keyof ColumnMapping, string> = { url: '候选网址', entry: '投稿入口', name: '名称', notes: '备注' };
 const defaultMapping: ColumnMapping = { url: 0 };
@@ -85,11 +85,11 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
       {error && <p role="alert">{error}</p>}
     </section>
     {(legacy || dir) && <Workbench key={legacy ? 'legacy' : generation}
-      directory={legacy ? undefined : dir} withCatalog={withCatalog && legacy} />}
+      directory={legacy ? undefined : dir} migrationDirectory={legacy ? dir : undefined} withCatalog={withCatalog && legacy} />}
   </>;
 }
 
-function Workbench({ directory, withCatalog }: { directory?: FileSystemDirectoryHandle; withCatalog: boolean }) {
+function Workbench({ directory, migrationDirectory, withCatalog }: { directory?: FileSystemDirectoryHandle; migrationDirectory?: FileSystemDirectoryHandle; withCatalog: boolean }) {
   const auth = directory ? undefined : remoteAuth();
   const [homepage, setHomepage] = useState('');
   const [library, setLibrary] = useState<'sites' | 'links'>('sites');
@@ -248,6 +248,35 @@ function Workbench({ directory, withCatalog }: { directory?: FileSystemDirectory
     finally { setBusy(false); }
   }
 
+  const [migrationStatus, setMigrationStatus] = useState('');
+  async function migrateSite() {
+    if (!migrationDirectory || !site || !path) return;
+    setBusy(true);
+    let copied = 0;
+    setMigrationStatus('正在迁移…');
+    try {
+      await registerMigratedSite(migrationDirectory, site);
+      const seen = new Set<string>();
+      let before = '';
+      for (;;) {
+        const page = await request<BatchSummary[]>(before ? path + '?before=' + encodeURIComponent(before) : path);
+        if (!page.length) break;
+        for (const summary of page) {
+          if (seen.has(summary.id)) throw new Error('旧服务未返回下一页，请更新服务后重试。');
+          seen.add(summary.id);
+          const batch = await request<Batch>(path + '/' + summary.id);
+          const input = importBatchSchema.parse({ requestId: batch.id, source: batch.source, filename: batch.filename ?? undefined, rows: batch.rows });
+          await saveLocalBatch(migrationDirectory, site.id, input, batch.createdAt);
+          copied++;
+        }
+        if (page.length < 50) break;
+        before = page[page.length - 1].id;
+      }
+      setMigrationStatus(`已核对并保存 ${copied} 个批次。`);
+    } catch (err) { setMigrationStatus(`已保存 ${copied} 个批次。${message(err)} 可再次迁移。`); }
+    finally { setBusy(false); }
+  }
+
   async function signIn() {
     if (!auth) return;
     setBusy(true);
@@ -304,6 +333,10 @@ function Workbench({ directory, withCatalog }: { directory?: FileSystemDirectory
           resetSite(); setWorkspaces([]); setWorkspace(''); setSite(''); setCodeSent(false); setCode('');
         })}>退出登录</button>}
       </section>
+      {migrationDirectory && site && <section className="card">
+        <button disabled={busy} onClick={() => void migrateSite()}>将本站历史批次复制到本机目录</button>
+        {migrationStatus && <p role="status">{migrationStatus}</p>}
+      </section>}
       {directory && workspace && <form className="card controls" onSubmit={async event => {
         event.preventDefault();
         setBusy(true);

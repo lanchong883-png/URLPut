@@ -100,11 +100,18 @@ export function createApp(
       const params = siteParams.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ message: '站点参数无效。' });
       const { workspaceId, siteId } = params.data;
+      const query = z.object({ before: z.uuid().optional() }).safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ message: '批次分页参数无效。' });
+      const before = query.data.before;
       return db.query(sql`
         SELECT b.id, b.source, b.filename, b.created_at AS "createdAt", jsonb_array_length(b.rows) AS "rowCount"
         FROM import_batches b JOIN workspace_members m ON m.workspace_id = b.workspace_id
         WHERE b.workspace_id = ${workspaceId} AND b.site_id = ${siteId} AND m.subject = ${identities.get(request)!}
-        ORDER BY b.created_at DESC LIMIT 50
+        ${before ? sql`AND (b.created_at, b.id) < (
+          SELECT created_at, id FROM import_batches WHERE workspace_id = ${workspaceId}
+          AND site_id = ${siteId} AND id = ${before}
+        )` : sql.empty()}
+        ORDER BY b.created_at DESC, b.id DESC LIMIT 50
       `);
     });
 
