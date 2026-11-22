@@ -100,9 +100,20 @@ try {
   const history = page.getByLabel('导入批次');
   await history.selectOption({ index: 1 });
   await page.getByRole('cell', { name: 'https://offline.example', exact: true }).waitFor();
+  await page.getByText('登记待审核回执', { exact: true }).click();
+  await page.getByLabel('已提交记录的序号').fill('1');
+  await page.getByLabel('实际提交时间').fill('2026-01-01T12:00');
+  await page.getByLabel('平台待审核提示或回执编号').fill('Awaiting moderation #TEST-100');
+  await page.getByRole('button', { name: '保存回执' }).click();
+  await page.getByRole('cell', { name: '待审核', exact: true }).waitFor();
+  await page.reload();
+  await page.getByLabel('导入批次').selectOption({ index: 1 });
+  await page.getByRole('cell', { name: '待审核', exact: true }).waitFor();
   const offlineDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: '导出 CSV' }).click();
-  assert.match(await readFile(await (await offlineDownload).path(), 'utf8'), /offline\.example/);
+  const receiptCsv = await readFile(await (await offlineDownload).path(), 'utf8');
+  assert.match(receiptCsv, /"https:\/\/offline.example","提交成功","待审核"/);
+  assert.match(receiptCsv, /Awaiting moderation #TEST-100/);
   if (webSmoke) {
     const probes = [];
     let resolved = false;

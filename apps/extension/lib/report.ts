@@ -1,6 +1,6 @@
 import type { Workspace } from '@urlput/contracts';
-import { encodeCsv, type LedgerRow } from '@urlput/import';
-import type { Batch } from './api';
+import { encodeCsv } from '@urlput/import';
+import type { Batch, BatchRow } from './api';
 
 export type ReportSite = Pick<Workspace['sites'][number], 'name' | 'homepage'>;
 
@@ -11,10 +11,11 @@ export const reportColumns = [
   '推广站点', '推广站点网址', '来源行', '投稿入口', '名称', '备注',
 ];
 
-export function reportCells(row: LedgerRow, site: ReportSite) {
+export function reportCells(row: BatchRow, site: ReportSite) {
   return [
     row.sequence, row.normalizedUrl ? new URL(row.normalizedUrl).hostname : '—', '未识别',
-    row.url, '未成功', conclusions[row.disposition], row.reason, site.name, site.homepage,
+    row.url, row.review ? '提交成功' : '未成功', row.review ? '待审核' : conclusions[row.disposition],
+    row.review ? `平台已接收，等待管理员审核。仅回访原记录。回执：${row.review.evidence}（提交于 ${row.review.submittedAt}）` : row.reason, site.name, site.homepage,
     row.sourceLine, row.entry, row.name, row.notes,
   ];
 }
@@ -22,9 +23,12 @@ export function reportCells(row: LedgerRow, site: ReportSite) {
 export function downloadLedger(batch: Batch, site: ReportSite) {
   const headings = [...reportColumns, '来源文件'];
   if (batch.source === 'txt') headings.push('原始文本');
+  const hasReceipts = batch.rows.some(row => row.review);
+  if (hasReceipts) headings.push('提交时间', '审核回执', '回执登记时间');
   const rows = batch.rows.map(row => {
     const cells = [...reportCells(row, site), batch.filename ?? ''];
     if (batch.source === 'txt') cells.push(row.sourceText ?? '');
+    if (hasReceipts) cells.push(row.review?.submittedAt ?? '', row.review?.evidence ?? '', row.review?.recordedAt ?? '');
     return cells;
   });
   const csv = encodeCsv(headings, rows);

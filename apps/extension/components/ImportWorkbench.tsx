@@ -6,7 +6,7 @@ import { remoteAuth, request, requestConfiguredAccess, type Batch, type BatchSum
 import { LinkCatalog } from './LinkCatalog';
 import { downloadLedger, reportCells, reportColumns, type ReportSite } from '../lib/report';
 
-import { addSite, directoryBinding, localBatch, localHistory, prepareDirectory, saveLocalBatch, workspaceFor } from '../lib/local-directory';
+import { addSite, directoryBinding, localBatch, localHistory, prepareDirectory, recordPendingReview, saveLocalBatch, workspaceFor } from '../lib/local-directory';
 
 const fields: Record<keyof ColumnMapping, string> = { url: '候选网址', entry: '投稿入口', name: '名称', notes: '备注' };
 const defaultMapping: ColumnMapping = { url: 0 };
@@ -366,6 +366,26 @@ function Workbench({ directory, withCatalog }: { directory?: FileSystemDirectory
           {saved && site && <>
             <button className="secondary" type="button" onClick={() => downloadLedger(saved, site)}>导出 CSV</button>
             <RowTable key={saved.id} rows={saved.rows} site={site} />
+            {directory && <details key={saved.id + '-receipt'}>
+              <summary>登记待审核回执</summary>
+              <form className="stack" onSubmit={async event => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                setBusy(true);
+                try {
+                  const batch = await recordPendingReview(directory, siteId, saved.id, Number(data.get('sequence')),
+                    String(data.get('evidence')), String(data.get('submittedAt')));
+                  setSaved(batch);
+                  setError('');
+                } catch (err) { setError(message(err)); }
+                finally { setBusy(false); }
+              }}>
+                <label>已提交记录的序号<input name="sequence" type="number" min="1" max={saved.rows.length} step="1" required /></label>
+                <label>实际提交时间<input name="submittedAt" type="datetime-local" required /></label>
+                <label>平台待审核提示或回执编号<input name="evidence" maxLength={1000} required /></label>
+                <button disabled={busy}>保存回执</button>
+              </form>
+            </details>}
             {directory && <BatchChecks key={saved.id} dir={directory} site={siteId} batch={saved} />}
           </>}
         </section>

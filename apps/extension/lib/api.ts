@@ -22,12 +22,15 @@ export function remoteAuth() {
 });
 }
 
+export type ReviewReceipt = { evidence: string; submittedAt: string; recordedAt: string };
+export type BatchRow = LedgerRow & { review?: ReviewReceipt };
+
 export type Batch = {
   id: string;
   source: ImportBatch['source'];
   filename: string | null;
   createdAt: string;
-  rows: LedgerRow[];
+  rows: BatchRow[];
 };
 export type BatchSummary = Omit<Batch, 'rows'> & { rowCount: number };
 

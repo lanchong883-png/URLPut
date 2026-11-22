@@ -1,6 +1,6 @@
 import { importBatchSchema, workspaceSchema, type ImportBatch, type Workspace } from '@urlput/contracts';
 import { buildLedger, normalizeUrl } from '@urlput/import';
-import type { Batch, BatchSummary } from './api';
+import type { Batch, BatchSummary, ReviewReceipt } from './api';
 
 type Directory = FileSystemDirectoryHandle;
 const lock = 'urlput-directory-writes';
@@ -67,7 +67,31 @@ function restore(stored: StoredBatch, site: string, id: string): Batch {
 export async function localBatch(dir: Directory, site: string, id: string) {
   const stored = await read<StoredBatch>(dir, site + '-' + id + '.json');
   if (!stored) throw new Error('找不到所选批次文件。');
-  return restore(stored, site, id);
+  const batch = restore(stored, site, id);
+  const receipts = await read<Record<string, ReviewReceipt>>(dir, site + '-' + id + '.reviews.json');
+  if (receipts) {
+    for (const row of batch.rows) row.review = receipts[row.sequence];
+  }
+  return batch;
+}
+
+export async function recordPendingReview(dir: Directory, site: string, id: string, sequence: number, evidence: string, submittedAt: string) {
+  const time = Date.parse(submittedAt);
+  if (!evidence.trim() || evidence.length > 1000 || !Number.isFinite(time) || time > Date.now()) {
+    throw new Error('请填写平台的待审核提示或回执编号，以及实际提交时间。');
+  }
+  return navigator.locks.request(lock, async () => {
+    const batch = await localBatch(dir, site, id);
+    const row = batch.rows.find(item => item.sequence === sequence);
+    if (!row || row.disposition !== 'candidate') throw new Error('请选择有效的候选记录。');
+    if (row.review) throw new Error('此条已有待审核回执。');
+    const filename = site + '-' + id + '.reviews.json';
+    const receipts = Object.fromEntries(batch.rows.filter(item => item.review).map(item => [item.sequence, item.review]));
+    row.review = { evidence: evidence.trim(), submittedAt: new Date(time).toISOString(), recordedAt: new Date().toISOString() };
+    receipts[sequence] = row.review;
+    await write(dir, filename, receipts);
+    return batch;
+  });
 }
 
 export async function saveLocalBatch(dir: Directory, site: string, input: ImportBatch) {
