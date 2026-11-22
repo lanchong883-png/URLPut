@@ -1,4 +1,5 @@
 import { VerifiedLinks } from './VerifiedLinks';
+import { observeChecks, pendingCheckCount, runQueue } from '../lib/check-queue';
 import { BatchChecks } from './BatchChecks';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { importBatchSchema, MAX_IMPORT_BYTES, MAX_IMPORT_REQUEST_BYTES, type ImportBatch, type Workspace } from '@urlput/contracts';
@@ -43,6 +44,38 @@ function RowTable({ rows, site }: { rows: LedgerRow[]; site?: ReportSite }) {
   </>;
 }
 
+function ResumeChecks({ dir }: { dir: FileSystemDirectoryHandle }) {
+  const [pending, setPending] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
+  useEffect(() => {
+    let active = true;
+    let revision = 0;
+    function refresh() {
+      const current = ++revision;
+      void pendingCheckCount(dir).then(count => {
+        if (active && revision === current) setPending(count);
+      }).catch(error => { if (active && revision === current) setStatus(message(error)); });
+    }
+    const unsubscribe = observeChecks(refresh);
+    refresh();
+    return () => { active = false; unsubscribe(); };
+  }, [dir]);
+  if (!pending && !status) return null;
+  return <section className="card controls">
+    {pending > 0 && <button disabled={busy} onClick={async () => {
+      setBusy(true);
+      setStatus('正在继续队列…');
+      try {
+        await runQueue(dir);
+        setStatus('队列已处理完毕。');
+      } catch (error) { setStatus(message(error)); }
+      finally { setBusy(false); }
+    }}>继续未完成队列（{pending}）</button>}
+    {status && <p role="status">{status}</p>}
+  </section>;
+}
+
 export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean }) {
   const [legacy, setLegacy] = useState(() => sessionStorage.getItem('urlput-source') === 'legacy');
   const [dir, setDir] = useState<FileSystemDirectoryHandle>();
@@ -84,6 +117,7 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
       {!legacy && dir && <span>{label}</span>}
       {error && <p role="alert">{error}</p>}
     </section>
+    {!legacy && dir && <ResumeChecks key={generation} dir={dir} />}
     {(legacy || dir) && <Workbench key={legacy ? 'legacy' : generation}
       directory={legacy ? undefined : dir} migrationDirectory={legacy ? dir : undefined} withCatalog={withCatalog && legacy} />}
   </>;

@@ -174,6 +174,39 @@ try {
     const removedDownload = page.waitForEvent('download');
     await page.getByRole('button', { name: '导出已核验外链 CSV' }).click();
     assert.match(await readFile(await (await removedDownload).path(), 'utf8'), /"公开页失效"/);
+    const interrupted = await context.newPage();
+    interrupted.setDefaultTimeout(10000);
+    await interrupted.goto(`${origin}/sidepanel.html`);
+    await interrupted.getByLabel('或粘贴表格及网址').fill('https://first-resume.example\nhttps://second-resume.example');
+    await interrupted.getByRole('button', { name: '预览导入' }).click();
+    await interrupted.getByRole('button', { name: '确认并保存' }).click();
+    const visits = [];
+    let signalInterrupted;
+    const secondStarted = new Promise(resolve => { signalInterrupted = resolve; });
+    let releaseFirstAttempt;
+    const hold = new Promise(resolve => { releaseFirstAttempt = resolve; });
+    await context.route(/^https:\/\/(first|second)-resume\.example\//, async route => {
+      const second = route.request().url().includes('second-resume');
+      visits.push(second ? 'second' : 'first');
+      if (second && visits.length === 2) {
+        signalInterrupted();
+        await hold;
+        return route.abort().catch(() => {});
+      }
+      return route.fulfill({ status: 200, headers: { 'Access-Control-Allow-Origin': '*' } });
+    });
+    await interrupted.getByRole('button', { name: '加入只读检查队列' }).click();
+    try {
+      await Promise.race([secondStarted, interrupted.getByText('本轮结束。请查看各页检查结果和待处理项。').waitFor()
+        .then(() => { throw new Error('未观察到中断前的第二个请求'); })]);
+      await interrupted.close();
+    } finally { releaseFirstAttempt(); }
+    await page.reload();
+    await page.getByRole('button', { name: '继续未完成队列（1）' }).click();
+    await page.getByText('队列已处理完毕。').waitFor();
+    assert.deepEqual(visits, ['first', 'second', 'second']);
+    await page.getByLabel('导入批次').selectOption({ index: 1 });
+    await page.getByText('已检查 · 第 2 条').waitFor();
   }
   assert.deepEqual(apiCalls, []);
   await page.unroute('**/api/**', blockApi);
@@ -334,7 +367,7 @@ try {
   assert.equal(await migrated.locator('option').count(), 3);
   await migrated.selectOption({ index: 1 });
   await page.getByRole('cell', {name: 'https://example.net', exact: true}).waitFor();
-  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, serial URL checks and issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
+  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, serial URL checks, interruption recovery, and issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
 } finally {
   try {
     await context?.close();

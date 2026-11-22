@@ -8,6 +8,28 @@ export type Check = { analysis?: Analysis; attempt?: string; dismissed?: boolean
 type Directory = FileSystemDirectoryHandle;
 type QueuedJob = Job & { attempt: string };
 const queueFile = 'url-check-queue.json';
+const queueEvent = 'urlput-check-queue-change';
+
+export async function pendingCheckCount(dir: Directory) {
+  return (await read<QueuedJob[]>(dir, queueFile))?.length ?? 0;
+}
+
+export function observeChecks(update: () => void) {
+  const channel = new BroadcastChannel(queueEvent);
+  channel.onmessage = update;
+  window.addEventListener(queueEvent, update);
+  return () => {
+    channel.close();
+    window.removeEventListener(queueEvent, update);
+  };
+}
+
+function notifyChecks() {
+  window.dispatchEvent(new Event(queueEvent));
+  const channel = new BroadcastChannel(queueEvent);
+  channel.postMessage(null);
+  channel.close();
+}
 const segmentSize = 32;
 const segmentFile = (job: Job, page: number) => `${job.analysis ? 'analysis' : 'checks'}-${job.site}-${job.batch}-${page}.json`;
 const sameJob = (a: Job, b: Job) => a.batch === b.batch && a.site === b.site && a.retry === b.retry && Boolean(a.analysis) === Boolean(b.analysis);
@@ -16,7 +38,10 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function changeQueue(dir: Directory, update: (jobs: QueuedJob[]) => QueuedJob[]) {
   return navigator.locks.request('urlput-check-queue-files', async () => {
     const jobs = await read<QueuedJob[]>(dir, queueFile) ?? [];
-    await write(dir, queueFile, update(jobs));
+    const next = update(jobs);
+    if (next === jobs) return;
+    await write(dir, queueFile, next);
+    notifyChecks();
   });
 }
 
@@ -60,7 +85,7 @@ export async function publicRequest(url: string, method: 'HEAD' | 'GET') {
   return response;
 }
 
-export async function runQueue(dir: Directory, changed: () => void) {
+export async function runQueue(dir: Directory) {
   await navigator.locks.request('urlput-active-url', async () => {
     for (;;) {
       const [job] = await read<QueuedJob[]>(dir, queueFile) ?? [];
@@ -97,7 +122,6 @@ export async function runQueue(dir: Directory, changed: () => void) {
       }
       await summarize(dir, job, batch.rows.length);
       await changeQueue(dir, jobs => jobs.filter(item => !sameJob(item, job)));
-      changed();
     }
   });
 }

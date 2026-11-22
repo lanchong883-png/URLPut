@@ -3,12 +3,13 @@ import { browser } from 'wxt/browser';
 import { encodeCsv } from '@urlput/import';
 import { downloadCsv } from '../lib/report';
 import type { Batch } from '../lib/api';
-import { checkPage, checkSummary, checkSegmentSize, dismissCheck, enqueue, runQueue, type Check } from '../lib/check-queue';
+import { checkPage, checkSummary, checkSegmentSize, dismissCheck, enqueue, observeChecks, runQueue, type Check } from '../lib/check-queue';
 
 export function BatchChecks({ dir, site, batch }: { dir: FileSystemDirectoryHandle; site: string; batch: Batch }) {
   const [analysis, setAnalysis] = useState(false);
   const [page, setPage] = useState(0);
   const [revision, setRevision] = useState(0);
+  useEffect(() => observeChecks(() => setRevision(value => value + 1)), []);
   const [results, setResults] = useState<Check[]>([]);
   const [summary, setSummary] = useState<{ issues: number; problemPages: number[] }>();
   const [issuesOnly, setIssuesOnly] = useState(false);
@@ -43,7 +44,7 @@ export function BatchChecks({ dir, site, batch }: { dir: FileSystemDirectoryHand
       if (!await browser.permissions.request({ origins })) throw new Error('请授权访问所选入口后再开始。');
       await enqueue(dir, { site, batch: batch.id, retry, analysis });
       setStatus('已排队，正在串行处理。');
-      await runQueue(dir, () => setRevision(value => value + 1));
+      await runQueue(dir);
       setRevision(value => value + 1);
       setPage(0);
       setStatus('本轮结束。请查看各页检查结果和待处理项。');
