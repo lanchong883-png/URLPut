@@ -56,7 +56,8 @@ export async function checkPage(dir: Directory, job: Job, page: number) {
 export class PublicHttpError extends Error {
   readonly status: number;
   constructor(status: number) {
-    super(`HTTP ${status}，请核对访问权限和入口地址。`);
+    super(status === 401 ? 'HTTP 401，站点要求身份验证，公开访问未通过。' :
+      `HTTP ${status}，请核对访问权限和入口地址。`);
     this.status = status;
   }
 }

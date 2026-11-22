@@ -1,3 +1,4 @@
+import { AnalysisResults } from './AnalysisResults';
 import { VerifiedLinks } from './VerifiedLinks';
 import { observeChecks, pendingCheckCount, runQueue } from '../lib/check-queue';
 import { BatchChecks } from './BatchChecks';
@@ -425,6 +426,7 @@ function Workbench({ directory, migrationDirectory, withCatalog }: { directory?:
       }} />}
       {library === 'links' && workspaceId && <LinkCatalog key={workspaceId} workspaceId={workspaceId} />}
       <div hidden={library !== 'sites'}>
+        {directory && site && history.length > 0 && <AnalysisResults key={site.id} dir={directory} site={site.id} batches={history} />}
         <section className="card stack">
           <h2>导入候选网址</h2>
           <label>CSV 或 TXT 文件<input type="file" accept=".csv,.txt,text/csv,text/plain" disabled={busy} onChange={event => {

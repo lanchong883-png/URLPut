@@ -23,3 +23,12 @@ test('keeps unrelated, hidden, nested, plain-text and ambiguous matches pending'
     await assert.rejects(findCommentLink(pieces(body), page, target), CommentLinkUnconfirmed);
   }
 });
+
+test('explains dynamic comments and login prompts while preserving public link evidence', async () => {
+  const shell = '<article><p>You must <b>log in</b> to view comments.</p><div id="disqus_thread"></div></article>';
+  await assert.rejects(findCommentLink(pieces(shell), page, target), /页面正文提示登录.*动态评论组件标记/);
+  const comment = '<div class="comment" id="record-2"><a href="https://brand.example/">Brand</a></div>';
+  assert.equal((await findCommentLink(pieces(shell + comment), page, target)).anchor, 'Brand');
+  await assert.rejects(findCommentLink(pieces('<template>' + shell + '</template>'), page, target),
+    { message: '未能在唯一定位的公开记录中确认目标链接。' });
+});

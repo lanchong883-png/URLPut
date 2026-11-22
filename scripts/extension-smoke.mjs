@@ -311,6 +311,27 @@ try {
     assert.deepEqual(visits, ['first', 'second', 'second']);
     await page.getByLabel('导入批次').selectOption({ index: 1 });
     await page.getByText('已检查 · 第 2 条').waitFor();
+    await context.route(/^https:\/\/(first|second)-resume\.example\//, route => route.fulfill({
+      status: route.request().url().includes('second-resume') ? 401 : 200,
+      contentType: 'text/html', headers: { 'Access-Control-Allow-Origin': '*' },
+      body: '<article><title>Dynamic discussion</title><p>You must log in to view comments.</p><div id="disqus_thread"></div></article>',
+    }));
+    await page.getByLabel('只读任务').selectOption('analysis');
+    await page.getByRole('button', { name: '加入只读检查队列' }).click();
+    await page.getByText(/本轮结束。/).waitFor();
+    await page.getByText('跨批次网站分析', { exact: true }).click();
+    const crossBatch = page.locator('details').filter({ has: page.getByText('跨批次网站分析', { exact: true }) });
+    await crossBatch.getByText('已分析 · Dynamic discussion').waitFor();
+    await crossBatch.getByText('已分析 · Example directory', { exact: true }).first().waitFor();
+    await page.getByLabel('分析批次').selectOption({ index: 1 });
+    await crossBatch.getByText('已分析 · Example directory', { exact: true }).first().waitFor({ state: 'detached' });
+    await page.getByLabel('分析结果').selectOption('issue');
+    await crossBatch.getByText(/HTTP 401，站点要求身份验证/).waitFor();
+    const filteredAnalysis = page.waitForEvent('download');
+    await page.getByRole('button', { name: '导出筛选后的网站分析 CSV' }).click();
+    const filteredAnalysisCsv = await readFile(await (await filteredAnalysis).path(), 'utf8');
+    assert.match(filteredAnalysisCsv, /second-resume\.example[\s\S]*HTTP 401/);
+    assert.doesNotMatch(filteredAnalysisCsv, /first-resume\.example|offline\.example/);
   }
   assert.deepEqual(apiCalls, []);
   await page.unroute('**/api/**', blockApi);

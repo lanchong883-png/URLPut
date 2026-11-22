@@ -1,4 +1,5 @@
 import { Parser } from 'htmlparser2';
+import { hidesContent, PageSignals } from './page-signals.ts';
 
 export type Evidence = { page: string; target: string; rel: string; anchor: string; checkedAt: string };
 
@@ -30,6 +31,7 @@ export async function findCommentLink(chunks: AsyncIterable<string>, page: URL, 
   const fragment = decodeURIComponent(page.hash.slice(1));
   if (!fragment) throw new Error('请提供含评论定位标记（#…）的公开链接。');
   const stack: Frame[] = [];
+  const signals = new PageSignals();
   let matches = 0;
   let evidence: Scope['link'];
   let base = page.href;
@@ -38,8 +40,8 @@ export async function findCommentLink(chunks: AsyncIterable<string>, page: URL, 
     onopentag(tag, attrs) {
       if (stack.length >= 512) throw new Error('网页嵌套过深，需人工核验。');
       const parent = stack.at(-1);
-      const hidden = Boolean(parent?.hidden || ['script', 'style', 'template', 'noscript'].includes(tag)
-        || 'hidden' in attrs || attrs['aria-hidden'] === 'true');
+      const hidden = Boolean(parent?.hidden || hidesContent(tag, attrs));
+      if (!hidden) signals.element(tag, attrs);
       const marker = !hidden && (attrs.id === fragment || (tag === 'a' && attrs.name === fragment));
       if (marker) matches++;
       const classes = (attrs.class ?? '').split(/\s+/);
@@ -66,6 +68,7 @@ export async function findCommentLink(chunks: AsyncIterable<string>, page: URL, 
     },
     ontext(text) {
       const top = stack.at(-1);
+      if (top && !top.hidden) signals.visibleText(text);
       if (top?.link && !top.hidden) top.link.anchor = (top.link.anchor + text).slice(0, 256);
     },
     onclosetag() {
@@ -75,7 +78,10 @@ export async function findCommentLink(chunks: AsyncIterable<string>, page: URL, 
   });
   for await (const chunk of chunks) parser.write(chunk);
   parser.end();
-  if (matches !== 1 || !evidence) throw new CommentLinkUnconfirmed('未能在唯一定位的公开记录中确认目标链接。');
+  if (matches !== 1 || !evidence) {
+    const reason = ['未能在唯一定位的公开记录中确认目标链接', ...signals.evidence].join('；');
+    throw new CommentLinkUnconfirmed(reason + '。');
+  }
   return { page: page.href, target, ...evidence, checkedAt: new Date().toISOString() };
 }
 
