@@ -9,7 +9,7 @@ import { remoteAuth, request, requestConfiguredAccess, type Batch, type BatchSum
 import { LinkCatalog } from './LinkCatalog';
 import { downloadLedger, reportCells, reportColumns, type ReportSite } from '../lib/report';
 
-import { addSite, directoryBinding, directoryPermission, localReportBatch, localHistory, prepareDirectory, recordPendingReview, registerMigratedSite, saveLocalBatch, workspaceFor } from '../lib/local-directory';
+import { addSite, copyDirectory, directoryBinding, directoryPermission, localReportBatch, localHistory, openDirectory, prepareDirectory, recordPendingReview, registerMigratedSite, saveLocalBatch, workspaceFor } from '../lib/local-directory';
 
 const fields: Record<keyof ColumnMapping, string> = { url: '候选网址', entry: '投稿入口', name: '名称', notes: '备注' };
 const defaultMapping: ColumnMapping = { url: 0 };
@@ -85,6 +85,8 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
   const [label, setLabel] = useState('');
   const [error, setError] = useState('');
   const [choosing, setChoosing] = useState(false);
+  const [directoryStatus, setDirectoryStatus] = useState('');
+  const [backupSource, setBackupSource] = useState<FileSystemDirectoryHandle>();
   const revision = useRef(0);
   const [generation, setGeneration] = useState(0);
 
@@ -116,24 +118,43 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
       const workspace = await workspaceFor(binding);
       setLabel(workspace.name);
       setAuthorized(true);
-    } catch (err) { setError(message(err)); }
+    } catch (err) { setAuthorized(false); setError(message(err)); }
     finally { setChoosing(false); }
   }
 
-  async function choose() {
+  async function bind(directory: FileSystemDirectoryHandle) {
+    const workspace = await workspaceFor(directory);
+    await directoryBinding(directory);
+    setBinding(directory);
+    setAuthorized(true);
+    setLabel(workspace.name);
+    setGeneration(value => value + 1);
+  }
+
+  async function choose(operation: 'bind' | 'backup' | 'source' | 'restore') {
     revision.current++;
     setChoosing(true);
     setError('');
+    setDirectoryStatus('');
+    if (operation === 'source') setBackupSource(undefined);
     try {
       const picker = window as Window & { showDirectoryPicker?(options: { mode: string }): Promise<FileSystemDirectoryHandle> };
       if (!picker.showDirectoryPicker) throw new Error('请在支持目录选择的桌面 Chrome 工作台中打开。');
-      const parent = await picker.showDirectoryPicker({ mode: 'readwrite' });
-      const directory = await prepareDirectory(parent);
-      await directoryBinding(directory);
-      setBinding(directory);
-      setAuthorized(true);
-      setLabel(parent.name);
-      setGeneration(value => value + 1);
+      const parent = await picker.showDirectoryPicker({ mode: operation === 'source' ? 'read' : 'readwrite' });
+      if (operation === 'bind') {
+        await bind(await prepareDirectory(parent));
+        setBackupSource(undefined);
+      } else if (operation === 'source') {
+        setBackupSource(await openDirectory(parent));
+        setDirectoryStatus(`已选备份：${parent.name}。请选择恢复目标。`);
+      } else if (operation === 'backup' && dir) {
+        const target = await copyDirectory(dir, parent);
+        setDirectoryStatus(`备份完成：${parent.name}/${target.name}。`);
+      } else if (operation === 'restore' && backupSource) {
+        await bind(await copyDirectory(backupSource, parent));
+        setBackupSource(undefined);
+        setDirectoryStatus(`已恢复并切换到：${parent.name}。`);
+      }
     } catch (err) {
       if (!(err instanceof DOMException && err.name === 'AbortError')) setError(message(err));
     } finally { setChoosing(false); }
@@ -144,9 +165,13 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
         sessionStorage.setItem('urlput-source', event.target.value);
         setLegacy(event.target.value === 'legacy');
       }}><option value="local">本机目录</option><option value="legacy">旧版服务工作空间</option></select></label>
-      {!legacy && <button disabled={choosing} onClick={() => void choose()}>{binding ? '重新选择数据目录' : '选择数据目录'}</button>}
+      {!legacy && <button disabled={choosing} onClick={() => void choose('bind')}>{binding ? '重新选择数据目录' : '选择数据目录'}</button>}
       {!legacy && binding && !authorized && <button disabled={choosing} onClick={() => void authorize()}>重新授权原目录</button>}
       {!legacy && dir && <span>{label}</span>}
+      {!legacy && dir && <button disabled={choosing} onClick={() => void choose('backup')}>备份数据目录</button>}
+      {!legacy && <button disabled={choosing} onClick={() => void choose('source')}>选择备份来源</button>}
+      {!legacy && backupSource && <button disabled={choosing} onClick={() => void choose('restore')}>选择恢复目标并恢复</button>}
+      {!legacy && directoryStatus && <p role="status">{directoryStatus}</p>}
       {error && <p role="alert">{error}</p>}
     </section>
     {!legacy && dir && <ResumeChecks key={generation} dir={dir} />}

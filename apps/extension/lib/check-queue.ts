@@ -1,7 +1,7 @@
 import { htmlChunks } from './comment-evidence';
 import { analyzeHtml, type Analysis } from './site-analysis';
 import { normalizeUrl } from '@urlput/import';
-import { localBatch, read, write } from './local-directory';
+import { activeUrlLock, localBatch, queueFilesLock, read, write } from './local-directory';
 
 type Job = { site: string; batch: string; retry?: number; analysis?: boolean };
 export type Check = { analysis?: Analysis; attempt?: string; dismissed?: boolean; sequence: number; url: string; ok: boolean; message: string; at: string };
@@ -36,7 +36,7 @@ const sameJob = (a: Job, b: Job) => a.batch === b.batch && a.site === b.site && 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function changeQueue(dir: Directory, update: (jobs: QueuedJob[]) => QueuedJob[]) {
-  return navigator.locks.request('urlput-check-queue-files', async () => {
+  return navigator.locks.request(queueFilesLock, async () => {
     const jobs = await read<QueuedJob[]>(dir, queueFile) ?? [];
     const next = update(jobs);
     if (next === jobs) return;
@@ -87,7 +87,7 @@ export async function publicRequest(url: string, method: 'HEAD' | 'GET') {
 }
 
 export async function runQueue(dir: Directory) {
-  await navigator.locks.request('urlput-active-url', async () => {
+  await navigator.locks.request(activeUrlLock, async () => {
     for (;;) {
       const [job] = await read<QueuedJob[]>(dir, queueFile) ?? [];
       if (!job) return;
@@ -140,7 +140,7 @@ async function summarize(dir: Directory, job: Job, rowCount: number) {
 }
 
 export function dismissCheck(dir: Directory, job: Job, sequence: number, rowCount: number) {
-  return navigator.locks.request('urlput-active-url', async () => {
+  return navigator.locks.request(activeUrlLock, async () => {
     const page = Math.floor((sequence - 1) / segmentSize);
     const results = await checkPage(dir, job, page);
     const result = results.find(item => item.sequence === sequence);

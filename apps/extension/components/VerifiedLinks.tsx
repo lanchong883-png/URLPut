@@ -3,7 +3,7 @@ import { browser } from 'wxt/browser';
 import { encodeCsv, normalizeUrl } from '@urlput/import';
 import { publicRequest, PublicHttpError } from '../lib/check-queue';
 import { CommentLinkUnconfirmed, findCommentLink, htmlChunks, conclusion, conclusionLabels as labels, type Conclusion, type LinkRecord } from '../lib/comment-evidence';
-import { localBatch, saveVerificationLedger, verificationLedger, type RevisitQueue } from '../lib/local-directory';
+import { activeUrlLock, localBatch, saveVerificationLedger, verificationLedger, type RevisitQueue } from '../lib/local-directory';
 import { downloadCsv, type ReportSite } from '../lib/report';
 import type { Batch } from '../lib/api';
 
@@ -46,7 +46,7 @@ export function VerifiedLinks({ dir, site, batch, onUpdate }: {
   }, [dir, site.id]);
 
   async function saveVerification(page: URL, target: URL, source: string, sequence?: number, queue?: RevisitQueue) {
-    return navigator.locks.request('urlput-active-url', async () => {
+    return navigator.locks.request(activeUrlLock, async () => {
       const ledger = await verificationLedger(dir, site.id);
       const existing = ledger.links;
       const receipt = sequence === undefined || !batch ? undefined : { batch: batch.id, sequence };
@@ -122,7 +122,7 @@ export function VerifiedLinks({ dir, site, batch, onUpdate }: {
       if (!await browser.permissions.request({ origins })) throw new Error('需要读取待回访的公开页面。');
       await navigator.locks.request('urlput-revisit-' + site.id, { ifAvailable: true }, async lock => {
         if (!lock) throw new Error('此站点已有窗口正在批量回访。');
-        let queue = await navigator.locks.request('urlput-active-url', async () => {
+        let queue = await navigator.locks.request(activeUrlLock, async () => {
           const ledger = await verificationLedger(dir, site.id);
           setItems(ledger.links);
           setRevisit(ledger.revisit);

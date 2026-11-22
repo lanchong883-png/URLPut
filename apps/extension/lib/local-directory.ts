@@ -14,6 +14,10 @@ export function directoryPermission(dir: Directory, request = false) {
   return request ? handle.requestPermission({ mode: 'readwrite' }) : handle.queryPermission({ mode: 'readwrite' });
 }
 const lock = 'urlput-directory-writes';
+const directoryName = 'URLPut-data-v1';
+const workspaceFile = 'workspace.json';
+export const activeUrlLock = 'urlput-active-url';
+export const queueFilesLock = 'urlput-check-queue-files';
 
 export async function read<T>(dir: Directory, name: string): Promise<T | undefined> {
   try {
@@ -38,18 +42,57 @@ export async function write(dir: Directory, name: string, value: unknown) {
 }
 
 export async function workspaceFor(dir: Directory): Promise<Workspace> {
-  const value = await read<{ version: number; workspace: unknown }>(dir, 'workspace.json');
+  const value = await read<{ version: number; workspace: unknown }>(dir, workspaceFile);
   if (value?.version !== 1) throw new Error('无法识别本机工作空间格式。');
   return workspaceSchema.parse(value.workspace);
 }
 
+async function requireEmpty(dir: Directory, error: string) {
+  for await (const _ of dir.keys()) throw new Error(error);
+}
+
+export async function openDirectory(parent: Directory) {
+  const dir = await parent.getDirectoryHandle(directoryName);
+  await workspaceFor(dir);
+  return dir;
+}
+
 export async function prepareDirectory(parent: Directory) {
-  const dir = await parent.getDirectoryHandle('URLPut-data-v1', { create: true });
+  const dir = await parent.getDirectoryHandle(directoryName, { create: true });
   await navigator.locks.request(lock, async () => {
-    if (await read(dir, 'workspace.json') !== undefined) await workspaceFor(dir);
-    else await write(dir, 'workspace.json', { version: 1, workspace: { id: crypto.randomUUID(), name: parent.name, sites: [] } });
+    if (await read(dir, workspaceFile) !== undefined) {
+      await workspaceFor(dir);
+    } else {
+      await requireEmpty(dir, '此数据目录缺少工作空间文件，可能是未完成的副本。请选择完整备份或其他目录。');
+      await write(dir, workspaceFile, { version: 1, workspace: { id: crypto.randomUUID(), name: parent.name, sites: [] } });
+    }
   });
   return dir;
+}
+
+export function copyDirectory(source: Directory, parent: Directory) {
+  return navigator.locks.request(activeUrlLock, { ifAvailable: true }, async active => {
+    if (!active) throw new Error('有只读任务正在运行，请等当前操作结束后再复制数据目录。');
+    return navigator.locks.request(lock, () => navigator.locks.request(queueFilesLock, async () => {
+      await workspaceFor(source);
+      if (await source.resolve(parent)) throw new Error('请选择源数据目录之外的目标文件夹。');
+      const target = await parent.getDirectoryHandle(directoryName, { create: true });
+      await requireEmpty(target, '目标已有 URLPut 数据或未完成的副本。请选择另一个空目标。');
+      async function copy(handle: FileSystemFileHandle) {
+        const file = await handle.getFile();
+        const destination = await target.getFileHandle(handle.name, { create: true });
+        await file.stream().pipeTo(await destination.createWritable());
+      }
+      for await (const [name, handle] of source.entries()) {
+        if (name !== workspaceFile && handle.kind === 'file' && name.endsWith('.json')) {
+          await copy(handle as FileSystemFileHandle);
+        }
+      }
+      // Publish the workspace only after its data files have been committed.
+      await copy(await source.getFileHandle(workspaceFile));
+      return target;
+    }));
+  });
 }
 
 export async function addSite(dir: Directory, address: string) {
@@ -61,7 +104,7 @@ export async function addSite(dir: Directory, address: string) {
       ?? { id: crypto.randomUUID(), name: new URL(homepage).hostname, homepage };
     if (!workspace.sites.some(item => item.id === site.id)) {
       workspace.sites.push(site);
-      await write(dir, 'workspace.json', { version: 1, workspace });
+      await write(dir, workspaceFile, { version: 1, workspace });
     }
     return { workspace, site };
   });
@@ -185,7 +228,7 @@ export async function registerMigratedSite(dir: Directory, site: Workspace['site
     if (existing && existing.homepage !== site.homepage) throw new Error('本机站点 ID 与原站点网址冲突。');
     if (!existing) {
       workspace.sites.push(site);
-      await write(dir, 'workspace.json', { version: 1, workspace });
+      await write(dir, workspaceFile, { version: 1, workspace });
     }
   });
 }

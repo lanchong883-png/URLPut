@@ -85,7 +85,7 @@ try {
     window.showDirectoryPicker = async () => {
       const count = Number(sessionStorage.getItem('directory-picker-count') ?? 0);
       sessionStorage.setItem('directory-picker-count', String(count + 1));
-      return (await navigator.storage.getDirectory()).getDirectoryHandle('test-data', { create: true });
+      return (await navigator.storage.getDirectory()).getDirectoryHandle(sessionStorage.getItem('directory-picker-target') ?? 'test-data', { create: true });
     };
     FileSystemDirectoryHandle.prototype.queryPermission = async () =>
       sessionStorage.getItem('directory-permission') ? 'prompt' : 'granted';
@@ -332,6 +332,56 @@ try {
     const filteredAnalysisCsv = await readFile(await (await filteredAnalysis).path(), 'utf8');
     assert.match(filteredAnalysisCsv, /second-resume\.example[\s\S]*HTTP 401/);
     assert.doesNotMatch(filteredAnalysisCsv, /first-resume\.example|offline\.example/);
+    async function pickDirectory(name, button) {
+      await page.evaluate(name => sessionStorage.setItem('directory-picker-target', name), name);
+      await page.getByRole('button', { name: button, exact: true }).click();
+    }
+    await pickDirectory('backup-data', '备份数据目录');
+    await page.getByText('备份完成：backup-data/URLPut-data-v1。').waitFor();
+    await pickDirectory('test-data', '备份数据目录');
+    await page.getByRole('alert').filter({ hasText: '目标已有 URLPut 数据' }).waitFor();
+    await page.evaluate(async () => {
+      const partial = await (await navigator.storage.getDirectory()).getDirectoryHandle('partial-data', { create: true });
+      const data = await partial.getDirectoryHandle('URLPut-data-v1', { create: true });
+      await data.getFileHandle('unfinished.json', { create: true });
+    });
+    await pickDirectory('partial-data', '重新选择数据目录');
+    await page.getByRole('alert').filter({ hasText: '可能是未完成的副本' }).waitFor();
+    await pickDirectory('backup-data', '选择备份来源');
+    await page.getByText('已选备份：backup-data。请选择恢复目标。').waitFor();
+    await pickDirectory('partial-data', '选择备份来源');
+    await page.getByRole('alert').filter({ hasText: '无法识别本机工作空间格式' }).waitFor();
+    assert.equal(await page.getByRole('button', { name: '选择恢复目标并恢复' }).count(), 0);
+    await pickDirectory('backup-data', '选择备份来源');
+    await page.getByText('已选备份：backup-data。请选择恢复目标。').waitFor();
+    await pickDirectory('restored-data', '选择恢复目标并恢复');
+    await page.getByText('已恢复并切换到：restored-data。').waitFor();
+    const snapshots = await page.evaluate(async () => {
+      const root = await navigator.storage.getDirectory();
+      return Promise.all(['test-data', 'backup-data', 'restored-data'].map(async name => {
+        const dir = await (await root.getDirectoryHandle(name)).getDirectoryHandle('URLPut-data-v1');
+        const files = {};
+        for await (const [file, handle] of dir.entries()) files[file] = await (await handle.getFile()).text();
+        return files;
+      }));
+    });
+    assert.ok(Object.keys(snapshots[0]).some(name => name.endsWith('.verified.json')));
+    assert.ok(Object.keys(snapshots[0]).some(name => name.startsWith('analysis-')));
+    assert.deepEqual(snapshots[1], snapshots[0]);
+    assert.deepEqual(snapshots[2], snapshots[0]);
+    await page.reload();
+    await page.getByLabel('导入批次').selectOption({ index: 2 });
+    await page.getByRole('cell', { name: '有效外链', exact: true }).waitFor();
+    await page.getByLabel('官网地址').fill('https://restored-only.example');
+    await page.getByRole('button', { name: '添加推广站点' }).click();
+    await page.getByRole('option', { name: 'restored-only.example' }).waitFor({ state: 'attached' });
+    assert.deepEqual(await page.evaluate(async () => {
+      const root = await navigator.storage.getDirectory();
+      return Promise.all(['test-data', 'backup-data', 'restored-data'].map(async name => {
+        const dir = await (await root.getDirectoryHandle(name)).getDirectoryHandle('URLPut-data-v1');
+        return (await (await dir.getFileHandle('workspace.json')).getFile()).text();
+      }));
+    }).then(files => files.map(content => content.includes('restored-only.example'))), [false, false, true]);
   }
   assert.deepEqual(apiCalls, []);
   await page.unroute('**/api/**', blockApi);
@@ -492,7 +542,7 @@ try {
   assert.equal(await migrated.locator('option').count(), 3);
   await migrated.selectOption({ index: 1 });
   await page.getByRole('cell', {name: 'https://example.net', exact: true}).waitFor();
-  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, serial URL checks, interruption recovery, directory reauthorization, linked moderation receipts, filtered backlink revisits, issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
+  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, serial URL checks, interruption recovery, directory reauthorization and backup/restore, linked moderation receipts, filtered backlink revisits, issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
 } finally {
   try {
     await context?.close();
