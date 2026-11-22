@@ -138,10 +138,13 @@ try {
     const probes = [];
     let resolved = false;
     let removed = false;
+    let hiddenComment = false;
     await context.route(/^https:\/\/(offline|ok-offline)\.example\//, async route => {
       if (route.request().method() === 'GET') {
         return route.fulfill({ status: removed ? 410 : 200, contentType: 'text/html', headers: { 'Access-Control-Allow-Origin': '*' },
-          body: '<title>Example directory</title><article><form action="/submit"><textarea name="comment" required></textarea></form></article><div class="comment"><a id="forum12"></a><a rel="nofollow" href="https://local.example/">Local</a></div>' });
+          body: '<title>Example directory</title><article><form action="/submit"><textarea name="comment" required></textarea></form></article>' +
+            (hiddenComment ? '<a href="https://local.example/">Unrelated link</a>'
+              : '<div class="comment"><a id="forum12"></a><a rel="nofollow" href="https://local.example/">Local</a></div>') });
       }
       assert.equal(route.request().method(), 'HEAD');
       probes.push({ url: route.request().url(), at: Date.now() });
@@ -184,6 +187,26 @@ try {
     const evidenceCsv = await readFile(await (await evidenceDownload).path(), 'utf8');
     assert.match(evidenceCsv, /forum12/);
     assert.match(evidenceCsv, /"nofollow","Local"/);
+    hiddenComment = true;
+    await page.getByRole('button', { name: '回访此条' }).click();
+    await page.getByText('已保存待核实结果及上次有效证据。').waitFor();
+    await page.reload();
+    await page.getByText('已核验外链台账（1）').click();
+    await page.getByLabel('核验结论').selectOption('valid');
+    assert.equal(await page.getByRole('button', { name: '导出已核验外链 CSV' }).count(), 0);
+    await page.getByLabel('核验结论').selectOption('pending');
+    const pendingDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: '导出已核验外链 CSV' }).click();
+    const pendingCsv = await readFile(await (await pendingDownload).path(), 'utf8');
+    assert.match(pendingCsv, /"待核实"/);
+    assert.match(pendingCsv, /"nofollow","Local"/);
+    assert.match(pendingCsv, /未能在唯一定位的公开记录中确认目标链接/);
+    hiddenComment = false;
+    await page.getByRole('button', { name: '回访此条' }).click();
+    await page.getByText('已核验并保存。', { exact: true }).waitFor();
+    await page.getByLabel('核验结论').selectOption('valid');
+    await page.getByRole('button', { name: '回访此条' }).waitFor();
+    await page.getByLabel('核验结论').selectOption('all');
     removed = true;
     await page.getByLabel('公开评论定位链接').fill('https://offline.example/#forum12');
     await page.getByRole('button', {name: '只读核验并保存'}).click();

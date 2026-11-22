@@ -2,6 +2,8 @@ import { Parser } from 'htmlparser2';
 
 export type Evidence = { page: string; target: string; rel: string; anchor: string; checkedAt: string };
 
+export class CommentLinkUnconfirmed extends Error {}
+
 type Scope = { fragment: boolean; link?: { rel: string; anchor: string } };
 type Frame = { scope?: Scope; owner: boolean; hidden: boolean; link?: Scope['link'] };
 
@@ -55,7 +57,7 @@ export async function findCommentLink(chunks: AsyncIterable<string>, page: URL, 
   });
   for await (const chunk of chunks) parser.write(chunk);
   parser.end();
-  if (matches !== 1 || !evidence) throw new Error('待核实：未能在唯一定位的公开记录中确认目标链接。');
+  if (matches !== 1 || !evidence) throw new CommentLinkUnconfirmed('未能在唯一定位的公开记录中确认目标链接。');
   return { page: page.href, target, ...evidence, checkedAt: new Date().toISOString() };
 }
 
