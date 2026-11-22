@@ -4,6 +4,8 @@ import { browser } from 'wxt/browser';
 import type { ImportBatch } from '@urlput/contracts';
 import type { LedgerRow } from '@urlput/import';
 
+import type { LinkRecord } from './comment-evidence';
+
 const apiUrl = (import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:4310').replace(/\/$/, '');
 const authUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const authKey = import.meta.env.VITE_SUPABASE_PUBLIC_KEY as string | undefined;
@@ -23,7 +25,7 @@ export function remoteAuth() {
 }
 
 export type ReviewReceipt = { evidence: string; submittedAt: string; recordedAt: string };
-export type BatchRow = LedgerRow & { review?: ReviewReceipt };
+export type BatchRow = LedgerRow & { review?: ReviewReceipt; verification?: LinkRecord };
 
 export type Batch = {
   id: string;

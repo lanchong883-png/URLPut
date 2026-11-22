@@ -8,7 +8,7 @@ import { remoteAuth, request, requestConfiguredAccess, type Batch, type BatchSum
 import { LinkCatalog } from './LinkCatalog';
 import { downloadLedger, reportCells, reportColumns, type ReportSite } from '../lib/report';
 
-import { addSite, directoryBinding, directoryPermission, localBatch, localHistory, prepareDirectory, recordPendingReview, registerMigratedSite, saveLocalBatch, workspaceFor } from '../lib/local-directory';
+import { addSite, directoryBinding, directoryPermission, localReportBatch, localHistory, prepareDirectory, recordPendingReview, registerMigratedSite, saveLocalBatch, workspaceFor } from '../lib/local-directory';
 
 const fields: Record<keyof ColumnMapping, string> = { url: '候选网址', entry: '投稿入口', name: '名称', notes: '备注' };
 const defaultMapping: ColumnMapping = { url: 0 };
@@ -307,7 +307,7 @@ function Workbench({ directory, migrationDirectory, withCatalog }: { directory?:
     setBusy(true);
     setError('');
     try {
-      setSaved(directory ? await localBatch(directory, siteId, id) : await request<Batch>(`${path}/${id}`));
+      setSaved(directory ? await localReportBatch(directory, siteId, id) : await request<Batch>(`${path}/${id}`));
       setPreview(undefined);
     } catch (error) { setError(message(error)); }
     finally { setBusy(false); }
@@ -418,7 +418,11 @@ function Workbench({ directory, migrationDirectory, withCatalog }: { directory?:
         <label>官网地址<input type="url" required value={homepage} onChange={event => setHomepage(event.target.value)} /></label>
         <button disabled={busy}>添加推广站点</button>
       </form>}
-      {directory && site && <VerifiedLinks key={site.id} dir={directory} site={site} />}
+      {directory && site && <VerifiedLinks key={site.id} dir={directory} site={site} batch={saved} onUpdate={async () => {
+        if (!saved) return;
+        const refreshed = await localReportBatch(directory, siteId, saved.id);
+        setSaved(current => current === saved ? refreshed : current);
+      }} />}
       {library === 'links' && workspaceId && <LinkCatalog key={workspaceId} workspaceId={workspaceId} />}
       <div hidden={library !== 'sites'}>
         <section className="card stack">
@@ -475,7 +479,7 @@ function Workbench({ directory, migrationDirectory, withCatalog }: { directory?:
                 try {
                   const batch = await recordPendingReview(directory, siteId, saved.id, Number(data.get('sequence')),
                     String(data.get('evidence')), String(data.get('submittedAt')));
-                  setSaved(batch);
+                  setSaved(await localReportBatch(directory, siteId, batch.id));
                   setError('');
                 } catch (err) { setError(message(err)); }
                 finally { setBusy(false); }

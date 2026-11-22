@@ -1,6 +1,7 @@
 import type { Workspace } from '@urlput/contracts';
 import { encodeCsv } from '@urlput/import';
 import type { Batch, BatchRow } from './api';
+import { conclusion, conclusionLabels } from './comment-evidence';
 
 export type ReportSite = Pick<Workspace['sites'][number], 'name' | 'homepage'>;
 
@@ -12,10 +13,16 @@ export const reportColumns = [
 ];
 
 export function reportCells(row: BatchRow, site: ReportSite) {
+  const verified = row.verification;
+  const outcome = verified ? conclusionLabels[conclusion(verified)] : row.review ? '待审核' : conclusions[row.disposition];
+  const evidence = verified ? `${verified.page} · ${verified.target} · ${verified.checkedAt} ${verified.pendingReason ?? ''}` : '';
+  const receipt = row.review
+    ? `平台回执：${row.review.evidence}（提交于 ${row.review.submittedAt}）` : '';
+  const details = verified ? [evidence, receipt].filter(Boolean).join(' · ')
+    : row.review ? `平台已接收，等待管理员审核。仅回访原记录。${receipt}` : row.reason;
   return [
     row.sequence, row.normalizedUrl ? new URL(row.normalizedUrl).hostname : '—', '未识别',
-    row.url, row.review ? '提交成功' : '未成功', row.review ? '待审核' : conclusions[row.disposition],
-    row.review ? `平台已接收，等待管理员审核。仅回访原记录。回执：${row.review.evidence}（提交于 ${row.review.submittedAt}）` : row.reason, site.name, site.homepage,
+    row.url, row.review ? '提交成功' : '未成功', outcome, details, site.name, site.homepage,
     row.sourceLine, row.entry, row.name, row.notes,
   ];
 }

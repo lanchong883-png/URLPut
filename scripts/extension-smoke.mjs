@@ -178,9 +178,19 @@ try {
     assert.match(analysisCsv, /https:\/\/offline.example\/submit/);
     await page.getByText('已核验外链台账（0）').click();
     await page.getByLabel('公开评论定位链接').fill('https://offline.example/#forum12');
+    await page.getByLabel('关联当前批次回执').selectOption('1');
     await page.getByRole('button', {name: '只读核验并保存'}).click();
     await page.getByText('已核验并保存。').waitFor();
+    await page.getByRole('cell', { name: '有效外链', exact: true }).waitFor();
     await page.reload();
+    await page.getByLabel('导入批次').selectOption({ index: 1 });
+    await page.getByRole('cell', { name: '有效外链', exact: true }).waitFor();
+    const linkedDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: '导出 CSV', exact: true }).click();
+    const linkedCsv = await readFile(await (await linkedDownload).path(), 'utf8');
+    assert.match(linkedCsv, /"提交成功","有效外链"/);
+    assert.match(linkedCsv, /Awaiting moderation #TEST-100/);
+    assert.match(linkedCsv, /#forum12/);
     await page.getByText('已核验外链台账（1）').click();
     const evidenceDownload = page.waitForEvent('download');
     await page.getByRole('button', { name: '导出已核验外链 CSV' }).click();
@@ -190,7 +200,10 @@ try {
     hiddenComment = true;
     await page.getByRole('button', { name: '回访此条' }).click();
     await page.getByText('已保存待核实结果及上次有效证据。').waitFor();
+    await page.getByRole('cell', { name: '待核实', exact: true }).waitFor();
     await page.reload();
+    await page.getByLabel('导入批次').selectOption({ index: 1 });
+    await page.getByRole('cell', { name: '待核实', exact: true }).waitFor();
     await page.getByText('已核验外链台账（1）').click();
     await page.getByLabel('核验结论').selectOption('valid');
     assert.equal(await page.getByRole('button', { name: '导出已核验外链 CSV' }).count(), 0);
@@ -410,7 +423,7 @@ try {
   assert.equal(await migrated.locator('option').count(), 3);
   await migrated.selectOption({ index: 1 });
   await page.getByRole('cell', {name: 'https://example.net', exact: true}).waitFor();
-  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, serial URL checks, interruption recovery, directory reauthorization, and issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
+  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, serial URL checks, interruption recovery, directory reauthorization, linked moderation receipts, issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
 } finally {
   try {
     await context?.close();

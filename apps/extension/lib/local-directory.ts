@@ -1,6 +1,7 @@
 import { importBatchSchema, workspaceSchema, type ImportBatch, type Workspace } from '@urlput/contracts';
 import { buildLedger, normalizeUrl } from '@urlput/import';
 import type { Batch, BatchSummary, ReviewReceipt } from './api';
+import type { LinkRecord } from './comment-evidence';
 
 type Directory = FileSystemDirectoryHandle;
 type DirectoryPermission = Directory & {
@@ -85,6 +86,26 @@ export async function localBatch(dir: Directory, site: string, id: string) {
   const receipts = await read<Record<string, ReviewReceipt>>(dir, site + '-' + id + '.reviews.json');
   if (receipts) {
     for (const row of batch.rows) row.review = receipts[row.sequence];
+  }
+  return batch;
+}
+
+export function verifiedLinks(dir: Directory, site: string) {
+  return read<LinkRecord[]>(dir, site + '.verified.json');
+}
+
+export async function localReportBatch(dir: Directory, site: string, id: string) {
+  const batch = await localBatch(dir, site, id);
+  if (!batch.rows.some(row => row.review)) return batch;
+  const links = await verifiedLinks(dir, site) ?? [];
+  const byRow = new Map<number, LinkRecord>();
+  for (const link of links) {
+    for (const receipt of link.receipts ?? []) {
+      if (receipt.batch === id && !byRow.has(receipt.sequence)) byRow.set(receipt.sequence, link);
+    }
+  }
+  for (const row of batch.rows) {
+    if (row.review) row.verification = byRow.get(row.sequence);
   }
   return batch;
 }

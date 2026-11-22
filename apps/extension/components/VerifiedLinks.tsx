@@ -2,21 +2,17 @@ import { useEffect, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { encodeCsv, normalizeUrl } from '@urlput/import';
 import { publicRequest, PublicHttpError } from '../lib/check-queue';
-import { CommentLinkUnconfirmed, findCommentLink, htmlChunks, type Evidence } from '../lib/comment-evidence';
-import { read, write } from '../lib/local-directory';
+import { CommentLinkUnconfirmed, findCommentLink, htmlChunks, conclusion, conclusionLabels as labels, type Conclusion, type LinkRecord } from '../lib/comment-evidence';
+import { localBatch, verifiedLinks, write } from '../lib/local-directory';
 import { downloadCsv, type ReportSite } from '../lib/report';
+import type { Batch } from '../lib/api';
 
-type LinkRecord = Evidence & { firstVerifiedAt?: string; lastValidAt?: string; missingStatus?: number; pendingReason?: string };
-type Conclusion = 'valid' | 'missing' | 'pending';
-
-function conclusion(item: LinkRecord): Conclusion {
-  if (item.missingStatus) return 'missing';
-  return item.pendingReason ? 'pending' : 'valid';
-}
-
-const labels = { valid: '有效外链', missing: '公开页失效', pending: '待核实' };
-
-export function VerifiedLinks({ dir, site }: { dir: FileSystemDirectoryHandle; site: ReportSite & { id: string } }) {
+export function VerifiedLinks({ dir, site, batch, onUpdate }: {
+  dir: FileSystemDirectoryHandle;
+  site: ReportSite & { id: string };
+  batch?: Batch;
+  onUpdate: () => Promise<void>;
+}) {
   const [items, setItems] = useState<LinkRecord[]>([]);
   const [status, setStatus] = useState('');
   const [filter, setFilter] = useState<Conclusion | 'all'>('all');
@@ -26,12 +22,12 @@ export function VerifiedLinks({ dir, site }: { dir: FileSystemDirectoryHandle; s
   const file = site.id + '.verified.json';
   useEffect(() => {
     let active = true;
-    void read<LinkRecord[]>(dir, file).then(rows => { if (active) setItems(rows ?? []); })
+    void verifiedLinks(dir, site.id).then(rows => { if (active) setItems(rows ?? []); })
       .catch(err => { if (active) setStatus(String(err)); });
     return () => { active = false; };
-  }, [dir, file]);
+  }, [dir, site.id]);
 
-  async function verify(pageUrl: string, targetUrl: string) {
+  async function verify(pageUrl: string, targetUrl: string, sequence?: number) {
     setBusy(true);
     setStatus('');
     try {
@@ -41,7 +37,17 @@ export function VerifiedLinks({ dir, site }: { dir: FileSystemDirectoryHandle; s
       if (!source || !page.hash || !normalizeUrl(target.href)) throw new Error('请填写公开评论定位链接和有效的预期目标网址。');
       if (!await browser.permissions.request({ origins: [`${page.protocol}//${page.hostname}/*`] })) throw new Error('需要读取该公开页面的授权。');
       const result = await navigator.locks.request('urlput-active-url', async () => {
-        const existing = await read<LinkRecord[]>(dir, file) ?? [];
+        const existing = await verifiedLinks(dir, site.id) ?? [];
+        const receipt = sequence === undefined || !batch ? undefined : { batch: batch.id, sequence };
+        if (receipt) {
+          const saved = await localBatch(dir, site.id, receipt.batch);
+          const row = saved.rows.find(item => item.sequence === receipt.sequence);
+          const rowHost = row?.normalizedUrl && new URL(row.normalizedUrl).hostname;
+          const entryHost = row?.normalizedEntry && new URL(row.normalizedEntry).hostname;
+          if (!row?.review || (page.hostname !== rowHost && page.hostname !== entryHost)) {
+            throw new Error('请提供与所选待审核记录同站点的公开评论链接。');
+          }
+        }
         const previous = existing.find(item => item.page === page.href && item.target === target.href);
         let result: LinkRecord;
         try {
@@ -59,12 +65,21 @@ export function VerifiedLinks({ dir, site }: { dir: FileSystemDirectoryHandle; s
             missingStatus, pendingReason,
           };
         }
-        const next = [result, ...existing.filter(item => item.page !== result.page || item.target !== result.target)];
+        result.receipts = previous?.receipts;
+        if (receipt && !result.receipts?.some(item => item.batch === receipt.batch && item.sequence === receipt.sequence)) {
+          result.receipts = [...result.receipts ?? [], receipt];
+        }
+        const next = [result, ...existing
+          .filter(item => item.page !== result.page || item.target !== result.target)
+          .map(item => receipt && item.receipts?.some(link => link.batch === receipt.batch && link.sequence === receipt.sequence)
+            ? { ...item, receipts: item.receipts.filter(link => link.batch !== receipt.batch || link.sequence !== receipt.sequence) }
+            : item)];
         await write(dir, file, next);
         setItems(next);
         setOffset(0);
         return result;
       });
+      await onUpdate();
       setStatus(result.pendingReason ? '已保存待核实结果及上次有效证据。' : '已核验并保存。');
     } catch (error) { setStatus(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
@@ -82,10 +97,16 @@ export function VerifiedLinks({ dir, site }: { dir: FileSystemDirectoryHandle; s
     <form className="stack" onSubmit={event => {
       event.preventDefault();
       const data = new FormData(event.currentTarget);
-      void verify(String(data.get('page')), String(data.get('target')));
+      const selected = data.get('review');
+      void verify(String(data.get('page')), String(data.get('target')), selected ? Number(selected) : undefined);
     }}>
       <label>公开评论定位链接<input type="url" required name="page" placeholder="https://example.org/article#comment123" /></label>
       <label>预期目标网址<input type="url" required name="target" defaultValue={site.homepage} /></label>
+      {batch?.rows.some(row => row.review) && <label>关联当前批次回执<select key={batch.id} name="review">
+        <option value="">独立核验</option>
+        {batch.rows.filter(row => row.review).map(row =>
+          <option key={row.sequence} value={row.sequence}>第 {row.sequence} 条 · {row.url}</option>)}
+      </select></label>}
       <button disabled={busy}>{busy ? '正在核验…' : '只读核验并保存'}</button>
     </form>
     {status && <p role="status">{status}</p>}

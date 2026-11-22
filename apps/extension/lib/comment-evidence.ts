@@ -2,6 +2,23 @@ import { Parser } from 'htmlparser2';
 
 export type Evidence = { page: string; target: string; rel: string; anchor: string; checkedAt: string };
 
+export type LinkRecord = Evidence & {
+  firstVerifiedAt?: string;
+  lastValidAt?: string;
+  missingStatus?: number;
+  pendingReason?: string;
+  receipts?: { batch: string; sequence: number }[];
+};
+
+export type Conclusion = 'valid' | 'missing' | 'pending';
+
+export function conclusion(item: LinkRecord): Conclusion {
+  if (item.missingStatus) return 'missing';
+  return item.pendingReason ? 'pending' : 'valid';
+}
+
+export const conclusionLabels = { valid: '有效外链', missing: '公开页失效', pending: '待核实' };
+
 export class CommentLinkUnconfirmed extends Error {}
 
 type Scope = { fragment: boolean; link?: { rel: string; anchor: string } };
