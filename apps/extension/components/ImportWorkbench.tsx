@@ -8,7 +8,7 @@ import { remoteAuth, request, requestConfiguredAccess, type Batch, type BatchSum
 import { LinkCatalog } from './LinkCatalog';
 import { downloadLedger, reportCells, reportColumns, type ReportSite } from '../lib/report';
 
-import { addSite, directoryBinding, localBatch, localHistory, prepareDirectory, recordPendingReview, registerMigratedSite, saveLocalBatch, workspaceFor } from '../lib/local-directory';
+import { addSite, directoryBinding, directoryPermission, localBatch, localHistory, prepareDirectory, recordPendingReview, registerMigratedSite, saveLocalBatch, workspaceFor } from '../lib/local-directory';
 
 const fields: Record<keyof ColumnMapping, string> = { url: '候选网址', entry: '投稿入口', name: '名称', notes: '备注' };
 const defaultMapping: ColumnMapping = { url: 0 };
@@ -78,18 +78,47 @@ function ResumeChecks({ dir }: { dir: FileSystemDirectoryHandle }) {
 
 export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean }) {
   const [legacy, setLegacy] = useState(() => sessionStorage.getItem('urlput-source') === 'legacy');
-  const [dir, setDir] = useState<FileSystemDirectoryHandle>();
+  const [binding, setBinding] = useState<FileSystemDirectoryHandle>();
+  const [authorized, setAuthorized] = useState(false);
+  const dir = authorized ? binding : undefined;
   const [label, setLabel] = useState('');
   const [error, setError] = useState('');
   const [choosing, setChoosing] = useState(false);
   const revision = useRef(0);
   const [generation, setGeneration] = useState(0);
+
   useEffect(() => {
     const version = revision.current;
-    void directoryBinding().then(value => {
-      if (value && version === revision.current) { setDir(value); setLabel(value.name); }
-    }).catch(err => setError(message(err)));
+    let active = true;
+    void directoryBinding().then(async value => {
+      if (!value || !active || version !== revision.current) return;
+      setBinding(value);
+      const granted = await directoryPermission(value) === 'granted';
+      const name = granted ? (await workspaceFor(value)).name : '';
+      if (active && version === revision.current) {
+        setAuthorized(granted);
+        setLabel(name);
+      }
+    }).catch(err => {
+      if (active && version === revision.current) setError(message(err));
+    });
+    return () => { active = false; };
   }, []);
+
+  async function authorize() {
+    if (!binding) return;
+    revision.current++;
+    setChoosing(true);
+    setError('');
+    try {
+      if (await directoryPermission(binding, true) !== 'granted') throw new Error('请允许读取和写入原数据目录。');
+      const workspace = await workspaceFor(binding);
+      setLabel(workspace.name);
+      setAuthorized(true);
+    } catch (err) { setError(message(err)); }
+    finally { setChoosing(false); }
+  }
+
   async function choose() {
     revision.current++;
     setChoosing(true);
@@ -100,7 +129,8 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
       const parent = await picker.showDirectoryPicker({ mode: 'readwrite' });
       const directory = await prepareDirectory(parent);
       await directoryBinding(directory);
-      setDir(directory);
+      setBinding(directory);
+      setAuthorized(true);
       setLabel(parent.name);
       setGeneration(value => value + 1);
     } catch (err) {
@@ -113,7 +143,8 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
         sessionStorage.setItem('urlput-source', event.target.value);
         setLegacy(event.target.value === 'legacy');
       }}><option value="local">本机目录</option><option value="legacy">旧版服务工作空间</option></select></label>
-      {!legacy && <button disabled={choosing} onClick={() => void choose()}>{dir ? '重新选择数据目录' : '选择数据目录'}</button>}
+      {!legacy && <button disabled={choosing} onClick={() => void choose()}>{binding ? '重新选择数据目录' : '选择数据目录'}</button>}
+      {!legacy && binding && !authorized && <button disabled={choosing} onClick={() => void authorize()}>重新授权原目录</button>}
       {!legacy && dir && <span>{label}</span>}
       {error && <p role="alert">{error}</p>}
     </section>

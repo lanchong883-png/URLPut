@@ -3,6 +3,15 @@ import { buildLedger, normalizeUrl } from '@urlput/import';
 import type { Batch, BatchSummary, ReviewReceipt } from './api';
 
 type Directory = FileSystemDirectoryHandle;
+type DirectoryPermission = Directory & {
+  queryPermission(options: { mode: 'readwrite' }): Promise<PermissionState>;
+  requestPermission(options: { mode: 'readwrite' }): Promise<PermissionState>;
+};
+
+export function directoryPermission(dir: Directory, request = false) {
+  const handle = dir as DirectoryPermission;
+  return request ? handle.requestPermission({ mode: 'readwrite' }) : handle.queryPermission({ mode: 'readwrite' });
+}
 const lock = 'urlput-directory-writes';
 
 export async function read<T>(dir: Directory, name: string): Promise<T | undefined> {
@@ -18,8 +27,13 @@ export async function read<T>(dir: Directory, name: string): Promise<T | undefin
 export async function write(dir: Directory, name: string, value: unknown) {
   const text = JSON.stringify(value);
   const stream = await (await dir.getFileHandle(name, { create: true })).createWritable();
-  await stream.write(text);
-  await stream.close();
+  try {
+    await stream.write(text);
+    await stream.close();
+  } catch (error) {
+    await stream.abort().catch(() => {});
+    throw error;
+  }
 }
 
 export async function workspaceFor(dir: Directory): Promise<Workspace> {

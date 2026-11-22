@@ -82,7 +82,18 @@ try {
   const page = await context.newPage();
   page.setDefaultTimeout(10000);
   await page.addInitScript(() => {
-    window.showDirectoryPicker = async () => (await navigator.storage.getDirectory()).getDirectoryHandle('test-data', { create: true });
+    window.showDirectoryPicker = async () => {
+      const count = Number(sessionStorage.getItem('directory-picker-count') ?? 0);
+      sessionStorage.setItem('directory-picker-count', String(count + 1));
+      return (await navigator.storage.getDirectory()).getDirectoryHandle('test-data', { create: true });
+    };
+    FileSystemDirectoryHandle.prototype.queryPermission = async () =>
+      sessionStorage.getItem('directory-permission') ? 'prompt' : 'granted';
+    FileSystemDirectoryHandle.prototype.requestPermission = async () => {
+      if (sessionStorage.getItem('directory-permission') === 'deny') return 'denied';
+      sessionStorage.removeItem('directory-permission');
+      return 'granted';
+    };
   });
   const apiCalls = [];
   const blockApi = route => { apiCalls.push(route.request().url()); return route.abort(); };
@@ -96,7 +107,16 @@ try {
   await page.getByRole('button', { name: '预览导入' }).click();
   await page.getByRole('button', { name: '确认并保存' }).click();
   await page.getByRole('button', { name: '导出 CSV' }).waitFor();
+  await page.evaluate(() => sessionStorage.setItem('directory-permission', 'deny'));
   await page.reload();
+  const reauthorize = page.getByRole('button', { name: '重新授权原目录' });
+  await reauthorize.click();
+  await page.getByRole('alert').filter({ hasText: '请允许读取和写入原数据目录。' }).waitFor();
+  assert.equal(await page.getByLabel('导入批次').count(), 0);
+  await page.evaluate(() => sessionStorage.setItem('directory-permission', 'prompt'));
+  await reauthorize.click();
+  await page.getByRole('option', { name: 'test-data', exact: true }).waitFor({ state: 'attached' });
+  assert.equal(await page.evaluate(() => sessionStorage.getItem('directory-picker-count')), '1');
   const history = page.getByLabel('导入批次');
   await history.selectOption({ index: 1 });
   await page.getByRole('cell', { name: 'https://offline.example', exact: true }).waitFor();
@@ -367,7 +387,7 @@ try {
   assert.equal(await migrated.locator('option').count(), 3);
   await migrated.selectOption({ index: 1 });
   await page.getByRole('cell', {name: 'https://example.net', exact: true}).waitFor();
-  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, serial URL checks, interruption recovery, and issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
+  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, serial URL checks, interruption recovery, directory reauthorization, and issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
 } finally {
   try {
     await context?.close();
