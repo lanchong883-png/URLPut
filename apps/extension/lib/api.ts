@@ -7,7 +7,10 @@ import type { LedgerRow } from '@urlput/import';
 const apiUrl = (import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:4310').replace(/\/$/, '');
 const authUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const authKey = import.meta.env.VITE_SUPABASE_PUBLIC_KEY as string | undefined;
-export const auth = authUrl && authKey ? createClient(authUrl, authKey, {
+let client: ReturnType<typeof createClient> | undefined;
+export function remoteAuth() {
+  if (!authUrl || !authKey) return undefined;
+  return client ??= createClient(authUrl, authKey, {
   auth: {
     detectSessionInUrl: false,
     storage: {
@@ -16,7 +19,8 @@ export const auth = authUrl && authKey ? createClient(authUrl, authKey, {
       async removeItem(key) { await browser.storage.local.remove(key); },
     },
   },
-}) : undefined;
+});
+}
 
 export type Batch = {
   id: string;
@@ -28,7 +32,7 @@ export type Batch = {
 export type BatchSummary = Omit<Batch, 'rows'> & { rowCount: number };
 
 async function sendRequest(path: string, body?: ImportBatch, signal?: AbortSignal) {
-  const { data } = (await auth?.auth.getSession()) ?? {};
+  const { data } = (await remoteAuth()?.auth.getSession()) ?? {};
   const headers = new Headers();
   if (body) headers.set('Content-Type', 'application/json');
   if (data?.session) headers.set('Authorization', `Bearer ${data.session.access_token}`);

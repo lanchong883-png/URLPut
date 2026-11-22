@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { importBatchSchema, MAX_IMPORT_BYTES, MAX_IMPORT_REQUEST_BYTES, type ImportBatch, type Workspace } from '@urlput/contracts';
 import { buildLedger, mapRows, readTable, readTextRows, type ColumnMapping, type Delimiter, type LedgerRow } from '@urlput/import';
-import { auth, request, requestConfiguredAccess, type Batch, type BatchSummary } from '../lib/api';
+import { remoteAuth, request, requestConfiguredAccess, type Batch, type BatchSummary } from '../lib/api';
 import { LinkCatalog } from './LinkCatalog';
 import { downloadLedger, reportCells, reportColumns, type ReportSite } from '../lib/report';
+
+import { addSite, directoryBinding, localBatch, localHistory, prepareDirectory, saveLocalBatch, workspaceFor } from '../lib/local-directory';
 
 const fields: Record<keyof ColumnMapping, string> = { url: '候选网址', entry: '投稿入口', name: '名称', notes: '备注' };
 const defaultMapping: ColumnMapping = { url: 0 };
@@ -40,6 +42,54 @@ function RowTable({ rows, site }: { rows: LedgerRow[]; site?: ReportSite }) {
 }
 
 export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean }) {
+  const [legacy, setLegacy] = useState(() => sessionStorage.getItem('urlput-source') === 'legacy');
+  const [dir, setDir] = useState<FileSystemDirectoryHandle>();
+  const [label, setLabel] = useState('');
+  const [error, setError] = useState('');
+  const [choosing, setChoosing] = useState(false);
+  const revision = useRef(0);
+  const [generation, setGeneration] = useState(0);
+  useEffect(() => {
+    const version = revision.current;
+    void directoryBinding().then(value => {
+      if (value && version === revision.current) { setDir(value); setLabel(value.name); }
+    }).catch(err => setError(message(err)));
+  }, []);
+  async function choose() {
+    revision.current++;
+    setChoosing(true);
+    setError('');
+    try {
+      const picker = window as Window & { showDirectoryPicker?(options: { mode: string }): Promise<FileSystemDirectoryHandle> };
+      if (!picker.showDirectoryPicker) throw new Error('请在支持目录选择的桌面 Chrome 工作台中打开。');
+      const parent = await picker.showDirectoryPicker({ mode: 'readwrite' });
+      const directory = await prepareDirectory(parent);
+      await directoryBinding(directory);
+      setDir(directory);
+      setLabel(parent.name);
+      setGeneration(value => value + 1);
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === 'AbortError')) setError(message(err));
+    } finally { setChoosing(false); }
+  }
+  return <>
+    <section className="card controls">
+      <label>数据来源<select value={legacy ? 'legacy' : 'local'} onChange={event => {
+        sessionStorage.setItem('urlput-source', event.target.value);
+        setLegacy(event.target.value === 'legacy');
+      }}><option value="local">本机目录</option><option value="legacy">旧版服务工作空间</option></select></label>
+      {!legacy && <button disabled={choosing} onClick={() => void choose()}>{dir ? '重新选择数据目录' : '选择数据目录'}</button>}
+      {!legacy && dir && <span>{label}</span>}
+      {error && <p role="alert">{error}</p>}
+    </section>
+    {(legacy || dir) && <Workbench key={legacy ? 'legacy' : generation}
+      directory={legacy ? undefined : dir} withCatalog={withCatalog && legacy} />}
+  </>;
+}
+
+function Workbench({ directory, withCatalog }: { directory?: FileSystemDirectoryHandle; withCatalog: boolean }) {
+  const auth = directory ? undefined : remoteAuth();
+  const [homepage, setHomepage] = useState('');
   const [library, setLibrary] = useState<'sites' | 'links'>('sites');
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspace] = useState('');
@@ -69,12 +119,12 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
 
   const loadWorkspaces = useCallback(async () => {
     try {
-      const data = await request<Workspace[]>('/workspaces');
+      const data = directory ? [await workspaceFor(directory)] : await request<Workspace[]>('/workspaces');
       setWorkspaces(data);
       setWorkspace(data[0]?.id ?? '');
       setSite(data[0]?.sites[0]?.id ?? '');
     } catch (error) { setError(message(error)); }
-  }, []);
+  }, [directory]);
 
   useEffect(() => {
     if (!auth) return;
@@ -89,10 +139,10 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
   useEffect(() => {
     if (!path) return;
     let active = true;
-    void request<BatchSummary[]>(path).then(items => { if (active) setHistory(items); })
+    void (directory ? localHistory(directory, siteId) : request<BatchSummary[]>(path)).then(items => { if (active) setHistory(items); })
       .catch(error => { if (active) setError(message(error)); });
     return () => { active = false; };
-  }, [path]);
+  }, [path, directory, siteId]);
 
   const parsed = useMemo(() => {
     try {
@@ -169,6 +219,13 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
     setError('');
     setBusy(true);
     try {
+      if (directory) {
+        const result = await saveLocalBatch(directory, siteId, preview);
+        setSaved(result.batch);
+        setHistory(result.history);
+        setPreview(undefined);
+        return;
+      }
       const batch = await request<Batch>(path, preview);
       setSaved(batch);
       setPreview(undefined);
@@ -183,7 +240,7 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
     setBusy(true);
     setError('');
     try {
-      setSaved(await request<Batch>(`${path}/${id}`));
+      setSaved(directory ? await localBatch(directory, siteId, id) : await request<Batch>(`${path}/${id}`));
       setPreview(undefined);
     } catch (error) { setError(message(error)); }
     finally { setBusy(false); }
@@ -245,6 +302,22 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
           resetSite(); setWorkspaces([]); setWorkspace(''); setSite(''); setCodeSent(false); setCode('');
         })}>退出登录</button>}
       </section>
+      {directory && workspace && <form className="card controls" onSubmit={async event => {
+        event.preventDefault();
+        setBusy(true);
+        try {
+          const result = await addSite(directory, homepage);
+          resetSite();
+          setWorkspaces([result.workspace]);
+          setSite(result.site.id);
+          if (result.site.id === siteId) setHistory(await localHistory(directory, siteId));
+          setHomepage('');
+        } catch (err) { setError(message(err)); }
+        finally { setBusy(false); }
+      }}>
+        <label>官网地址<input type="url" required value={homepage} onChange={event => setHomepage(event.target.value)} /></label>
+        <button disabled={busy}>添加推广站点</button>
+      </form>}
       {library === 'links' && workspaceId && <LinkCatalog key={workspaceId} workspaceId={workspaceId} />}
       <div hidden={library !== 'sites'}>
         <section className="card stack">

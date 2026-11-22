@@ -81,7 +81,31 @@ try {
   }
   const page = await context.newPage();
   page.setDefaultTimeout(10000);
+  await page.addInitScript(() => {
+    window.showDirectoryPicker = async () => (await navigator.storage.getDirectory()).getDirectoryHandle('test-data', { create: true });
+  });
+  const apiCalls = [];
+  const blockApi = route => { apiCalls.push(route.request().url()); return route.abort(); };
+  await page.route('**/api/**', blockApi);
   await page.goto(`${origin}/sidepanel.html`);
+  await page.getByRole('button', { name: '选择数据目录' }).click();
+  await page.getByLabel('官网地址').fill('https://local.example');
+  await page.getByRole('button', { name: '添加推广站点' }).click();
+  await page.getByRole('option', { name: 'local.example' }).waitFor({ state: 'attached' });
+  await page.getByLabel('或粘贴表格及网址').fill('https://offline.example');
+  await page.getByRole('button', { name: '预览导入' }).click();
+  await page.getByRole('button', { name: '确认并保存' }).click();
+  await page.getByRole('button', { name: '导出 CSV' }).waitFor();
+  await page.reload();
+  const history = page.getByLabel('导入批次');
+  await history.selectOption({ index: 1 });
+  await page.getByRole('cell', { name: 'https://offline.example', exact: true }).waitFor();
+  const offlineDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出 CSV' }).click();
+  assert.match(await readFile(await (await offlineDownload).path(), 'utf8'), /offline\.example/);
+  assert.deepEqual(apiCalls, []);
+  await page.unroute('**/api/**', blockApi);
+  await page.getByLabel('数据来源').selectOption('legacy');
   assert.equal(await page.getByRole('navigation', { name: '插件导航' }).getByRole('button').count(), 6);
   for (const width of [320, 392]) {
     await page.setViewportSize({ width, height: 760 });
@@ -196,6 +220,7 @@ try {
   const opened = context.waitForEvent('page');
   await page.getByRole('button', { name: '打开工作台' }).click();
   const workbench = await opened;
+  await workbench.getByLabel('数据来源').selectOption('legacy');
   await workbench.getByRole('heading', { name: '导入候选网址' }).waitFor();
   await workbench.close();
 
