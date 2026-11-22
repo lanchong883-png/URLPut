@@ -90,14 +90,28 @@ export async function localBatch(dir: Directory, site: string, id: string) {
   return batch;
 }
 
-export function verifiedLinks(dir: Directory, site: string) {
-  return read<LinkRecord[]>(dir, site + '.verified.json');
+export type RevisitQueue = {
+  id: string;
+  entries: Pick<LinkRecord, 'page' | 'target'>[];
+  next: number;
+  problems: number;
+};
+
+type VerificationLedger = { links: LinkRecord[]; revisit?: RevisitQueue };
+
+export async function verificationLedger(dir: Directory, site: string): Promise<VerificationLedger> {
+  const saved = await read<LinkRecord[] | VerificationLedger>(dir, site + '.verified.json');
+  return Array.isArray(saved) ? { links: saved } : saved ?? { links: [] };
+}
+
+export function saveVerificationLedger(dir: Directory, site: string, ledger: VerificationLedger) {
+  return write(dir, site + '.verified.json', ledger);
 }
 
 export async function localReportBatch(dir: Directory, site: string, id: string) {
   const batch = await localBatch(dir, site, id);
   if (!batch.rows.some(row => row.review)) return batch;
-  const links = await verifiedLinks(dir, site) ?? [];
+  const { links } = await verificationLedger(dir, site);
   const byRow = new Map<number, LinkRecord>();
   for (const link of links) {
     for (const receipt of link.receipts ?? []) {

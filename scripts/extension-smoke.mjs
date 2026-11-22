@@ -141,10 +141,21 @@ try {
     let hiddenComment = false;
     let failedRevisit = false;
     const revisitCalls = [];
+    let interruptRevisit;
+    let releaseRevisit;
+    const revisitInterrupted = new Promise(resolve => { interruptRevisit = resolve; });
+    const holdRevisit = new Promise(resolve => { releaseRevisit = resolve; });
+    let pauseSecondRevisit = false;
     await context.route(/^https:\/\/(offline|ok-offline)\.example\//, async route => {
       if (route.request().method() === 'GET') {
         const host = new URL(route.request().url()).hostname;
         revisitCalls.push(host);
+        if (pauseSecondRevisit && host === 'offline.example') {
+          pauseSecondRevisit = false;
+          interruptRevisit();
+          await holdRevisit;
+          return route.abort().catch(() => {});
+        }
         return route.fulfill({ status: failedRevisit && host === 'ok-offline.example' ? 503 : removed ? 410 : 200, contentType: 'text/html', headers: { 'Access-Control-Allow-Origin': '*' },
           body: '<title>Example directory</title><article><form action="/submit"><textarea name="comment" required></textarea></form></article>' +
             (hiddenComment ? '<a href="https://local.example/">Unrelated link</a>'
@@ -243,9 +254,23 @@ try {
     await page.getByText('已核验并保存。', { exact: true }).waitFor();
     failedRevisit = true;
     revisitCalls.length = 0;
-    await page.getByRole('button', { name: '回访筛选结果（2）' }).click();
+    const revisitPanel = await context.newPage();
+    await revisitPanel.goto(`${origin}/sidepanel.html`);
+    await revisitPanel.getByText('已核验外链台账（2）').click();
+    pauseSecondRevisit = true;
+    await revisitPanel.getByRole('button', { name: '回访筛选结果（2）' }).click();
+    await Promise.race([
+      revisitInterrupted,
+      revisitPanel.waitForEvent('close', { timeout: 10000 }),
+    ]);
+    await revisitPanel.close();
+    releaseRevisit();
+    await page.reload();
+    await page.getByLabel('导入批次').selectOption({ index: 1 });
+    await page.getByText('已核验外链台账（2）').click();
+    await page.getByRole('button', { name: '继续批量回访（已完成 1 / 2 条）' }).click();
     await page.getByText('已回访 2 条，1 条遇到访问问题。').waitFor();
-    assert.deepEqual(revisitCalls, ['ok-offline.example', 'offline.example']);
+    assert.deepEqual(revisitCalls, ['ok-offline.example', 'offline.example', 'offline.example']);
     await page.getByRole('cell', { name: '有效外链', exact: true }).waitFor();
     await page.reload();
     await page.getByText('已核验外链台账（2）').click();

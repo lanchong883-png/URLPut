@@ -3,7 +3,7 @@ import { browser } from 'wxt/browser';
 import { encodeCsv, normalizeUrl } from '@urlput/import';
 import { publicRequest, PublicHttpError } from '../lib/check-queue';
 import { CommentLinkUnconfirmed, findCommentLink, htmlChunks, conclusion, conclusionLabels as labels, type Conclusion, type LinkRecord } from '../lib/comment-evidence';
-import { localBatch, verifiedLinks, write } from '../lib/local-directory';
+import { localBatch, saveVerificationLedger, verificationLedger, type RevisitQueue } from '../lib/local-directory';
 import { downloadCsv, type ReportSite } from '../lib/report';
 import type { Batch } from '../lib/api';
 
@@ -33,17 +33,22 @@ export function VerifiedLinks({ dir, site, batch, onUpdate }: {
   const [offset, setOffset] = useState(0);
   const filtered = items.filter(item => filter === 'all' || filter === conclusion(item));
   const [busy, setBusy] = useState(false);
-  const file = site.id + '.verified.json';
+  const [revisit, setRevisit] = useState<RevisitQueue>();
   useEffect(() => {
     let active = true;
-    void verifiedLinks(dir, site.id).then(rows => { if (active) setItems(rows ?? []); })
+    void verificationLedger(dir, site.id).then(ledger => {
+      if (!active) return;
+      setItems(ledger.links);
+      setRevisit(ledger.revisit);
+    })
       .catch(err => { if (active) setStatus(String(err)); });
     return () => { active = false; };
   }, [dir, site.id]);
 
-  async function saveVerification(page: URL, target: URL, source: string, sequence?: number) {
+  async function saveVerification(page: URL, target: URL, source: string, sequence?: number, queue?: RevisitQueue) {
     return navigator.locks.request('urlput-active-url', async () => {
-      const existing = await verifiedLinks(dir, site.id) ?? [];
+      const ledger = await verificationLedger(dir, site.id);
+      const existing = ledger.links;
       const receipt = sequence === undefined || !batch ? undefined : { batch: batch.id, sequence };
       if (receipt) {
         const saved = await localBatch(dir, site.id, receipt.batch);
@@ -80,9 +85,16 @@ export function VerifiedLinks({ dir, site, batch, onUpdate }: {
         .map(item => receipt && !result.revisitError && item.receipts?.some(link => link.batch === receipt.batch && link.sequence === receipt.sequence)
           ? { ...item, receipts: item.receipts.filter(link => link.batch !== receipt.batch || link.sequence !== receipt.sequence) }
           : item)];
-      await write(dir, file, next);
+      ledger.links = next;
+      if (queue) {
+        const nextIndex = queue.next + 1;
+        const problems = queue.problems + Number(Boolean(result.revisitError));
+        ledger.revisit = nextIndex < queue.entries.length ? { ...queue, next: nextIndex, problems } : undefined;
+      }
+      await saveVerificationLedger(dir, site.id, ledger);
       setItems(next);
-      return result;
+      setRevisit(ledger.revisit);
+      return { result, revisit: ledger.revisit };
     });
   }
 
@@ -92,7 +104,7 @@ export function VerifiedLinks({ dir, site, batch, onUpdate }: {
     try {
       const { page, target, source, origin } = verificationInput(pageUrl, targetUrl);
       if (!await browser.permissions.request({ origins: [origin] })) throw new Error('需要读取该公开页面的授权。');
-      const result = await saveVerification(page, target, source, sequence);
+      const { result } = await saveVerification(page, target, source, sequence);
       setOffset(0);
       await onUpdate();
       if (result.revisitError) setStatus(`已保存本次回访问题：${result.revisitError.reason}`);
@@ -101,23 +113,41 @@ export function VerifiedLinks({ dir, site, batch, onUpdate }: {
     finally { setBusy(false); }
   }
 
-  async function revisitFiltered() {
+  async function revisitFiltered(resume?: RevisitQueue) {
     setBusy(true);
     setStatus('');
-    const total = filtered.length;
-    let problems = 0;
     try {
-      const inputs = filtered.map(item => verificationInput(item.page, item.target));
-      const origins = [...new Set(inputs.map(item => item.origin))];
-      if (!await browser.permissions.request({ origins })) throw new Error('需要读取筛选结果中的公开页面。');
-      for (const [index, input] of inputs.entries()) {
-        setStatus(`正在回访第 ${index + 1} / ${total} 条…`);
-        const result = await saveVerification(input.page, input.target, input.source);
-        if (result.revisitError) problems++;
-      }
-      setOffset(0);
-      await onUpdate();
-      setStatus(`已回访 ${total} 条，${problems} 条遇到访问问题。`);
+      const entries = resume?.entries ?? filtered.map(({ page, target }) => ({ page, target }));
+      const origins = [...new Set(entries.slice(resume?.next ?? 0).map(item => verificationInput(item.page, item.target).origin))];
+      if (!await browser.permissions.request({ origins })) throw new Error('需要读取待回访的公开页面。');
+      await navigator.locks.request('urlput-revisit-' + site.id, { ifAvailable: true }, async lock => {
+        if (!lock) throw new Error('此站点已有窗口正在批量回访。');
+        let queue = await navigator.locks.request('urlput-active-url', async () => {
+          const ledger = await verificationLedger(dir, site.id);
+          setItems(ledger.links);
+          setRevisit(ledger.revisit);
+          if (ledger.revisit?.id !== resume?.id) throw new Error('回访进度已更新，请按当前队列继续。');
+          if (ledger.revisit) return ledger.revisit;
+          const started = { id: crypto.randomUUID(), entries, next: 0, problems: 0 };
+          await saveVerificationLedger(dir, site.id, { ...ledger, revisit: started });
+          setRevisit(started);
+          return started;
+        });
+        const total = queue.entries.length;
+        let problems = queue.problems;
+        while (queue.next < total) {
+          const entry = queue.entries[queue.next];
+          setStatus(`正在回访第 ${queue.next + 1} / ${total} 条…`);
+          const { page, target, source } = verificationInput(entry.page, entry.target);
+          const saved = await saveVerification(page, target, source, undefined, queue);
+          problems += Number(Boolean(saved.result.revisitError));
+          if (!saved.revisit) break;
+          queue = saved.revisit;
+        }
+        setOffset(0);
+        await onUpdate();
+        setStatus(`已回访 ${total} 条，${problems} 条遇到访问问题。`);
+      });
     } catch (error) { setStatus(message(error)); }
     finally { setBusy(false); }
   }
@@ -150,9 +180,12 @@ export function VerifiedLinks({ dir, site, batch, onUpdate }: {
     {items.length > 0 && <label>核验结论<select value={filter} onChange={event => { setFilter(event.target.value as Conclusion | 'all'); setOffset(0); }}>
       <option value="all">全部</option><option value="valid">有效外链</option><option value="missing">公开页失效</option><option value="pending">待核实</option>
     </select></label>}
+    {revisit && <button disabled={busy} onClick={() => void revisitFiltered(revisit)}>
+      继续批量回访（已完成 {revisit.next} / {revisit.entries.length} 条）
+    </button>}
     {filtered.length > 0 && <div className="controls">
       <button onClick={exportLinks}>导出已核验外链 CSV</button>
-      <button disabled={busy} onClick={() => void revisitFiltered()}>回访筛选结果（{filtered.length}）</button>
+      <button disabled={busy || Boolean(revisit)} onClick={() => void revisitFiltered()}>回访筛选结果（{filtered.length}）</button>
     </div>}
     {filtered.slice(offset, offset + 20).map(item => <div key={JSON.stringify([item.page, item.target])}>
       <p>{labels[conclusion(item)]}{item.missingStatus ? `（HTTP ${item.missingStatus}）` : ''} · {item.page} → {item.target}
