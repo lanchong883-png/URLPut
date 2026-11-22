@@ -1,3 +1,4 @@
+import { VerifiedLinks } from './VerifiedLinks';
 import { BatchChecks } from './BatchChecks';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { importBatchSchema, MAX_IMPORT_BYTES, MAX_IMPORT_REQUEST_BYTES, type ImportBatch, type Workspace } from '@urlput/contracts';
@@ -319,6 +320,7 @@ function Workbench({ directory, withCatalog }: { directory?: FileSystemDirectory
         <label>官网地址<input type="url" required value={homepage} onChange={event => setHomepage(event.target.value)} /></label>
         <button disabled={busy}>添加推广站点</button>
       </form>}
+      {directory && site && <VerifiedLinks key={site.id} dir={directory} site={site} />}
       {library === 'links' && workspaceId && <LinkCatalog key={workspaceId} workspaceId={workspaceId} />}
       <div hidden={library !== 'sites'}>
         <section className="card stack">

@@ -1,14 +1,16 @@
+import { htmlChunks } from './comment-evidence';
+import { analyzeHtml, type Analysis } from './site-analysis';
 import { normalizeUrl } from '@urlput/import';
 import { localBatch, read, write } from './local-directory';
 
-type Job = { site: string; batch: string; retry?: number };
-export type Check = { attempt?: string; dismissed?: boolean; sequence: number; url: string; ok: boolean; message: string; at: string };
+type Job = { site: string; batch: string; retry?: number; analysis?: boolean };
+export type Check = { analysis?: Analysis; attempt?: string; dismissed?: boolean; sequence: number; url: string; ok: boolean; message: string; at: string };
 type Directory = FileSystemDirectoryHandle;
 type QueuedJob = Job & { attempt: string };
 const queueFile = 'url-check-queue.json';
 const segmentSize = 32;
-const segmentFile = (job: Job, page: number) => `checks-${job.site}-${job.batch}-${page}.json`;
-const sameJob = (a: Job, b: Job) => a.batch === b.batch && a.site === b.site && a.retry === b.retry;
+const segmentFile = (job: Job, page: number) => `${job.analysis ? 'analysis' : 'checks'}-${job.site}-${job.batch}-${page}.json`;
+const sameJob = (a: Job, b: Job) => a.batch === b.batch && a.site === b.site && a.retry === b.retry && Boolean(a.analysis) === Boolean(b.analysis);
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function changeQueue(dir: Directory, update: (jobs: QueuedJob[]) => QueuedJob[]) {
@@ -26,7 +28,7 @@ export async function checkPage(dir: Directory, job: Job, page: number) {
   return await read<Check[]>(dir, segmentFile(job, page)) ?? [];
 }
 
-async function inspect(url: string) {
+export async function publicRequest(url: string, method: 'HEAD' | 'GET') {
   if (normalizeUrl(url) !== url) throw new Error('地址无效，请修正来源网址。');
   const target = new URL(url);
   const cooldown = 'urlput-check-cooldown:' + target.origin;
@@ -35,7 +37,7 @@ async function inspect(url: string) {
   await delay(Math.max(0, Number(localStorage.getItem('urlput-last-check')) + 2000 - Date.now()));
   localStorage.setItem('urlput-last-check', String(Date.now()));
   const response = await fetch(url, {
-    method: 'HEAD', credentials: 'omit', redirect: 'manual', cache: 'no-store',
+    method, credentials: 'omit', redirect: 'manual', cache: 'no-store',
     referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(15000),
   });
   if (response.type === 'opaqueredirect') throw new Error('入口发生跳转，请核对最终网址。');
@@ -46,7 +48,7 @@ async function inspect(url: string) {
     throw new Error('HTTP 429，等待站点解除限流后恢复。');
   }
   if (!response.ok) throw new Error(`HTTP ${response.status}，请核对访问权限和入口地址。`);
-  return `HTTP ${response.status}，入口可访问。`;
+  return response;
 }
 
 export async function runQueue(dir: Directory, changed: () => void) {
@@ -66,16 +68,19 @@ export async function runQueue(dir: Directory, changed: () => void) {
           if (index >= 0 && (job.retry === undefined || results[index].ok || results[index].dismissed || results[index].attempt === job.attempt)) continue;
           const url = row.normalizedUrl;
           let ok = false;
+          let analysis: Analysis | undefined;
           let message: string;
           try {
-            message = await inspect(url);
+            const response = await publicRequest(url, job.analysis ? 'GET' : 'HEAD');
+            if (job.analysis) analysis = await analyzeHtml(htmlChunks(response), url);
+            message = `HTTP ${response.status}，入口可访问。`;
             ok = true;
           } catch (error) {
             if (error instanceof DOMException && error.name === 'TimeoutError') message = '检查超时，请核对网址或网络后恢复。';
             else if (error instanceof TypeError) message = '无法连接，请核对网址、网络和访问授权后恢复。';
             else message = error instanceof Error ? error.message : '请求失败，请检查网络后恢复。';
           }
-          const result = { attempt: job.attempt, sequence: row.sequence, url, ok, message, at: new Date().toISOString() };
+          const result = { analysis, attempt: job.attempt, sequence: row.sequence, url, ok, message, at: new Date().toISOString() };
           if (index < 0) results.push(result);
           else results[index] = result;
           await write(dir, segmentFile(job, page), results);
@@ -112,7 +117,7 @@ export function dismissCheck(dir: Directory, job: Job, sequence: number, rowCoun
   });
 }
 
-const summaryFile = (job: Job) => `checks-${job.site}-${job.batch}-summary.json`;
+const summaryFile = (job: Job) => `${job.analysis ? 'analysis' : 'checks'}-${job.site}-${job.batch}-summary.json`;
 export function checkSummary(dir: Directory, job: Job) {
   return read<{ issues: number; problemPages: number[] }>(dir, summaryFile(job));
 }

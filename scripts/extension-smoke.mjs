@@ -118,6 +118,10 @@ try {
     const probes = [];
     let resolved = false;
     await context.route(/^https:\/\/(offline|ok-offline)\.example\//, async route => {
+      if (route.request().method() === 'GET') {
+        return route.fulfill({ contentType: 'text/html', headers: { 'Access-Control-Allow-Origin': '*' },
+          body: '<title>Example directory</title><article><form action="/submit"><textarea name="comment" required></textarea></form></article><div class="comment"><a id="forum12"></a><a rel="nofollow" href="https://local.example/">Local</a></div>' });
+      }
       assert.equal(route.request().method(), 'HEAD');
       probes.push({ url: route.request().url(), at: Date.now() });
       await route.fulfill({ status: probes.length === 1 && !resolved ? 503 : 200, headers: { 'Access-Control-Allow-Origin': '*' } });
@@ -140,6 +144,25 @@ try {
     await page.getByLabel('只看待处理项（0）').waitFor();
     assert.equal(probes.length, 3);
     assert.equal(probes[2].url, probes[0].url);
+    await page.getByLabel('只读任务').selectOption('analysis');
+    await page.getByRole('button', { name: '加入只读检查队列' }).click();
+    await page.getByText(/本轮结束。/).waitFor();
+    const analysisDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: '导出已完成网站分析 CSV' }).click();
+    const analysisCsv = await readFile(await (await analysisDownload).path(), 'utf8');
+    assert.match(analysisCsv, /Example directory/);
+    assert.match(analysisCsv, /https:\/\/offline.example\/submit/);
+    await page.getByText('已核验外链台账（0）').click();
+    await page.getByLabel('公开评论定位链接').fill('https://offline.example/#forum12');
+    await page.getByRole('button', {name: '只读核验并保存'}).click();
+    await page.getByText('已核验并保存。').waitFor();
+    await page.reload();
+    await page.getByText('已核验外链台账（1）').click();
+    const evidenceDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: '导出已核验外链 CSV' }).click();
+    const evidenceCsv = await readFile(await (await evidenceDownload).path(), 'utf8');
+    assert.match(evidenceCsv, /forum12/);
+    assert.match(evidenceCsv, /"nofollow","Local"/);
   }
   assert.deepEqual(apiCalls, []);
   await page.unroute('**/api/**', blockApi);
