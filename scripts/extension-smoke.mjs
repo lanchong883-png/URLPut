@@ -139,9 +139,13 @@ try {
     let resolved = false;
     let removed = false;
     let hiddenComment = false;
+    let failedRevisit = false;
+    const revisitCalls = [];
     await context.route(/^https:\/\/(offline|ok-offline)\.example\//, async route => {
       if (route.request().method() === 'GET') {
-        return route.fulfill({ status: removed ? 410 : 200, contentType: 'text/html', headers: { 'Access-Control-Allow-Origin': '*' },
+        const host = new URL(route.request().url()).hostname;
+        revisitCalls.push(host);
+        return route.fulfill({ status: failedRevisit && host === 'ok-offline.example' ? 503 : removed ? 410 : 200, contentType: 'text/html', headers: { 'Access-Control-Allow-Origin': '*' },
           body: '<title>Example directory</title><article><form action="/submit"><textarea name="comment" required></textarea></form></article>' +
             (hiddenComment ? '<a href="https://local.example/">Unrelated link</a>'
               : '<div class="comment"><a id="forum12"></a><a rel="nofollow" href="https://local.example/">Local</a></div>') });
@@ -230,6 +234,25 @@ try {
     const removedDownload = page.waitForEvent('download');
     await page.getByRole('button', { name: '导出已核验外链 CSV' }).click();
     assert.match(await readFile(await (await removedDownload).path(), 'utf8'), /"公开页失效"/);
+    removed = false;
+    await page.getByLabel('核验结论').selectOption('all');
+    await page.getByLabel('公开评论定位链接').fill('https://ok-offline.example/#forum12');
+    await page.getByLabel('关联当前批次回执').selectOption('');
+    await page.getByRole('button', { name: '只读核验并保存' }).click();
+    await page.getByText('已核验外链台账（2）').waitFor();
+    await page.getByText('已核验并保存。', { exact: true }).waitFor();
+    failedRevisit = true;
+    revisitCalls.length = 0;
+    await page.getByRole('button', { name: '回访筛选结果（2）' }).click();
+    await page.getByText('已回访 2 条，1 条遇到访问问题。').waitFor();
+    assert.deepEqual(revisitCalls, ['ok-offline.example', 'offline.example']);
+    await page.getByRole('cell', { name: '有效外链', exact: true }).waitFor();
+    await page.reload();
+    await page.getByText('已核验外链台账（2）').click();
+    await page.getByText(/最近访问问题 · HTTP 503/).waitFor();
+    const revisitDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: '导出已核验外链 CSV' }).click();
+    assert.match(await readFile(await (await revisitDownload).path(), 'utf8'), /访问问题原因[\s\S]*HTTP 503/);
     const interrupted = await context.newPage();
     interrupted.setDefaultTimeout(10000);
     await interrupted.goto(`${origin}/sidepanel.html`);
@@ -423,7 +446,7 @@ try {
   assert.equal(await migrated.locator('option').count(), 3);
   await migrated.selectOption({ index: 1 });
   await page.getByRole('cell', {name: 'https://example.net', exact: true}).waitFor();
-  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, serial URL checks, interruption recovery, directory reauthorization, linked moderation receipts, issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
+  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, serial URL checks, interruption recovery, directory reauthorization, linked moderation receipts, filtered backlink revisits, issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
 } finally {
   try {
     await context?.close();

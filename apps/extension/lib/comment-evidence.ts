@@ -7,6 +7,7 @@ export type LinkRecord = Evidence & {
   lastValidAt?: string;
   missingStatus?: number;
   pendingReason?: string;
+  revisitError?: { at: string; reason: string };
   receipts?: { batch: string; sequence: number }[];
 };
 

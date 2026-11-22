@@ -7,6 +7,20 @@ import { localBatch, verifiedLinks, write } from '../lib/local-directory';
 import { downloadCsv, type ReportSite } from '../lib/report';
 import type { Batch } from '../lib/api';
 
+function message(error: unknown) {
+  if (error instanceof DOMException && error.name === 'TimeoutError') return '回访超时。';
+  if (error instanceof TypeError) return '无法连接，请核对网址、网络和访问授权。';
+  return error instanceof Error ? error.message : String(error);
+}
+
+function verificationInput(pageUrl: string, targetUrl: string) {
+  const page = new URL(pageUrl);
+  const target = new URL(targetUrl);
+  const source = normalizeUrl(page.href);
+  if (!source || !page.hash || !normalizeUrl(target.href)) throw new Error('请填写公开评论定位链接和有效的预期目标网址。');
+  return { page, target, source, origin: `${page.protocol}//${page.hostname}/*` };
+}
+
 export function VerifiedLinks({ dir, site, batch, onUpdate }: {
   dir: FileSystemDirectoryHandle;
   site: ReportSite & { id: string };
@@ -27,68 +41,91 @@ export function VerifiedLinks({ dir, site, batch, onUpdate }: {
     return () => { active = false; };
   }, [dir, site.id]);
 
+  async function saveVerification(page: URL, target: URL, source: string, sequence?: number) {
+    return navigator.locks.request('urlput-active-url', async () => {
+      const existing = await verifiedLinks(dir, site.id) ?? [];
+      const receipt = sequence === undefined || !batch ? undefined : { batch: batch.id, sequence };
+      if (receipt) {
+        const saved = await localBatch(dir, site.id, receipt.batch);
+        const row = saved.rows.find(item => item.sequence === receipt.sequence);
+        const rowHost = row?.normalizedUrl && new URL(row.normalizedUrl).hostname;
+        const entryHost = row?.normalizedEntry && new URL(row.normalizedEntry).hostname;
+        if (!row?.review || (page.hostname !== rowHost && page.hostname !== entryHost)) {
+          throw new Error('请提供与所选待审核记录同站点的公开评论链接。');
+        }
+      }
+      const previous = existing.find(item => item.page === page.href && item.target === target.href);
+      let result: LinkRecord;
+      try {
+        const response = await publicRequest(source, 'GET');
+        result = await findCommentLink(htmlChunks(response), page, target.href);
+        result.firstVerifiedAt = previous?.firstVerifiedAt ?? previous?.checkedAt ?? result.checkedAt;
+        result.lastValidAt = result.checkedAt;
+      } catch (error) {
+        if (!previous) throw error;
+        const missingStatus = error instanceof PublicHttpError && [404, 410].includes(error.status) ? error.status : undefined;
+        const pendingReason = error instanceof CommentLinkUnconfirmed ? error.message : undefined;
+        result = missingStatus || pendingReason
+          ? { ...previous, firstVerifiedAt: previous.firstVerifiedAt ?? previous.checkedAt,
+            lastValidAt: previous.lastValidAt ?? previous.checkedAt, checkedAt: new Date().toISOString(),
+            missingStatus, pendingReason, revisitError: undefined }
+          : { ...previous, revisitError: { at: new Date().toISOString(), reason: message(error) } };
+      }
+      result.receipts = previous?.receipts;
+      if (receipt && !result.revisitError && !result.receipts?.some(item => item.batch === receipt.batch && item.sequence === receipt.sequence)) {
+        result.receipts = [...result.receipts ?? [], receipt];
+      }
+      const next = [result, ...existing
+        .filter(item => item.page !== result.page || item.target !== result.target)
+        .map(item => receipt && !result.revisitError && item.receipts?.some(link => link.batch === receipt.batch && link.sequence === receipt.sequence)
+          ? { ...item, receipts: item.receipts.filter(link => link.batch !== receipt.batch || link.sequence !== receipt.sequence) }
+          : item)];
+      await write(dir, file, next);
+      setItems(next);
+      return result;
+    });
+  }
+
   async function verify(pageUrl: string, targetUrl: string, sequence?: number) {
     setBusy(true);
     setStatus('');
     try {
-      const page = new URL(pageUrl);
-      const target = new URL(targetUrl);
-      const source = normalizeUrl(page.href);
-      if (!source || !page.hash || !normalizeUrl(target.href)) throw new Error('请填写公开评论定位链接和有效的预期目标网址。');
-      if (!await browser.permissions.request({ origins: [`${page.protocol}//${page.hostname}/*`] })) throw new Error('需要读取该公开页面的授权。');
-      const result = await navigator.locks.request('urlput-active-url', async () => {
-        const existing = await verifiedLinks(dir, site.id) ?? [];
-        const receipt = sequence === undefined || !batch ? undefined : { batch: batch.id, sequence };
-        if (receipt) {
-          const saved = await localBatch(dir, site.id, receipt.batch);
-          const row = saved.rows.find(item => item.sequence === receipt.sequence);
-          const rowHost = row?.normalizedUrl && new URL(row.normalizedUrl).hostname;
-          const entryHost = row?.normalizedEntry && new URL(row.normalizedEntry).hostname;
-          if (!row?.review || (page.hostname !== rowHost && page.hostname !== entryHost)) {
-            throw new Error('请提供与所选待审核记录同站点的公开评论链接。');
-          }
-        }
-        const previous = existing.find(item => item.page === page.href && item.target === target.href);
-        let result: LinkRecord;
-        try {
-          const response = await publicRequest(source, 'GET');
-          result = await findCommentLink(htmlChunks(response), page, target.href);
-          result.firstVerifiedAt = previous?.firstVerifiedAt ?? previous?.checkedAt ?? result.checkedAt;
-          result.lastValidAt = result.checkedAt;
-        } catch (error) {
-          const missingStatus = error instanceof PublicHttpError && [404, 410].includes(error.status) ? error.status : undefined;
-          const pendingReason = error instanceof CommentLinkUnconfirmed ? error.message : undefined;
-          if (!previous || (!missingStatus && !pendingReason)) throw error;
-          result = {
-            ...previous, firstVerifiedAt: previous.firstVerifiedAt ?? previous.checkedAt,
-            lastValidAt: previous.lastValidAt ?? previous.checkedAt, checkedAt: new Date().toISOString(),
-            missingStatus, pendingReason,
-          };
-        }
-        result.receipts = previous?.receipts;
-        if (receipt && !result.receipts?.some(item => item.batch === receipt.batch && item.sequence === receipt.sequence)) {
-          result.receipts = [...result.receipts ?? [], receipt];
-        }
-        const next = [result, ...existing
-          .filter(item => item.page !== result.page || item.target !== result.target)
-          .map(item => receipt && item.receipts?.some(link => link.batch === receipt.batch && link.sequence === receipt.sequence)
-            ? { ...item, receipts: item.receipts.filter(link => link.batch !== receipt.batch || link.sequence !== receipt.sequence) }
-            : item)];
-        await write(dir, file, next);
-        setItems(next);
-        setOffset(0);
-        return result;
-      });
+      const { page, target, source, origin } = verificationInput(pageUrl, targetUrl);
+      if (!await browser.permissions.request({ origins: [origin] })) throw new Error('需要读取该公开页面的授权。');
+      const result = await saveVerification(page, target, source, sequence);
+      setOffset(0);
       await onUpdate();
-      setStatus(result.pendingReason ? '已保存待核实结果及上次有效证据。' : '已核验并保存。');
-    } catch (error) { setStatus(error instanceof Error ? error.message : String(error)); }
+      if (result.revisitError) setStatus(`已保存本次回访问题：${result.revisitError.reason}`);
+      else setStatus(result.pendingReason ? '已保存待核实结果及上次有效证据。' : '已核验并保存。');
+    } catch (error) { setStatus(message(error)); }
+    finally { setBusy(false); }
+  }
+
+  async function revisitFiltered() {
+    setBusy(true);
+    setStatus('');
+    const total = filtered.length;
+    let problems = 0;
+    try {
+      const inputs = filtered.map(item => verificationInput(item.page, item.target));
+      const origins = [...new Set(inputs.map(item => item.origin))];
+      if (!await browser.permissions.request({ origins })) throw new Error('需要读取筛选结果中的公开页面。');
+      for (const [index, input] of inputs.entries()) {
+        setStatus(`正在回访第 ${index + 1} / ${total} 条…`);
+        const result = await saveVerification(input.page, input.target, input.source);
+        if (result.revisitError) problems++;
+      }
+      setOffset(0);
+      await onUpdate();
+      setStatus(`已回访 ${total} 条，${problems} 条遇到访问问题。`);
+    } catch (error) { setStatus(message(error)); }
     finally { setBusy(false); }
   }
 
   function exportLinks() {
-    const csv = encodeCsv(['推广站点', '公开记录', '实际目标', '链接属性', '锚文本', '核验时间', '结论', '首次核验时间', '最近有效时间', '回访 HTTP 状态', '待核实原因'],
+    const csv = encodeCsv(['推广站点', '公开记录', '实际目标', '链接属性', '锚文本', '核验时间', '结论', '首次核验时间', '最近有效时间', '回访 HTTP 状态', '待核实原因', '访问问题时间', '访问问题原因'],
       filtered.map(item => [site.name, item.page, item.target, item.rel, item.anchor, item.checkedAt, labels[conclusion(item)],
-        item.firstVerifiedAt ?? item.checkedAt, item.lastValidAt ?? item.checkedAt, item.missingStatus ?? '', item.pendingReason ?? '']));
+        item.firstVerifiedAt ?? item.checkedAt, item.lastValidAt ?? item.checkedAt, item.missingStatus ?? '', item.pendingReason ?? '', item.revisitError?.at ?? '', item.revisitError?.reason ?? '']));
     downloadCsv(new Blob([csv], { type: 'text/csv;charset=utf-8' }), 'URLPut-已核验外链.csv');
   }
 
@@ -113,11 +150,15 @@ export function VerifiedLinks({ dir, site, batch, onUpdate }: {
     {items.length > 0 && <label>核验结论<select value={filter} onChange={event => { setFilter(event.target.value as Conclusion | 'all'); setOffset(0); }}>
       <option value="all">全部</option><option value="valid">有效外链</option><option value="missing">公开页失效</option><option value="pending">待核实</option>
     </select></label>}
-    {filtered.length > 0 && <button onClick={exportLinks}>导出已核验外链 CSV</button>}
+    {filtered.length > 0 && <div className="controls">
+      <button onClick={exportLinks}>导出已核验外链 CSV</button>
+      <button disabled={busy} onClick={() => void revisitFiltered()}>回访筛选结果（{filtered.length}）</button>
+    </div>}
     {filtered.slice(offset, offset + 20).map(item => <div key={JSON.stringify([item.page, item.target])}>
       <p>{labels[conclusion(item)]}{item.missingStatus ? `（HTTP ${item.missingStatus}）` : ''} · {item.page} → {item.target}
         {' · '}{item.rel || '无 rel 属性'} · {item.checkedAt}</p>
       {item.pendingReason && <p>{item.pendingReason} 最近确认有效于 {item.lastValidAt}。</p>}
+      {item.revisitError && <p>最近访问问题 · {item.revisitError.reason} · {item.revisitError.at}</p>}
       <button type="button" disabled={busy} onClick={() => void verify(item.page, item.target)}>回访此条</button>
     </div>)}
     {filtered.length > 20 && <div className="controls">
