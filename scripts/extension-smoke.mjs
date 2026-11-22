@@ -43,58 +43,70 @@ try {
   await api.listen({ port: 4310, host: '127.0.0.1' });
 
   const extension = resolve('apps/extension/.output/chrome-mv3');
-  context = await chromium.launchPersistentContext(userData, {
-    channel: 'chromium',
-    ignoreDefaultArgs: ['--disable-extensions'],
-    executablePath: process.env.CHROMIUM_PATH,
-    args: webSmoke ? [] : [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
-  });
-  let origin;
-  if (webSmoke) {
-    origin = 'http://127.0.0.1:4310';
-    await context.route(/^http:\/\/127\.0\.0\.1:4310\/(?:sidepanel\.html|import\.html|(?:chunks|assets)\/[\w.-]+)$/, async route => {
-      const pathname = new URL(route.request().url()).pathname;
-      const contentType = pathname.endsWith('.css') ? 'text/css' :
-        pathname.endsWith('.js') ? 'application/javascript' : 'text/html; charset=utf-8';
-      await route.fulfill({ contentType, body: await readFile(join(extension, pathname)) });
+  async function launchWorkbench() {
+    context = await chromium.launchPersistentContext(userData, {
+      channel: 'chromium',
+      ignoreDefaultArgs: ['--disable-extensions'],
+      executablePath: process.env.CHROMIUM_PATH,
+      args: webSmoke ? [] : [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
     });
-    await context.addInitScript(() => {
-      const storage = destination => ({
-        async get(keys) {
-          return Object.fromEntries([keys].flat().map(key => [key, JSON.parse(destination.getItem(key))]));
-        },
-        async set(items) {
-          for (const [key, value] of Object.entries(items)) destination.setItem(key, JSON.stringify(value));
-        },
-        async remove(key) { destination.removeItem(key); },
+    let origin;
+    if (webSmoke) {
+      origin = 'http://127.0.0.1:4310';
+      await context.route(/^http:\/\/127\.0\.0\.1:4310\/(?:sidepanel\.html|import\.html|(?:chunks|assets)\/[\w.-]+)$/, async route => {
+        const pathname = new URL(route.request().url()).pathname;
+        const contentType = pathname.endsWith('.css') ? 'text/css' :
+          pathname.endsWith('.js') ? 'application/javascript' : 'text/html; charset=utf-8';
+        await route.fulfill({ contentType, body: await readFile(join(extension, pathname)) });
       });
-      globalThis.browser = {
-        runtime: { id: 'urlput-web-smoke' },
-        storage: { local: storage(localStorage), session: storage(sessionStorage) },
-        permissions: { async request() { return true; } },
-        tabs: { async create({ url }) { window.open(url); } },
-      };
-    });
-  } else {
-    const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker', { timeout: 15_000 });
-    origin = `chrome-extension://${new URL(worker.url()).host}`;
+      await context.addInitScript(() => {
+        const storage = destination => ({
+          async get(keys) {
+            return Object.fromEntries([keys].flat().map(key => [key, JSON.parse(destination.getItem(key))]));
+          },
+          async set(items) {
+            for (const [key, value] of Object.entries(items)) destination.setItem(key, JSON.stringify(value));
+          },
+          async remove(key) { destination.removeItem(key); },
+        });
+        globalThis.browser = {
+          runtime: { id: 'urlput-web-smoke' },
+          storage: { local: storage(localStorage), session: storage(sessionStorage) },
+          permissions: { async request() { return true; } },
+          tabs: { async create({ url }) { window.open(url); } },
+        };
+      });
+    } else {
+      const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker', { timeout: 15_000 });
+      origin = `chrome-extension://${new URL(worker.url()).host}`;
+    }
+    return origin;
   }
-  const page = await context.newPage();
-  page.setDefaultTimeout(10000);
-  await page.addInitScript(() => {
-    window.showDirectoryPicker = async () => {
-      const count = Number(sessionStorage.getItem('directory-picker-count') ?? 0);
-      sessionStorage.setItem('directory-picker-count', String(count + 1));
-      return (await navigator.storage.getDirectory()).getDirectoryHandle(sessionStorage.getItem('directory-picker-target') ?? 'test-data', { create: true });
-    };
-    FileSystemDirectoryHandle.prototype.queryPermission = async () =>
-      sessionStorage.getItem('directory-permission') ? 'prompt' : 'granted';
-    FileSystemDirectoryHandle.prototype.requestPermission = async () => {
-      if (sessionStorage.getItem('directory-permission') === 'deny') return 'denied';
-      sessionStorage.removeItem('directory-permission');
-      return 'granted';
-    };
-  });
+  async function createWorkbenchPage(prompt = false) {
+    const page = await context.newPage();
+    page.setDefaultTimeout(10000);
+    await page.addInitScript(prompt => {
+      if (prompt && !sessionStorage.getItem('restart-permission-initialized')) {
+        sessionStorage.setItem('restart-permission-initialized', '1');
+        sessionStorage.setItem('directory-permission', 'prompt');
+      }
+      window.showDirectoryPicker = async () => {
+        const count = Number(sessionStorage.getItem('directory-picker-count') ?? 0);
+        sessionStorage.setItem('directory-picker-count', String(count + 1));
+        return (await navigator.storage.getDirectory()).getDirectoryHandle(sessionStorage.getItem('directory-picker-target') ?? 'test-data', { create: true });
+      };
+      FileSystemDirectoryHandle.prototype.queryPermission = async () =>
+        sessionStorage.getItem('directory-permission') ? 'prompt' : 'granted';
+      FileSystemDirectoryHandle.prototype.requestPermission = async () => {
+        if (sessionStorage.getItem('directory-permission') === 'deny') return 'denied';
+        sessionStorage.removeItem('directory-permission');
+        return 'granted';
+      };
+    }, prompt);
+    return page;
+  }
+  const origin = await launchWorkbench();
+  let page = await createWorkbenchPage();
   const apiCalls = [];
   const blockApi = route => { apiCalls.push(route.request().url()); return route.abort(); };
   await page.route('**/api/**', blockApi);
@@ -289,7 +301,8 @@ try {
     const secondStarted = new Promise(resolve => { signalInterrupted = resolve; });
     let releaseFirstAttempt;
     const hold = new Promise(resolve => { releaseFirstAttempt = resolve; });
-    await context.route(/^https:\/\/(first|second)-resume\.example\//, async route => {
+    const resumeFixture = /^https:\/\/(first|second)-resume\.example\//;
+    const serveResume = async route => {
       const second = route.request().url().includes('second-resume');
       visits.push(second ? 'second' : 'first');
       if (second && visits.length === 2) {
@@ -298,14 +311,21 @@ try {
         return route.abort().catch(() => {});
       }
       return route.fulfill({ status: 200, headers: { 'Access-Control-Allow-Origin': '*' } });
-    });
+    };
+    await context.route(resumeFixture, serveResume);
     await interrupted.getByRole('button', { name: '加入只读检查队列' }).click();
     try {
       await Promise.race([secondStarted, interrupted.getByText('本轮结束。请查看各页检查结果和待处理项。').waitFor()
         .then(() => { throw new Error('未观察到中断前的第二个请求'); })]);
-      await interrupted.close();
+      await context.close();
     } finally { releaseFirstAttempt(); }
-    await page.reload();
+    assert.equal(await launchWorkbench(), origin);
+    await context.route(resumeFixture, serveResume);
+    page = await createWorkbenchPage(true);
+    await page.route('**/api/**', blockApi);
+    await page.goto(`${origin}/sidepanel.html`);
+    await page.getByRole('button', { name: '重新授权原目录' }).click();
+    assert.equal(await page.evaluate(() => sessionStorage.getItem('directory-picker-count')), null);
     await page.getByRole('button', { name: '继续未完成队列（1）' }).click();
     await page.getByText('队列已处理完毕。').waitFor();
     assert.deepEqual(visits, ['first', 'second', 'second']);
@@ -451,7 +471,7 @@ try {
   await page.getByRole('option', { name: /candidates.csv/ }).waitFor({ state: 'attached' });
   const options = await page.getByLabel('导入批次').locator('option').allTextContents();
   assert.equal(options.length, 3);
-  await page.getByLabel('导入批次').selectOption({ label: options[1] });
+  await page.getByLabel('导入批次').selectOption({ label: options.find(label => label.includes('candidates.csv')) });
   await page.getByRole('cell', { name: 'https://example.net', exact: true }).waitFor();
 
   const download = page.waitForEvent('download');
@@ -577,9 +597,9 @@ try {
   const migrated = page.getByLabel('导入批次');
   await migrated.getByRole('option', { name: /candidates.csv/ }).waitFor({ state: 'attached' });
   assert.equal(await migrated.locator('option').count(), 3);
-  await migrated.selectOption({ index: 1 });
+  await migrated.selectOption(await migrated.getByRole('option', { name: /candidates.csv/ }).getAttribute('value'));
   await page.getByRole('cell', {name: 'https://example.net', exact: true}).waitFor();
-  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, serial URL checks, Retry-After and request timeouts, interruption recovery, directory reauthorization and backup/restore, linked moderation receipts, filtered backlink revisits, issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
+  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, serial URL checks, Retry-After and request timeouts, browser restart queue recovery, directory reauthorization and backup/restore, linked moderation receipts, filtered backlink revisits, issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
 } finally {
   try {
     await context?.close();
