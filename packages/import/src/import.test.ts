@@ -42,3 +42,8 @@ test('extracts TXT URLs and retains the original source line, including invalid 
   assert.throws(() => readTextRows('a'.repeat(8193)), /8,192/);
   assert.throws(() => readTextRows('https://example.org\n'.repeat(5001)), /5,000/);
 });
+
+test('bounds expanded TXT records before preview allocates a full request', () => {
+  const line = 'https://example.org/ '.repeat(300);
+  assert.throws(() => readTextRows(Array(8).fill(line).join('\n')), /展开后的记录过大/);
+});

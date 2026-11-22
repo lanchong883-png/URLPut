@@ -1,6 +1,6 @@
 import { parse } from 'csv-parse/browser/esm/sync';
 import ipaddr from 'ipaddr.js';
-import { MAX_IMPORT_BYTES, MAX_ROWS, type ImportBatch } from '@urlput/contracts';
+import { MAX_IMPORT_BYTES, MAX_IMPORT_REQUEST_BYTES, MAX_ROWS, type ImportBatch } from '@urlput/contracts';
 
 export type Delimiter = ',' | ';' | '\t';
 export type ColumnMapping = { url: number; entry?: number; name?: number; notes?: number };
@@ -44,6 +44,8 @@ export function readTextRows(text: string): ImportBatch['rows'] {
     throw new Error('输入超过 2 MB，请拆分后导入。');
   }
   const rows: ImportBatch['rows'] = [];
+  const encoder = new TextEncoder();
+  let encodedBytes = 2; // JSON array brackets
   const lines = text.replace(/^\uFEFF/, '').split(/\r\n|\n|\r/);
   for (const [index, sourceText] of lines.entries()) {
     if (!sourceText.trim()) continue;
@@ -51,7 +53,10 @@ export function readTextRows(text: string): ImportBatch['rows'] {
     const tokens = sourceText.match(/https?:\/\/[^\s<>"'`，。；！？、）》】」]+/gi) ?? [sourceText];
     for (const url of tokens) {
       if (rows.length === MAX_ROWS) throw new Error('每批最多导入 5,000 条记录。');
-      rows.push({ sourceLine: index + 1, url, entry: '', name: '', notes: '', sourceText });
+      const row = { sourceLine: index + 1, url, entry: '', name: '', notes: '', sourceText };
+      encodedBytes += encoder.encode(JSON.stringify(row)).length + Number(rows.length > 0);
+      if (encodedBytes > MAX_IMPORT_REQUEST_BYTES) throw new Error('展开后的记录过大，请拆分后导入。');
+      rows.push(row);
     }
   }
   return rows;
