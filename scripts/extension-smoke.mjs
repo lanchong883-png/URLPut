@@ -171,6 +171,40 @@ try {
     await entry.waitFor();
     assert.equal(await entry.getAttribute('href'), 'https://ok-offline.example/');
     assert.equal(await page.getByLabel('已批准内容').inputValue(), '经人工审核的示例投稿');
+    const submissionUrl = 'https://ok-offline.example/';
+    const receivedDrafts = [];
+    const receipt = '样站审核回执 #MANUAL-201';
+    await context.route(submissionUrl, async route => {
+      if (route.request().method() === 'POST') {
+        receivedDrafts.push(new URLSearchParams(route.request().postData()).get('draft'));
+        await route.abort('connectionreset');
+        return;
+      }
+      const body = receivedDrafts.length ? `<p>${receipt}</p>`
+        : '<form method="post"><label>正文<textarea name="draft" required></textarea></label><button>提交审核</button></form>';
+      await route.fulfill({ contentType: 'text/html; charset=utf-8', body });
+    });
+    const openedSubmission = context.waitForEvent('page');
+    await entry.click();
+    const submission = await openedSubmission;
+    await submission.getByLabel('正文').fill(await page.getByLabel('已批准内容').inputValue());
+    const lostResponse = submission.waitForEvent('requestfailed');
+    await submission.getByRole('button', { name: '提交审核' }).click();
+    assert.equal((await lostResponse).method(), 'POST');
+    await submission.close();
+    const receiptPage = await context.newPage();
+    await receiptPage.goto(submissionUrl);
+    await receiptPage.getByText(receipt, { exact: true }).waitFor();
+    assert.deepEqual(receivedDrafts, ['经人工审核的示例投稿']);
+    await receiptPage.close();
+    await context.unroute(submissionUrl);
+    await page.getByText('登记待审核回执', { exact: true }).click();
+    await page.getByLabel('已提交记录的序号').fill('2');
+    await page.getByLabel('实际提交时间').fill('2026-01-01T12:00');
+    await page.getByLabel('平台待审核提示或回执编号').fill(receipt);
+    await page.getByRole('button', { name: '保存回执' }).click();
+    await page.getByText('此条已有待审核回执。', { exact: true }).waitFor();
+    assert.equal(await entry.count(), 0);
     const probes = [];
     let resolved = false;
     let removed = false;
@@ -284,10 +318,15 @@ try {
     removed = false;
     await page.getByLabel('核验结论').selectOption('all');
     await page.getByLabel('公开评论定位链接').fill('https://ok-offline.example/#forum12');
-    await page.getByLabel('关联当前批次回执').selectOption('');
+    await page.getByLabel('关联当前批次回执').selectOption('2');
     await page.getByRole('button', { name: '只读核验并保存' }).click();
     await page.getByText('已核验外链台账（2）').waitFor();
     await page.getByText('已核验并保存。', { exact: true }).waitFor();
+    const manualDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: '导出 CSV', exact: true }).click();
+    const manualCsv = await readFile(await (await manualDownload).path(), 'utf8');
+    assert.match(manualCsv, /"https:\/\/ok-offline\.example","提交成功","有效外链"/);
+    assert.ok(manualCsv.includes(receipt));
     failedRevisit = true;
     revisitCalls.length = 0;
     const revisitPanel = await context.newPage();
@@ -307,7 +346,8 @@ try {
     await page.getByRole('button', { name: '继续批量回访（已完成 1 / 2 条）' }).click();
     await page.getByText('已回访 2 条，1 条遇到访问问题。').waitFor();
     assert.deepEqual(revisitCalls, ['ok-offline.example', 'offline.example', 'offline.example']);
-    await page.getByRole('cell', { name: '有效外链', exact: true }).waitFor();
+    await page.getByRole('row').filter({ has: page.getByRole('cell', { name: 'https://offline.example', exact: true }) })
+      .getByRole('cell', { name: '有效外链', exact: true }).waitFor();
     await page.reload();
     await page.getByText('已核验外链台账（2）').click();
     await page.getByText(/最近访问问题 · HTTP 503/).waitFor();
@@ -442,7 +482,8 @@ try {
     assert.deepEqual(snapshots[2], snapshots[0]);
     await page.reload();
     await page.getByLabel('导入批次').selectOption({ index: 2 });
-    await page.getByRole('cell', { name: '有效外链', exact: true }).waitFor();
+    await page.getByRole('row').filter({ has: page.getByRole('cell', { name: 'https://ok-offline.example', exact: true }) })
+      .getByRole('cell', { name: '有效外链', exact: true }).waitFor();
     await page.getByLabel('官网地址').fill('https://restored-only.example');
     await page.getByRole('button', { name: '添加推广站点' }).click();
     await page.getByRole('option', { name: 'restored-only.example' }).waitFor({ state: 'attached' });
