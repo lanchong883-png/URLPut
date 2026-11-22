@@ -1,3 +1,4 @@
+import { SubmissionApprovals } from './SubmissionApprovals';
 import { AnalysisResults } from './AnalysisResults';
 import { VerifiedLinks } from './VerifiedLinks';
 import { observeChecks, pendingCheckCount, runQueue } from '../lib/check-queue';
@@ -517,6 +518,7 @@ function Workbench({ directory, migrationDirectory, withCatalog }: { directory?:
                 <button disabled={busy}>保存回执</button>
               </form>
             </details>}
+            {directory && <SubmissionApprovals key={saved.id} dir={directory} site={siteId} batch={saved} />}
             {directory && <BatchChecks key={saved.id} dir={directory} site={siteId} batch={saved} />}
           </>}
         </section>

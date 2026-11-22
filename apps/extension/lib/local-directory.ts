@@ -167,6 +167,49 @@ export async function localReportBatch(dir: Directory, site: string, id: string)
   return batch;
 }
 
+export type SubmissionApproval = {
+  id: string;
+  batch: string;
+  sequence: number;
+  source: string;
+  entry: string;
+  draft: string;
+  approvedAt: string;
+};
+
+export async function submissionApprovals(dir: Directory, site: string) {
+  return await read<SubmissionApproval[]>(dir, site + '.submissions.json') ?? [];
+}
+
+export function approveSubmission(dir: Directory, site: string, id: string, sequence: number, draft: string) {
+  const content = draft.trim();
+  if (!content || content.length > 5000) throw new Error('请填写 1–5,000 字的投稿内容。');
+  return navigator.locks.request(lock, async () => {
+    const batch = await localBatch(dir, site, id);
+    const row = batch.rows.find(item => item.sequence === sequence);
+    if (row?.disposition !== 'candidate' || !row.normalizedUrl) throw new Error('请选择有效的候选记录。');
+    if (row.review) throw new Error('此条已有待审核回执。');
+    const existing = await submissionApprovals(dir, site);
+    if (existing.some(item => item.source === row.normalizedUrl)) {
+      throw new Error('此推广站点已有该网址的投稿占位，请核对原批次和平台状态。');
+    }
+    for (const batch of await localHistory(dir, site)) {
+      const receipts = await read<Record<string, ReviewReceipt>>(dir, site + '-' + batch.id + '.reviews.json');
+      if (!receipts) continue;
+      const stored = await localBatch(dir, site, batch.id);
+      if (stored.rows.some(item => item.review && item.normalizedUrl === row.normalizedUrl)) {
+        throw new Error('此推广站点已有该网址的待审核回执，请核对原批次。');
+      }
+    }
+    const approval = {
+      id: crypto.randomUUID(), batch: id, sequence, source: row.normalizedUrl,
+      entry: row.normalizedEntry || row.normalizedUrl, draft: content, approvedAt: new Date().toISOString(),
+    };
+    await write(dir, site + '.submissions.json', [...existing, approval]);
+    return approval;
+  });
+}
+
 export async function recordPendingReview(dir: Directory, site: string, id: string, sequence: number, evidence: string, submittedAt: string) {
   const time = Date.parse(submittedAt);
   if (!evidence.trim() || evidence.length > 1000 || !Number.isFinite(time) || time > Date.now()) {

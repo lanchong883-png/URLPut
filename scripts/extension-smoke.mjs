@@ -148,6 +148,29 @@ try {
   assert.match(receiptCsv, /"https:\/\/offline.example","提交成功","待审核"/);
   assert.match(receiptCsv, /Awaiting moderation #TEST-100/);
   if (webSmoke) {
+    const approvalPanel = await context.newPage();
+    await approvalPanel.goto(`${origin}/sidepanel.html`);
+    await approvalPanel.getByLabel('导入批次').selectOption({ index: 1 });
+    for (const panel of [page, approvalPanel]) {
+      await panel.getByText('逐条批准手动投稿', { exact: true }).click();
+      await panel.getByLabel('投稿候选').selectOption('2');
+      await panel.getByLabel('投稿内容', { exact: true }).fill('经人工审核的示例投稿');
+      assert.equal(await panel.getByRole('link', { name: '打开投稿入口' }).count(), 0);
+    }
+    await Promise.all([page, approvalPanel].map(panel => panel.getByRole('button', { name: '批准此条并保存投稿占位' }).click()));
+    await Promise.all([
+      Promise.any([page, approvalPanel].map(panel => panel.getByText(/已批准并保存投稿占位/).waitFor())),
+      Promise.any([page, approvalPanel].map(panel => panel.getByText(/已有该网址的投稿占位/).waitFor())),
+    ]);
+    await approvalPanel.close();
+    await page.reload();
+    await page.getByLabel('导入批次').selectOption({ index: 1 });
+    await page.getByText('逐条批准手动投稿', { exact: true }).click();
+    await page.getByLabel('投稿候选').selectOption('2');
+    const entry = page.getByRole('link', { name: '打开投稿入口' });
+    await entry.waitFor();
+    assert.equal(await entry.getAttribute('href'), 'https://ok-offline.example/');
+    assert.equal(await page.getByLabel('已批准内容').inputValue(), '经人工审核的示例投稿');
     const probes = [];
     let resolved = false;
     let removed = false;
@@ -513,6 +536,15 @@ try {
       assert.equal(queueRequests.at(-1).path, '/0');
       assert.ok(queueRequests.at(-1).at - queueRequests[0].at >= 8000);
     } finally { releaseTimeoutRoute(); }
+    await page.getByLabel('推广站点').selectOption({ label: 'local.example' });
+    await page.getByLabel('或粘贴表格及网址').fill('https://OK-OFFLINE.example/#duplicate');
+    await page.getByRole('button', { name: '预览导入' }).click();
+    await page.getByRole('button', { name: '确认并保存' }).click();
+    await page.getByText('逐条批准手动投稿', { exact: true }).click();
+    await page.getByLabel('投稿候选').selectOption('1');
+    await page.getByText(/已批准并保存投稿占位/).waitFor();
+    assert.equal(await page.getByRole('button', { name: '批准此条并保存投稿占位' }).count(), 0);
+    assert.equal(await page.getByRole('link', { name: '打开投稿入口' }).count(), 0);
   }
   assert.deepEqual(apiCalls, []);
   await page.unroute('**/api/**', blockApi);
