@@ -175,6 +175,7 @@ export type SubmissionApproval = {
   entry: string;
   draft: string;
   approvedAt: string;
+  startedAt?: string | null;
 };
 
 export async function submissionApprovals(dir: Directory, site: string) {
@@ -203,10 +204,33 @@ export function approveSubmission(dir: Directory, site: string, id: string, sequ
     }
     const approval = {
       id: crypto.randomUUID(), batch: id, sequence, source: row.normalizedUrl,
-      entry: row.normalizedEntry || row.normalizedUrl, draft: content, approvedAt: new Date().toISOString(),
+      entry: row.normalizedEntry || row.normalizedUrl, draft: content, approvedAt: new Date().toISOString(), startedAt: null,
     };
     await write(dir, site + '.submissions.json', [...existing, approval]);
     return approval;
+  });
+}
+
+export function startSubmission(dir: Directory, site: string, batchId: string, approvalId: string) {
+  return navigator.locks.request(lock, async () => {
+    const approvals = await submissionApprovals(dir, site);
+    const index = approvals.findIndex(item => item.id === approvalId && item.batch === batchId);
+    const approval = approvals[index];
+    if (!approval) throw new Error('找不到此批次的投稿批准记录。');
+    const batch = await localBatch(dir, site, batchId);
+    const row = batch.rows.find(item => item.sequence === approval.sequence);
+    if (row?.disposition !== 'candidate' || row.normalizedUrl !== approval.source) {
+      throw new Error('投稿批准与来源记录不匹配。');
+    }
+    if (row.review) throw new Error('此条已有待审核回执，请核对平台状态。');
+    if (approval.startedAt === undefined) throw new Error('旧版占位缺少开始状态，请先核对原平台。');
+    if (approval.startedAt) throw new Error('此条已开始一次投稿，请核对原平台状态。');
+    const entry = row.normalizedEntry || row.normalizedUrl;
+    if (entry !== approval.entry) throw new Error('投稿入口与已批准记录不匹配。');
+    const started = { ...approval, startedAt: new Date().toISOString() };
+    approvals[index] = started;
+    await write(dir, site + '.submissions.json', approvals);
+    return started;
   });
 }
 

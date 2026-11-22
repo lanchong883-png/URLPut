@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { browser } from 'wxt/browser';
 import type { Batch } from '../lib/api';
-import { approveSubmission, submissionApprovals, type SubmissionApproval } from '../lib/local-directory';
+import { approveSubmission, startSubmission, submissionApprovals, type SubmissionApproval } from '../lib/local-directory';
 
 export function SubmissionApprovals({ dir, site, batch }: { dir: FileSystemDirectoryHandle; site: string; batch: Batch }) {
   const [open, setOpen] = useState(false);
@@ -20,6 +21,19 @@ export function SubmissionApprovals({ dir, site, batch }: { dir: FileSystemDirec
     }).catch(failure => { if (active) setError(String(failure)); });
     return () => { active = false; };
   }, [dir, site, open]);
+
+  async function start(approval: SubmissionApproval) {
+    setBusy(true);
+    setError('');
+    try {
+      const started = await startSubmission(dir, site, batch.id, approval.id);
+      setApprovals(items => items.map(item => item.id === started.id ? started : item));
+      await browser.tabs.create({ url: started.entry });
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+      try { setApprovals(await submissionApprovals(dir, site)); } catch { /* Preserve the original error. */ }
+    } finally { setBusy(false); }
+  }
 
   return <details className="card" onToggle={event => setOpen(event.currentTarget.open)}>
     <summary>逐条批准手动投稿</summary>
@@ -53,8 +67,9 @@ export function SubmissionApprovals({ dir, site, batch }: { dir: FileSystemDirec
       {saved && <p role="status">已批准并保存投稿占位。来源批次 {saved.batch} · 第 {saved.sequence} 条。</p>}
       {saved?.batch === batch.id && !row?.review && <>
         <label>已批准内容<textarea readOnly value={saved.draft} /></label>
-        <p>发布前请在平台核对是否已有记录。平台接收后，在本批次登记待审核回执。</p>
-        <a href={saved.entry} target="_blank" rel="noopener noreferrer">打开投稿入口</a>
+        {saved.startedAt === null && <button type="button" disabled={busy} onClick={() => void start(saved)}>开始单次手动投稿</button>}
+        {saved.startedAt && <p role="status">已开始一次投稿。请核对原平台状态，取得回执后在本批次登记。</p>}
+        {saved.startedAt === undefined && <p role="status">旧版占位缺少开始状态，请先核对原平台。</p>}
       </>}
       {row?.review && <p>此条已有待审核回执。</p>}
       {error && <p role="alert">{error}</p>}

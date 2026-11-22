@@ -155,7 +155,7 @@ try {
       await panel.getByText('逐条批准手动投稿', { exact: true }).click();
       await panel.getByLabel('投稿候选').selectOption('2');
       await panel.getByLabel('投稿内容', { exact: true }).fill('经人工审核的示例投稿');
-      assert.equal(await panel.getByRole('link', { name: '打开投稿入口' }).count(), 0);
+      assert.equal(await panel.getByRole('button', { name: '开始单次手动投稿' }).count(), 0);
     }
     await Promise.all([page, approvalPanel].map(panel => panel.getByRole('button', { name: '批准此条并保存投稿占位' }).click()));
     await Promise.all([
@@ -167,9 +167,8 @@ try {
     await page.getByLabel('导入批次').selectOption({ index: 1 });
     await page.getByText('逐条批准手动投稿', { exact: true }).click();
     await page.getByLabel('投稿候选').selectOption('2');
-    const entry = page.getByRole('link', { name: '打开投稿入口' });
+    const entry = page.getByRole('button', { name: '开始单次手动投稿' });
     await entry.waitFor();
-    assert.equal(await entry.getAttribute('href'), 'https://ok-offline.example/');
     assert.equal(await page.getByLabel('已批准内容').inputValue(), '经人工审核的示例投稿');
     const submissionUrl = 'https://ok-offline.example/';
     const receivedDrafts = [];
@@ -184,9 +183,24 @@ try {
         : '<form method="post"><label>正文<textarea name="draft" required></textarea></label><button>提交审核</button></form>';
       await route.fulfill({ contentType: 'text/html; charset=utf-8', body });
     });
+    const secondStart = await context.newPage();
+    await secondStart.goto(`${origin}/sidepanel.html`);
+    await secondStart.getByLabel('导入批次').selectOption({ index: 1 });
+    await secondStart.getByText('逐条批准手动投稿', { exact: true }).click();
+    await secondStart.getByLabel('投稿候选').selectOption('2');
+    const otherEntry = secondStart.getByRole('button', { name: '开始单次手动投稿' });
+    await otherEntry.waitFor();
     const openedSubmission = context.waitForEvent('page');
-    await entry.click();
+    await Promise.all([entry.click(), otherEntry.click()]);
     const submission = await openedSubmission;
+    await Promise.any([page, secondStart].map(panel => panel.getByRole('alert').filter({ hasText: '此条已开始一次投稿' }).waitFor()));
+    await secondStart.close();
+    await page.reload();
+    await page.getByLabel('导入批次').selectOption({ index: 1 });
+    await page.getByText('逐条批准手动投稿', { exact: true }).click();
+    await page.getByLabel('投稿候选').selectOption('2');
+    await page.getByText(/已开始一次投稿/).waitFor();
+    assert.equal(await entry.count(), 0);
     await submission.getByLabel('正文').fill(await page.getByLabel('已批准内容').inputValue());
     const lostResponse = submission.waitForEvent('requestfailed');
     await submission.getByRole('button', { name: '提交审核' }).click();
@@ -585,7 +599,7 @@ try {
     await page.getByLabel('投稿候选').selectOption('1');
     await page.getByText(/已批准并保存投稿占位/).waitFor();
     assert.equal(await page.getByRole('button', { name: '批准此条并保存投稿占位' }).count(), 0);
-    assert.equal(await page.getByRole('link', { name: '打开投稿入口' }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: '开始单次手动投稿' }).count(), 0);
   }
   assert.deepEqual(apiCalls, []);
   await page.unroute('**/api/**', blockApi);
