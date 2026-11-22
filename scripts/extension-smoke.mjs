@@ -339,10 +339,37 @@ try {
     await page.getByLabel('只读任务').selectOption('analysis');
     await page.getByRole('button', { name: '加入只读检查队列' }).click();
     await page.getByText(/本轮结束。/).waitFor();
+    // Use large historical batches with no analysis output to exercise sparse directory reads.
+    await page.evaluate(async () => {
+      const root = await navigator.storage.getDirectory();
+      const dir = await (await root.getDirectoryHandle('test-data')).getDirectoryHandle('URLPut-data-v1');
+      const workspace = await (await (await dir.getFileHandle('workspace.json')).getFile()).text();
+      const site = JSON.parse(workspace).workspace.sites[0].id;
+      const index = await dir.getFileHandle(site + '.index.json');
+      const history = JSON.parse(await (await index.getFile()).text());
+      const synthetic = Array.from({ length: 20 }, (_, index) => ({
+        id: crypto.randomUUID(), filename: `large-history-${index}.csv`,
+        createdAt: '2020-01-01T00:00:00.000Z', rowCount: 5000, source: 'csv',
+      }));
+      const writer = await index.createWritable();
+      await writer.write(JSON.stringify([...history, ...synthetic]));
+      await writer.close();
+    });
+    await page.reload();
+    await page.getByLabel('导入批次').getByRole('option', { name: /large-history-19/ }).waitFor({ state: 'attached' });
+    await page.evaluate(() => {
+      const getFileHandle = FileSystemDirectoryHandle.prototype.getFileHandle;
+      window.analysisReads = [];
+      FileSystemDirectoryHandle.prototype.getFileHandle = function (name, options) {
+        if (/^analysis-.*-\d+\.json$/.test(name)) window.analysisReads.push(name);
+        return getFileHandle.call(this, name, options);
+      };
+    });
     await page.getByText('跨批次网站分析', { exact: true }).click();
     const crossBatch = page.locator('details').filter({ has: page.getByText('跨批次网站分析', { exact: true }) });
     await crossBatch.getByText('已分析 · Dynamic discussion').waitFor();
     await crossBatch.getByText('已分析 · Example directory', { exact: true }).first().waitFor();
+    assert.equal(await page.evaluate(() => window.analysisReads.length), 2);
     await page.getByLabel('分析批次').selectOption({ index: 1 });
     await crossBatch.getByText('已分析 · Example directory', { exact: true }).first().waitFor({ state: 'detached' });
     await page.getByLabel('分析结果').selectOption('issue');

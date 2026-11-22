@@ -53,6 +53,19 @@ export async function checkPage(dir: Directory, job: Job, page: number) {
   return await read<Check[]>(dir, segmentFile(job, page)) ?? [];
 }
 
+export async function analysisSegments(dir: Directory, site: string, batchIds: string[], signal?: AbortSignal) {
+  const pages = new Map(batchIds.map(id => [id, [] as number[]]));
+  const prefix = `analysis-${site}-`;
+  for await (const [filename, handle] of dir.entries()) {
+    if (signal?.aborted) return pages;
+    if (handle.kind !== 'file' || !filename.startsWith(prefix)) continue;
+    const segment = /^(.*)-(0|[1-9]\d*)\.json$/.exec(filename.slice(prefix.length));
+    if (segment) pages.get(segment[1])?.push(Number(segment[2]));
+  }
+  for (const segments of pages.values()) segments.sort((a, b) => a - b);
+  return pages;
+}
+
 export class PublicHttpError extends Error {
   readonly status: number;
   constructor(status: number) {

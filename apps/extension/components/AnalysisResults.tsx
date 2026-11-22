@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { encodeCsv } from '@urlput/import';
 import type { BatchSummary } from '../lib/api';
-import { checkPage, checkSegmentSize, observeChecks, type Check } from '../lib/check-queue';
+import { analysisSegments, checkPage, checkSegmentSize, observeChecks, type Check } from '../lib/check-queue';
 import { downloadCsv } from '../lib/report';
 
 const pageSize = 20;
@@ -21,10 +21,12 @@ async function* readResults(
   dir: FileSystemDirectoryHandle, site: string, batches: BatchSummary[],
   batchId: string, filter: ResultStatus | 'all', signal?: AbortSignal,
 ): AsyncGenerator<Result> {
-  for (const batch of batches) {
-    if (batchId && batch.id !== batchId) continue;
-    for (let page = 0; page * checkSegmentSize < batch.rowCount; page++) {
+  const selected = batchId ? batches.filter(batch => batch.id === batchId) : batches;
+  const pages = await analysisSegments(dir, site, selected.map(batch => batch.id), signal);
+  for (const batch of selected) {
+    for (const page of pages.get(batch.id) ?? []) {
       if (signal?.aborted) return;
+      if (page * checkSegmentSize >= batch.rowCount) break;
       const items = await checkPage(dir, { site, batch: batch.id, analysis: true }, page);
       if (signal?.aborted) return;
       for (const item of items) {
