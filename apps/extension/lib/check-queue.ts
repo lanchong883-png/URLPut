@@ -70,20 +70,26 @@ export async function publicRequest(url: string, method: 'HEAD' | 'GET') {
   // The global worker lock covers pacing across batches and browser windows.
   await delay(Math.max(0, Number(localStorage.getItem('urlput-last-check')) + 2000 - Date.now()));
   localStorage.setItem('urlput-last-check', String(Date.now()));
+  const signal = AbortSignal.timeout(15000);
   const response = await fetch(url, {
     method, credentials: 'omit', redirect: 'manual', cache: 'no-store',
-    referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(15000),
+    referrerPolicy: 'no-referrer', signal,
+  }).catch(error => {
+    signal.throwIfAborted();
+    throw error;
   });
   if (response.type === 'opaqueredirect') throw new Error('入口发生跳转，请核对最终网址。');
-  if (!response.ok) await response.body?.cancel();
   if (response.status === 429) {
     const value = response.headers.get('Retry-After')?.trim();
     const until = value && /^\d+$/.test(value) ? Date.now() + Number(value) * 1000 : Date.parse(value ?? '');
     localStorage.setItem(cooldown, String(Number.isFinite(until) ? Math.max(until, Date.now() + 2000) : Date.now() + 60000));
-    throw new Error('HTTP 429，等待站点解除限流后恢复。');
   }
-  if (!response.ok) throw new PublicHttpError(response.status);
-  return response;
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => {});
+    if (response.status === 429) throw new Error('HTTP 429，等待站点解除限流后恢复。');
+    throw new PublicHttpError(response.status);
+  }
+  return { response, signal };
 }
 
 export async function runQueue(dir: Directory) {
@@ -106,8 +112,8 @@ export async function runQueue(dir: Directory) {
           let analysis: Analysis | undefined;
           let message: string;
           try {
-            const response = await publicRequest(url, job.analysis ? 'GET' : 'HEAD');
-            if (job.analysis) analysis = await analyzeHtml(htmlChunks(response), url);
+            const { response, signal } = await publicRequest(url, job.analysis ? 'GET' : 'HEAD');
+            if (job.analysis) analysis = await analyzeHtml(htmlChunks(response, signal), url);
             message = `HTTP ${response.status}，入口可访问。`;
             ok = true;
           } catch (error) {

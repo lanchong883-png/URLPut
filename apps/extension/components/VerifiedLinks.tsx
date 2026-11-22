@@ -62,8 +62,8 @@ export function VerifiedLinks({ dir, site, batch, onUpdate }: {
       const previous = existing.find(item => item.page === page.href && item.target === target.href);
       let result: LinkRecord;
       try {
-        const response = await publicRequest(source, 'GET');
-        result = await findCommentLink(htmlChunks(response), page, target.href);
+        const { response, signal } = await publicRequest(source, 'GET');
+        result = await findCommentLink(htmlChunks(response, signal), page, target.href);
         result.firstVerifiedAt = previous?.firstVerifiedAt ?? previous?.checkedAt ?? result.checkedAt;
         result.lastValidAt = result.checkedAt;
       } catch (error) {

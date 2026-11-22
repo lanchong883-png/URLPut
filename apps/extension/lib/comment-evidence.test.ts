@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CommentLinkUnconfirmed, findCommentLink } from './comment-evidence.ts';
+import { CommentLinkUnconfirmed, findCommentLink, htmlChunks } from './comment-evidence.ts';
 
 const page = new URL('https://discussion.example/posts/1#record-2');
 const target = 'https://brand.example/';
@@ -31,4 +31,31 @@ test('explains dynamic comments and login prompts while preserving public link e
   assert.equal((await findCommentLink(pieces(shell + comment), page, target)).anchor, 'Brand');
   await assert.rejects(findCommentLink(pieces('<template>' + shell + '</template>'), page, target),
     { message: '未能在唯一定位的公开记录中确认目标链接。' });
+});
+
+test('reports a response body abort using the request timeout reason', async () => {
+  const abort = new AbortController();
+  const timeout = new DOMException('deadline elapsed', 'TimeoutError');
+  const body = new ReadableStream({
+    pull(controller) {
+      abort.abort(timeout);
+      controller.error(new DOMException('body read aborted', 'AbortError'));
+    },
+  });
+  const response = new Response(body, { headers: { 'Content-Type': 'text/html' } });
+  await assert.rejects(htmlChunks(response, abort.signal).next(), error => error === timeout);
+});
+
+test('bounds streamed HTML and cancels the source beyond 16 MiB', async () => {
+  let cancelled = false;
+  const chunk = new Uint8Array(1024 * 1024);
+  const body = new ReadableStream({
+    pull(controller) { controller.enqueue(chunk); },
+    cancel() { cancelled = true; },
+  });
+  const response = new Response(body, { headers: { 'Content-Type': 'text/html' } });
+  await assert.rejects(async () => {
+    for await (const _ of htmlChunks(response, new AbortController().signal)) { /* Consume the stream. */ }
+  }, /页面超过 16 MiB/);
+  assert.equal(cancelled, true);
 });

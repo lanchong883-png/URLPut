@@ -85,7 +85,7 @@ export async function findCommentLink(chunks: AsyncIterable<string>, page: URL, 
   return { page: page.href, target, ...evidence, checkedAt: new Date().toISOString() };
 }
 
-export async function* htmlChunks(response: Response) {
+export async function* htmlChunks(response: Response, signal: AbortSignal) {
   if (!response.headers.get('content-type')?.toLowerCase().includes('text/html') || !response.body) {
     await response.body?.cancel();
     throw new Error('未取得公开 HTML 页面。');
@@ -102,6 +102,9 @@ export async function* htmlChunks(response: Response) {
       yield decoder.decode(value, { stream: true });
     }
     yield decoder.decode();
+  } catch (error) {
+    signal.throwIfAborted();
+    throw error;
   } finally {
     await reader.cancel().catch(() => {});
     reader.releaseLock();

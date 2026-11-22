@@ -382,6 +382,43 @@ try {
         return (await (await dir.getFileHandle('workspace.json')).getFile()).text();
       }));
     }).then(files => files.map(content => content.includes('restored-only.example'))), [false, false, true]);
+    const queueRequests = [];
+    let releaseTimeoutRoute;
+    const holdResponse = new Promise(resolve => { releaseTimeoutRoute = resolve; });
+    await context.route(/^https:\/\/(limited|slow|healthy)-queue\.example\//, async route => {
+      const url = new URL(route.request().url());
+      queueRequests.push({ host: url.hostname, path: url.pathname, at: Date.now() });
+      const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Expose-Headers': 'Retry-After' };
+      if (url.hostname === 'slow-queue.example') {
+        await holdResponse;
+        return route.abort().catch(() => {});
+      }
+      if (queueRequests.length === 1) return route.fulfill({ status: 429, headers: { ...headers, 'Retry-After': '8' } });
+      return route.fulfill({ status: 200, headers });
+    });
+    await page.getByLabel('或粘贴表格及网址').fill([
+      ...Array.from({ length: 33 }, (_, index) => `https://limited-queue.example/${index}`),
+      'https://slow-queue.example/',
+      'https://healthy-queue.example/',
+    ].join('\n'));
+    await page.getByRole('button', { name: '预览导入' }).click();
+    await page.getByRole('button', { name: '确认并保存' }).click();
+    try {
+      await page.getByRole('button', { name: '加入只读检查队列' }).click();
+      await page.getByText(/本轮结束。/).waitFor({ timeout: 35000 });
+      assert.deepEqual(queueRequests.map(item => item.host), ['limited-queue.example', 'slow-queue.example', 'healthy-queue.example']);
+      assert.ok(queueRequests[2].at - queueRequests[1].at >= 14900);
+      await page.getByText(/HTTP 429，等待站点解除限流/).waitFor();
+      assert.equal(await page.getByText(/站点处于限流等待期/).count(), 31);
+      await page.getByRole('button', { name: '下一组结果' }).click();
+      await page.getByText(/检查超时，请核对网址/).waitFor();
+      await page.getByText('已检查 · 第 35 条').waitFor();
+      await page.getByRole('button', { name: '上一组结果' }).click();
+      await page.getByRole('button', { name: '恢复此条' }).first().click();
+      await page.getByText('已检查 · 第 1 条', { exact: true }).waitFor();
+      assert.equal(queueRequests.at(-1).path, '/0');
+      assert.ok(queueRequests.at(-1).at - queueRequests[0].at >= 8000);
+    } finally { releaseTimeoutRoute(); }
   }
   assert.deepEqual(apiCalls, []);
   await page.unroute('**/api/**', blockApi);
@@ -542,7 +579,7 @@ try {
   assert.equal(await migrated.locator('option').count(), 3);
   await migrated.selectOption({ index: 1 });
   await page.getByRole('cell', {name: 'https://example.net', exact: true}).waitFor();
-  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, serial URL checks, interruption recovery, directory reauthorization and backup/restore, linked moderation receipts, filtered backlink revisits, issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
+  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, serial URL checks, Retry-After and request timeouts, interruption recovery, directory reauthorization and backup/restore, linked moderation receipts, filtered backlink revisits, issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
 } finally {
   try {
     await context?.close();
