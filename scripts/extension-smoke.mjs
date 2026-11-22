@@ -592,7 +592,7 @@ try {
       assert.ok(queueRequests.at(-1).at - queueRequests[0].at >= 8000);
     } finally { releaseTimeoutRoute(); }
     await page.getByLabel('推广站点').selectOption({ label: 'local.example' });
-    await page.getByLabel('或粘贴表格及网址').fill('https://OK-OFFLINE.example/#duplicate');
+    await page.getByLabel('或粘贴表格及网址').fill('https://OK-OFFLINE.example/#duplicate\nhttps://OFFLINE.example/#duplicate');
     await page.getByRole('button', { name: '预览导入' }).click();
     await page.getByRole('button', { name: '确认并保存' }).click();
     await page.getByText('逐条批准手动投稿', { exact: true }).click();
@@ -600,6 +600,15 @@ try {
     await page.getByText(/已批准并保存投稿占位/).waitFor();
     assert.equal(await page.getByRole('button', { name: '批准此条并保存投稿占位' }).count(), 0);
     assert.equal(await page.getByRole('button', { name: '开始单次手动投稿' }).count(), 0);
+    await page.getByText('登记待审核回执', { exact: true }).click();
+    await page.getByLabel('实际提交时间').fill('2026-01-01T12:00');
+    await page.getByLabel('平台待审核提示或回执编号').fill('重复登记测试');
+    await page.getByLabel('已提交记录的序号').fill('1');
+    await page.getByRole('button', { name: '保存回执' }).click();
+    await page.getByRole('alert').filter({ hasText: '请在原投稿批次' }).waitFor();
+    await page.getByLabel('已提交记录的序号').fill('2');
+    await page.getByRole('button', { name: '保存回执' }).click();
+    await page.getByRole('alert').filter({ hasText: '已有该网址的待审核回执' }).waitFor();
   }
   assert.deepEqual(apiCalls, []);
   await page.unroute('**/api/**', blockApi);

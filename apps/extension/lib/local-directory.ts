@@ -182,6 +182,18 @@ export async function submissionApprovals(dir: Directory, site: string) {
   return await read<SubmissionApproval[]>(dir, site + '.submissions.json') ?? [];
 }
 
+async function requireUnrecordedReview(dir: Directory, site: string, batchId: string, source: string) {
+  for (const { id } of await localHistory(dir, site)) {
+    if (id === batchId) continue;
+    const receipts = await read<Record<string, ReviewReceipt>>(dir, site + '-' + id + '.reviews.json');
+    if (!receipts) continue;
+    const batch = await localBatch(dir, site, id);
+    if (batch.rows.some(row => row.review && row.normalizedUrl === source)) {
+      throw new Error('此推广站点已有该网址的待审核回执，请核对原批次。');
+    }
+  }
+}
+
 export function approveSubmission(dir: Directory, site: string, id: string, sequence: number, draft: string) {
   const content = draft.trim();
   if (!content || content.length > 5000) throw new Error('请填写 1–5,000 字的投稿内容。');
@@ -194,14 +206,7 @@ export function approveSubmission(dir: Directory, site: string, id: string, sequ
     if (existing.some(item => item.source === row.normalizedUrl)) {
       throw new Error('此推广站点已有该网址的投稿占位，请核对原批次和平台状态。');
     }
-    for (const batch of await localHistory(dir, site)) {
-      const receipts = await read<Record<string, ReviewReceipt>>(dir, site + '-' + batch.id + '.reviews.json');
-      if (!receipts) continue;
-      const stored = await localBatch(dir, site, batch.id);
-      if (stored.rows.some(item => item.review && item.normalizedUrl === row.normalizedUrl)) {
-        throw new Error('此推广站点已有该网址的待审核回执，请核对原批次。');
-      }
-    }
+    await requireUnrecordedReview(dir, site, id, row.normalizedUrl);
     const approval = {
       id: crypto.randomUUID(), batch: id, sequence, source: row.normalizedUrl,
       entry: row.normalizedEntry || row.normalizedUrl, draft: content, approvedAt: new Date().toISOString(), startedAt: null,
@@ -242,8 +247,13 @@ export async function recordPendingReview(dir: Directory, site: string, id: stri
   return navigator.locks.request(lock, async () => {
     const batch = await localBatch(dir, site, id);
     const row = batch.rows.find(item => item.sequence === sequence);
-    if (!row || row.disposition !== 'candidate') throw new Error('请选择有效的候选记录。');
+    if (row?.disposition !== 'candidate' || !row.normalizedUrl) throw new Error('请选择有效的候选记录。');
     if (row.review) throw new Error('此条已有待审核回执。');
+    const approval = (await submissionApprovals(dir, site)).find(item => item.source === row.normalizedUrl);
+    if (approval && (approval.batch !== id || approval.sequence !== sequence)) {
+      throw new Error(`请在原投稿批次 ${approval.batch} 的第 ${approval.sequence} 条登记回执。`);
+    }
+    await requireUnrecordedReview(dir, site, id, row.normalizedUrl);
     const filename = site + '-' + id + '.reviews.json';
     const receipts = Object.fromEntries(batch.rows.filter(item => item.review).map(item => [item.sequence, item.review]));
     row.review = { evidence: evidence.trim(), submittedAt: new Date(time).toISOString(), recordedAt: new Date().toISOString() };
