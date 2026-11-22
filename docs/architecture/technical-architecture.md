@@ -2,6 +2,8 @@
 
 本文依据 [产品需求与详细设计](../requirements/product-requirements.md) 和 [侧边栏交互设计](../design/workbench-interaction.md)。首个交付分阶段打通站点选择、导入、只读分析和逐行报告，再接入投稿、人工队列及回访。
 
+> **首版存储决策**：以[本机存储与结果报告](../architecture/local-first-results.md)为准。扩展把业务数据写入用户选定的本机目录，使用当前 Chrome 配置内的索引生成两张结果表。下文中的 Fastify、PostgreSQL 和跨设备协调描述对应旧版实现或后续联网版。
+
 ## 技术选型
 
 | 层 | 建议方案 | 复用范围 |
