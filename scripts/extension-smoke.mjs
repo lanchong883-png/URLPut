@@ -92,7 +92,7 @@ try {
   await page.getByLabel('官网地址').fill('https://local.example');
   await page.getByRole('button', { name: '添加推广站点' }).click();
   await page.getByRole('option', { name: 'local.example' }).waitFor({ state: 'attached' });
-  await page.getByLabel('或粘贴表格及网址').fill('https://offline.example');
+  await page.getByLabel('或粘贴表格及网址').fill('https://offline.example\nhttps://ok-offline.example');
   await page.getByRole('button', { name: '预览导入' }).click();
   await page.getByRole('button', { name: '确认并保存' }).click();
   await page.getByRole('button', { name: '导出 CSV' }).waitFor();
@@ -103,6 +103,33 @@ try {
   const offlineDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: '导出 CSV' }).click();
   assert.match(await readFile(await (await offlineDownload).path(), 'utf8'), /offline\.example/);
+  if (webSmoke) {
+    const probes = [];
+    let resolved = false;
+    await context.route(/^https:\/\/(offline|ok-offline)\.example\//, async route => {
+      assert.equal(route.request().method(), 'HEAD');
+      probes.push({ url: route.request().url(), at: Date.now() });
+      await route.fulfill({ status: probes.length === 1 && !resolved ? 503 : 200, headers: { 'Access-Control-Allow-Origin': '*' } });
+    });
+    const otherPanel = await context.newPage();
+    await otherPanel.goto(`${origin}/sidepanel.html`);
+    await otherPanel.getByLabel('导入批次').selectOption({ index: 1 });
+    await Promise.all([page, otherPanel].map(panel => panel.getByRole('button', { name: '加入只读检查队列' }).click()));
+    await otherPanel.getByText(/本轮结束。/).waitFor();
+    await otherPanel.close();
+    await page.getByText(/本轮结束。/).waitFor();
+    assert.equal(probes.length, 2);
+    assert.ok(probes[1].at - probes[0].at >= 1900);
+    await page.reload();
+    await page.getByLabel('导入批次').selectOption({ index: 1 });
+    await page.getByLabel('只看待处理项（1）').check();
+    await page.getByText('待处理 · 第 1 条').waitFor();
+    resolved = true;
+    await page.getByRole('button', { name: '恢复此条' }).click();
+    await page.getByLabel('只看待处理项（0）').waitFor();
+    assert.equal(probes.length, 3);
+    assert.equal(probes[2].url, probes[0].url);
+  }
   assert.deepEqual(apiCalls, []);
   await page.unroute('**/api/**', blockApi);
   await page.getByLabel('数据来源').selectOption('legacy');
@@ -249,7 +276,7 @@ try {
     ['/local/v1/chat/completions', undefined, 'local-model'],
     ['/custom/v1/chat/completions', 'Bearer test-session-key', 'custom-model'],
   ]);
-  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
+  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, serial URL checks and issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
 } finally {
   try {
     await context?.close();

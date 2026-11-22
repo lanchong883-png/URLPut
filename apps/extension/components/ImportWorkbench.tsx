@@ -1,3 +1,4 @@
+import { BatchChecks } from './BatchChecks';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { importBatchSchema, MAX_IMPORT_BYTES, MAX_IMPORT_REQUEST_BYTES, type ImportBatch, type Workspace } from '@urlput/contracts';
 import { buildLedger, mapRows, readTable, readTextRows, type ColumnMapping, type Delimiter, type LedgerRow } from '@urlput/import';
@@ -365,6 +366,7 @@ function Workbench({ directory, withCatalog }: { directory?: FileSystemDirectory
           {saved && site && <>
             <button className="secondary" type="button" onClick={() => downloadLedger(saved, site)}>导出 CSV</button>
             <RowTable key={saved.id} rows={saved.rows} site={site} />
+            {directory && <BatchChecks key={saved.id} dir={directory} site={siteId} batch={saved} />}
           </>}
         </section>
       </div>

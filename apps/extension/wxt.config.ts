@@ -9,7 +9,7 @@ export default defineConfig({
     description: '导入并管理外链候选',
     permissions: ['storage', 'sidePanel'],
     host_permissions: ['http://127.0.0.1/*'],
-    optional_host_permissions: ['https://*/*', 'http://localhost/*', 'http://[::1]/*'],
+    optional_host_permissions: ['https://*/*', 'http://*/*'],
     action: { default_title: '打开 URLPut' },
   },
 });

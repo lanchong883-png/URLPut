@@ -5,7 +5,7 @@ import type { Batch, BatchSummary } from './api';
 type Directory = FileSystemDirectoryHandle;
 const lock = 'urlput-directory-writes';
 
-async function read<T>(dir: Directory, name: string): Promise<T | undefined> {
+export async function read<T>(dir: Directory, name: string): Promise<T | undefined> {
   try {
     const file = await (await dir.getFileHandle(name)).getFile();
     return JSON.parse(await file.text());
@@ -15,7 +15,7 @@ async function read<T>(dir: Directory, name: string): Promise<T | undefined> {
   }
 }
 
-async function write(dir: Directory, name: string, value: unknown) {
+export async function write(dir: Directory, name: string, value: unknown) {
   const text = JSON.stringify(value);
   const stream = await (await dir.getFileHandle(name, { create: true })).createWritable();
   await stream.write(text);
