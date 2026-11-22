@@ -117,9 +117,10 @@ try {
   if (webSmoke) {
     const probes = [];
     let resolved = false;
+    let removed = false;
     await context.route(/^https:\/\/(offline|ok-offline)\.example\//, async route => {
       if (route.request().method() === 'GET') {
-        return route.fulfill({ contentType: 'text/html', headers: { 'Access-Control-Allow-Origin': '*' },
+        return route.fulfill({ status: removed ? 410 : 200, contentType: 'text/html', headers: { 'Access-Control-Allow-Origin': '*' },
           body: '<title>Example directory</title><article><form action="/submit"><textarea name="comment" required></textarea></form></article><div class="comment"><a id="forum12"></a><a rel="nofollow" href="https://local.example/">Local</a></div>' });
       }
       assert.equal(route.request().method(), 'HEAD');
@@ -163,6 +164,16 @@ try {
     const evidenceCsv = await readFile(await (await evidenceDownload).path(), 'utf8');
     assert.match(evidenceCsv, /forum12/);
     assert.match(evidenceCsv, /"nofollow","Local"/);
+    removed = true;
+    await page.getByLabel('公开评论定位链接').fill('https://offline.example/#forum12');
+    await page.getByRole('button', {name: '只读核验并保存'}).click();
+    await page.getByText(/公开页失效（HTTP 410）/).waitFor();
+    await page.getByLabel('核验结论').selectOption('valid');
+    assert.equal(await page.getByRole('button', { name: '导出已核验外链 CSV' }).count(), 0);
+    await page.getByLabel('核验结论').selectOption('missing');
+    const removedDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: '导出已核验外链 CSV' }).click();
+    assert.match(await readFile(await (await removedDownload).path(), 'utf8'), /"公开页失效"/);
   }
   assert.deepEqual(apiCalls, []);
   await page.unroute('**/api/**', blockApi);

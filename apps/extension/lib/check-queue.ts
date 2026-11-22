@@ -28,6 +28,14 @@ export async function checkPage(dir: Directory, job: Job, page: number) {
   return await read<Check[]>(dir, segmentFile(job, page)) ?? [];
 }
 
+export class PublicHttpError extends Error {
+  readonly status: number;
+  constructor(status: number) {
+    super(`HTTP ${status}，请核对访问权限和入口地址。`);
+    this.status = status;
+  }
+}
+
 export async function publicRequest(url: string, method: 'HEAD' | 'GET') {
   if (normalizeUrl(url) !== url) throw new Error('地址无效，请修正来源网址。');
   const target = new URL(url);
@@ -41,13 +49,14 @@ export async function publicRequest(url: string, method: 'HEAD' | 'GET') {
     referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(15000),
   });
   if (response.type === 'opaqueredirect') throw new Error('入口发生跳转，请核对最终网址。');
+  if (!response.ok) await response.body?.cancel();
   if (response.status === 429) {
     const value = response.headers.get('Retry-After')?.trim();
     const until = value && /^\d+$/.test(value) ? Date.now() + Number(value) * 1000 : Date.parse(value ?? '');
     localStorage.setItem(cooldown, String(Number.isFinite(until) ? Math.max(until, Date.now() + 2000) : Date.now() + 60000));
     throw new Error('HTTP 429，等待站点解除限流后恢复。');
   }
-  if (!response.ok) throw new Error(`HTTP ${response.status}，请核对访问权限和入口地址。`);
+  if (!response.ok) throw new PublicHttpError(response.status);
   return response;
 }
 
