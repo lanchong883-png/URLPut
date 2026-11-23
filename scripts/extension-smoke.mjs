@@ -7,19 +7,24 @@ import { sql } from 'drizzle-orm';
 import { createApp } from '../apps/api/src/app.ts';
 import { embeddedDatabase, localIdentity, migrate, seedLocal } from '../apps/api/src/database.ts';
 
-const database = embeddedDatabase();
-const api = createApp(database, async () => localIdentity.subject, /^chrome-extension:\/\/[a-p]{32}$/);
 const userData = await mkdtemp(join(tmpdir(), 'urlput-chrome-'));
 const calls = [];
 const webSmoke = process.env.URLPUT_WEB_SMOKE === '1';
 const measureLongQueue = process.env.URLPUT_LONG_QUEUE === '1';
-api.post('/:provider/v1/chat/completions', async request => {
-  calls.push({ url: request.url, authorization: request.headers.authorization, body: request.body });
-  return { choices: [{ message: { content: 'OK' } }] };
-});
-
 let context;
-try {
+let database;
+let api;
+const apiCalls = [];
+const apiPattern = '**/api/**';
+const blockApi = route => { apiCalls.push(route.request().url()); return route.abort(); };
+
+async function startLegacyBackend() {
+  database = embeddedDatabase();
+  api = createApp(database, async () => localIdentity.subject, /^chrome-extension:\/\/[a-p]{32}$/);
+  api.post('/:provider/v1/chat/completions', async request => {
+    calls.push({ url: request.url, authorization: request.headers.authorization, body: request.body });
+    return { choices: [{ message: { content: 'OK' } }] };
+  });
   await migrate(database);
   await seedLocal(database);
   await database.query(sql`
@@ -42,7 +47,11 @@ try {
     assert.equal(result.statusCode, 200, result.body);
   }
   await api.listen({ port: 4310, host: '127.0.0.1' });
+}
 
+try {
+  await assert.rejects(fetch('http://127.0.0.1:4310/health', { signal: AbortSignal.timeout(2000) }),
+    error => error.cause?.code === 'ECONNREFUSED', '本机验收开始前，4310 端口应关闭。');
   const extension = resolve(process.env.URLPUT_EXTENSION_DIR || 'apps/extension/.output/chrome-mv3');
   async function launchWorkbench() {
     context = await chromium.launchPersistentContext(userData, {
@@ -51,6 +60,7 @@ try {
       executablePath: process.env.CHROMIUM_PATH,
       args: webSmoke ? (measureLongQueue ? ['--enable-precise-memory-info'] : []) : [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
     });
+    await context.route(apiPattern, blockApi);
     let origin;
     if (webSmoke) {
       origin = 'http://127.0.0.1:4310';
@@ -108,9 +118,6 @@ try {
   }
   const origin = await launchWorkbench();
   let page = await createWorkbenchPage();
-  const apiCalls = [];
-  const blockApi = route => { apiCalls.push(route.request().url()); return route.abort(); };
-  await page.route('**/api/**', blockApi);
   await page.goto(`${origin}/sidepanel.html`);
   await page.getByRole('button', { name: '选择数据目录' }).click();
   await page.getByLabel('官网地址').fill('https://local.example');
@@ -404,7 +411,6 @@ try {
     assert.equal(await launchWorkbench(), origin);
     await context.route(resumeFixture, serveResume);
     page = await createWorkbenchPage(true);
-    await page.route('**/api/**', blockApi);
     await page.goto(`${origin}/sidepanel.html`);
     await page.getByRole('button', { name: '重新授权原目录' }).click();
     assert.equal(await page.evaluate(() => sessionStorage.getItem('directory-picker-count')), null);
@@ -634,7 +640,8 @@ try {
     await page.getByRole('alert').filter({ hasText: '已有该网址的待审核回执' }).waitFor();
   }
   assert.deepEqual(apiCalls, []);
-  await page.unroute('**/api/**', blockApi);
+  await context.unroute(apiPattern, blockApi);
+  await startLegacyBackend();
   await page.getByLabel('数据来源').selectOption('legacy');
   assert.equal(await page.getByRole('navigation', { name: '插件导航' }).getByRole('button').count(), 6);
   for (const width of [320, 392]) {
@@ -792,13 +799,13 @@ try {
   assert.equal(await migrated.locator('option').count(), 3);
   await migrated.selectOption(await migrated.getByRole('option', { name: /candidates.csv/ }).getAttribute('value'));
   await page.getByRole('cell', {name: 'https://example.net', exact: true}).waitFor();
-  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export, serial URL checks, Retry-After and request timeouts, browser restart queue recovery, directory reauthorization and backup/restore, linked moderation receipts, filtered backlink revisits, issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
+  console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export with backend off, serial URL checks, Retry-After and request timeouts, browser restart queue recovery, directory reauthorization and backup/restore, linked moderation receipts, filtered backlink revisits, issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
 } finally {
   try {
     await context?.close();
   } finally {
-    await api.close();
-    await database.close();
+    await api?.close();
+    await database?.close();
     await rm(userData, { recursive: true, force: true });
   }
 }
