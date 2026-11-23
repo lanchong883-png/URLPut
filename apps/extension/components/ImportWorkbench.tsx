@@ -202,8 +202,8 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
       {!legacy && directoryStatus && <p role="status">{directoryStatus}</p>}
       {error && <p role="alert">{error}</p>}
     </section>
-    {!legacy && dir && <ResumeChecks key={generation} dir={dir} />}
-    {(legacy || dir) && <Workbench key={legacy ? 'legacy' : generation}
+    {!legacy && dir && <ResumeChecks key={`resume-${generation}`} dir={dir} />}
+    {(legacy || dir) && <Workbench key={legacy ? 'legacy' : `local-${generation}`}
       directory={legacy ? undefined : dir} migrationDirectory={legacy ? dir : undefined} withCatalog={withCatalog && legacy} />}
   </>;
 }
