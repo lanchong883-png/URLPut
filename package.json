@@ -15,7 +15,8 @@
     "build": "npm run build -w @urlput/extension",
     "check": "npm run prepare:wxt -w @urlput/extension && tsc --noEmit",
     "test": "node --test",
-    "test:extension": "node scripts/extension-smoke.mjs"
+    "test:extension": "node scripts/extension-smoke.mjs",
+    "package:chrome": "npm run package:chrome -w @urlput/extension"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

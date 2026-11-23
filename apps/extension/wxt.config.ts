@@ -3,6 +3,7 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   manifestVersion: 3,
+  zip: { artifactTemplate: 'URLPut-WXT-{{version}}-{{browser}}.zip', zipSources: false },
   manifest: {
     name: 'URLPut',
     version: '0.1.0',
