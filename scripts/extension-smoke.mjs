@@ -43,7 +43,7 @@ try {
   }
   await api.listen({ port: 4310, host: '127.0.0.1' });
 
-  const extension = resolve('apps/extension/.output/chrome-mv3');
+  const extension = resolve(process.env.URLPUT_EXTENSION_DIR || 'apps/extension/.output/chrome-mv3');
   async function launchWorkbench() {
     context = await chromium.launchPersistentContext(userData, {
       channel: 'chromium',
