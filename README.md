@@ -1,20 +1,25 @@
 # URLPut
 
-URLPut 是用于管理外链候选的 Chrome MV3 扩展。第一批实现覆盖 CSV 和表格粘贴、列映射、预览、确认和逐行台账。扩展内也可以配置及测试 OpenAI 兼容的本地或自建模型。
+URLPut 是用于管理外链候选的 Chrome MV3 扩展。本机工作台支持
+CSV、TXT 和表格粘贴，可在用户选择的目录中保存批次、分析结果、
+投稿回执和核验台账。
 
-## 本地运行
+## 本机运行与验收
 
-需要 Node.js 24 和近期版本的 Chrome 或 Chromium。
+需要 Node.js 24 和允许加载解包扩展的 Chrome。
 
-```sh
+```powershell
 npm ci
-npm run dev:api -- --local
-npm run dev:extension
+npm run package:chrome
 ```
 
-本地 API 绑定在 `127.0.0.1:4310`，用 PGlite 在 `.data/postgres` 保存数据并提供示例工作空间。该模式信任本机，用于单用户开发。
+在 `chrome://extensions` 打开开发者模式，加载
+`apps/extension/.output/chrome-mv3`。点击扩展图标进入工作台，
+选择一个空测试目录。保持业务 API 和数据库关闭，按
+[本机版规范和验收清单](docs/requirements/local-acceptance.md)操作。
+构建包位置和目录恢复说明见[本机版开发交接](docs/本机版开发交接.md)。
 
-也可执行 `npm run build`，然后在 `chrome://extensions` 打开开发者模式并加载 `apps/extension/.output/chrome-mv3`。点击扩展图标打开侧边栏，再进入工作台。
+## 开发验证
 
 ```sh
 npm run check
@@ -40,6 +45,10 @@ npm run test:extension
 
 ## PostgreSQL 与认证接线
 
+开发旧版服务工作空间或复测历史迁移时，可运行
+`npm run dev:api -- --local`。API 监听 `127.0.0.1:4310`，
+PGlite 数据位于 `.data/postgres`。该模式信任本机，用于单用户开发。
+
 Fastify API 支持 PostgreSQL 与 Supabase 签名访问令牌。部署时设置服务端 `DATABASE_URL`、`SUPABASE_URL` 和 `EXTENSION_ORIGIN`（例如对应固定扩展 ID 的 `chrome-extension://…`），并省略 `--local`。数据表按 `apps/api/migrations/` 中的 SQL 初始化。工作空间、推广站点和成员关系目前由管理员初始化，成员 `subject` 使用 Supabase 用户 UUID。
 
 扩展构建读取 `VITE_API_URL`、`VITE_SUPABASE_URL` 和 `VITE_SUPABASE_PUBLIC_KEY`，其中后者必须是可发布的客户端公钥。Supabase 邮件模板使用验证码 `{{ .Token }}`，管理员先创建用户。生产身份服务和 Postgres 部署仍需在目标环境联调。
@@ -59,3 +68,7 @@ Fastify API 支持 PostgreSQL 与 Supabase 签名访问令牌。部署时设置�
 读取清单支持 `limit` 和 `offset`。清单通过检查回传更新，定时执行器尚待接入。
 
 [产品需求](docs/requirements/product-requirements.md) · [技术架构](docs/architecture/technical-architecture.md)
+
+Spec Kit 项目原则见[项目章程](.specify/memory/constitution.md)。
+本机验收范围与后续工作见[功能规格](specs/001-local-acceptance/spec.md)
+和[实施计划](specs/001-local-acceptance/plan.md)。
