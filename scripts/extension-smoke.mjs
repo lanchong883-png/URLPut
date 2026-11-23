@@ -120,8 +120,12 @@ try {
   await page.getByRole('button', { name: '预览导入' }).click();
   await page.getByRole('button', { name: '确认并保存' }).click();
   await page.getByRole('button', { name: '导出 CSV' }).waitFor();
-  await page.evaluate(() => sessionStorage.setItem('directory-permission', 'deny'));
-  await page.reload();
+  await page.evaluate(() => {
+    sessionStorage.setItem('directory-permission', 'deny');
+    window.dispatchEvent(new Event('focus'));
+  });
+  await page.getByRole('alert').filter({ hasText: '数据目录权限已失效' }).waitFor();
+  assert.equal(await page.getByLabel('导入批次').count(), 0);
   const reauthorize = page.getByRole('button', { name: '重新授权原目录' });
   await reauthorize.click();
   await page.getByRole('alert').filter({ hasText: '请允许读取和写入原数据目录。' }).waitFor();

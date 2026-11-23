@@ -109,6 +109,32 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    if (!binding || !authorized || choosing || legacy) return;
+    const handle = binding;
+    let active = true;
+    async function checkPermission() {
+      const version = revision.current;
+      try {
+        const permission = await directoryPermission(handle);
+        if (permission !== 'granted' && active && version === revision.current) {
+          setAuthorized(false);
+          setError('数据目录权限已失效，请重新授权原目录。');
+        }
+      } catch (failure) {
+        if (active && version === revision.current) {
+          setAuthorized(false);
+          setError(message(failure));
+        }
+      }
+    }
+    window.addEventListener('focus', checkPermission);
+    return () => {
+      active = false;
+      window.removeEventListener('focus', checkPermission);
+    };
+  }, [authorized, binding, choosing, legacy]);
+
   async function authorize() {
     if (!binding) return;
     revision.current++;
