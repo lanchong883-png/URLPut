@@ -114,3 +114,5 @@
 .catalog-list li { display: grid; gap: .15rem; padding: .55rem .15rem; border-bottom: 1px solid var(--line); }
 .catalog-list span, .catalog-list time { color: #5e637b; }
 .catalog-list time { font-size: .8rem; }
+
+.side-panel [hidden] { display: none; }

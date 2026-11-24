@@ -5,8 +5,21 @@ import { downloadCsv } from '../lib/report';
 import type { Batch } from '../lib/api';
 import { checkPage, checkSummary, checkSegmentSize, dismissCheck, enqueue, observeChecks, runQueue, type Check } from '../lib/check-queue';
 
-export function BatchChecks({ dir, site, batch }: { dir: FileSystemDirectoryHandle; site: string; batch: Batch }) {
-  const [analysis, setAnalysis] = useState(false);
+export async function requestCheckAccess(rows: Batch['rows'], retry?: number) {
+  const origins = new Set<string>();
+  for (const row of rows) {
+    if (row.disposition !== 'candidate' || !row.normalizedUrl || (retry !== undefined && row.sequence !== retry)) continue;
+    const url = new URL(row.normalizedUrl);
+    origins.add(`${url.protocol}//${url.hostname}/*`);
+  }
+  if (!origins.size) throw new Error('当前批次没有可检查的网址。');
+  if (!await browser.permissions.request({ origins: [...origins] })) throw new Error('请授权访问所选入口后再开始。');
+}
+
+export function BatchChecks({ dir, site, batch, initiallyAnalysis = false }: {
+  dir: FileSystemDirectoryHandle; site: string; batch: Batch; initiallyAnalysis?: boolean;
+}) {
+  const [analysis, setAnalysis] = useState(initiallyAnalysis);
   const [page, setPage] = useState(0);
   const [revision, setRevision] = useState(0);
   useEffect(() => observeChecks(() => setRevision(value => value + 1)), []);
@@ -35,13 +48,7 @@ export function BatchChecks({ dir, site, batch }: { dir: FileSystemDirectoryHand
   async function start(retry?: number) {
     setBusy(true);
     try {
-      const candidates = batch.rows.filter(row => row.disposition === 'candidate' && row.normalizedUrl && (retry === undefined || row.sequence === retry));
-      if (!candidates.length) throw new Error('当前批次没有可检查的网址。');
-      const origins = [...new Set(candidates.map(row => {
-        const url = new URL(row.normalizedUrl!);
-        return `${url.protocol}//${url.hostname}/*`;
-      }))];
-      if (!await browser.permissions.request({ origins })) throw new Error('请授权访问所选入口后再开始。');
+      await requestCheckAccess(batch.rows, retry);
       await enqueue(dir, { site, batch: batch.id, retry, analysis });
       setStatus('已排队，正在串行处理。');
       await runQueue(dir);

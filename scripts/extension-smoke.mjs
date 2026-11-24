@@ -119,6 +119,8 @@ try {
   const origin = await launchWorkbench();
   let page = await createWorkbenchPage();
   await page.goto(`${origin}/sidepanel.html`);
+  const nav = page.getByRole('navigation', { name: '插件导航' });
+  await nav.getByRole('button', { name: '新建批次' }).click();
   await page.getByRole('button', { name: '选择数据目录' }).click();
   await page.getByLabel('官网地址').fill('https://local.example');
   await page.getByRole('button', { name: '添加推广站点' }).click();
@@ -126,7 +128,18 @@ try {
   await page.getByLabel('或粘贴表格及网址').fill('https://offline.example\nhttps://ok-offline.example');
   await page.getByRole('button', { name: '预览导入' }).click();
   await page.getByRole('button', { name: '确认并保存' }).click();
+  await page.getByRole('heading', { name: '任务', exact: true }).waitFor();
   await page.getByRole('button', { name: '导出 CSV' }).waitFor();
+  await page.getByRole('button', { name: '加入只读检查队列' }).waitFor();
+  assert.equal(await page.getByLabel('或粘贴表格及网址').isVisible(), false);
+  await nav.getByRole('button', { name: '清单', exact: true }).click();
+  await page.getByRole('button', { name: '备份数据目录' }).waitFor();
+  assert.equal(await page.getByLabel('导入批次').isVisible(), false);
+  await nav.getByRole('button', { name: '新建批次' }).click();
+  await page.getByLabel('或粘贴表格及网址').waitFor();
+  assert.equal(await page.getByLabel('或粘贴表格及网址').inputValue(), '');
+  await page.goto(`${origin}/import.html`);
+  await page.getByRole('button', { name: '备份数据目录' }).waitFor();
   await page.evaluate(() => {
     sessionStorage.setItem('directory-permission', 'deny');
     window.dispatchEvent(new Event('focus'));
@@ -160,7 +173,7 @@ try {
   assert.match(receiptCsv, /Awaiting moderation #TEST-100/);
   if (webSmoke) {
     const approvalPanel = await context.newPage();
-    await approvalPanel.goto(`${origin}/sidepanel.html`);
+    await approvalPanel.goto(`${origin}/import.html`);
     await approvalPanel.getByLabel('导入批次').selectOption({ index: 1 });
     for (const panel of [page, approvalPanel]) {
       await panel.getByText('逐条批准手动投稿', { exact: true }).click();
@@ -195,7 +208,7 @@ try {
       await route.fulfill({ contentType: 'text/html; charset=utf-8', body });
     });
     const secondStart = await context.newPage();
-    await secondStart.goto(`${origin}/sidepanel.html`);
+    await secondStart.goto(`${origin}/import.html`);
     await secondStart.getByLabel('导入批次').selectOption({ index: 1 });
     await secondStart.getByText('逐条批准手动投稿', { exact: true }).click();
     await secondStart.getByLabel('投稿候选').selectOption('2');
@@ -261,7 +274,7 @@ try {
       await route.fulfill({ status: probes.length === 1 && !resolved ? 503 : 200, headers: { 'Access-Control-Allow-Origin': '*' } });
     });
     const otherPanel = await context.newPage();
-    await otherPanel.goto(`${origin}/sidepanel.html`);
+    await otherPanel.goto(`${origin}/import.html`);
     await otherPanel.getByLabel('导入批次').selectOption({ index: 1 });
     await Promise.all([page, otherPanel].map(panel => panel.getByRole('button', { name: '加入只读检查队列' }).click()));
     await otherPanel.getByText(/本轮结束。/).waitFor();
@@ -355,7 +368,7 @@ try {
     failedRevisit = true;
     revisitCalls.length = 0;
     const revisitPanel = await context.newPage();
-    await revisitPanel.goto(`${origin}/sidepanel.html`);
+    await revisitPanel.goto(`${origin}/import.html`);
     await revisitPanel.getByText('已核验外链台账（2）').click();
     pauseSecondRevisit = true;
     await revisitPanel.getByRole('button', { name: '回访筛选结果（2）' }).click();
@@ -381,7 +394,7 @@ try {
     assert.match(await readFile(await (await revisitDownload).path(), 'utf8'), /访问问题原因[\s\S]*HTTP 503/);
     const interrupted = await context.newPage();
     interrupted.setDefaultTimeout(10000);
-    await interrupted.goto(`${origin}/sidepanel.html`);
+    await interrupted.goto(`${origin}/import.html`);
     await interrupted.getByLabel('或粘贴表格及网址').fill('https://first-resume.example\nhttps://second-resume.example');
     await interrupted.getByRole('button', { name: '预览导入' }).click();
     await interrupted.getByRole('button', { name: '确认并保存' }).click();
@@ -411,7 +424,7 @@ try {
     assert.equal(await launchWorkbench(), origin);
     await context.route(resumeFixture, serveResume);
     page = await createWorkbenchPage(true);
-    await page.goto(`${origin}/sidepanel.html`);
+    await page.goto(`${origin}/import.html`);
     await page.getByRole('button', { name: '重新授权原目录' }).click();
     assert.equal(await page.evaluate(() => sessionStorage.getItem('directory-picker-count')), null);
     await page.getByRole('button', { name: '继续未完成队列（1）' }).click();
@@ -642,7 +655,11 @@ try {
   assert.deepEqual(apiCalls, []);
   await context.unroute(apiPattern, blockApi);
   await startLegacyBackend();
+  await page.goto(`${origin}/sidepanel.html`);
+  const tab = name => page.getByRole('navigation', { name: '插件导航' }).getByRole('button', { name, exact: true }).click();
+  await tab('清单');
   await page.getByLabel('数据来源').selectOption('legacy');
+  await tab('新建批次');
   assert.equal(await page.getByRole('navigation', { name: '插件导航' }).getByRole('button').count(), 6);
   for (const width of [320, 392]) {
     await page.setViewportSize({ width, height: 760 });
@@ -657,6 +674,7 @@ try {
   await page.getByText('重复候选，关联第 1 条。').waitFor();
   await page.getByRole('button', { name: '确认并保存' }).click();
   await page.getByLabel('导入批次').waitFor();
+  await tab('新建批次');
 
   await page.getByLabel('CSV 或 TXT 文件').setInputFiles({
     name: 'candidates.csv', mimeType: 'text/csv', buffer: Buffer.from('URL;名称\nhttps://example.net;目录站\nhttps://EXAMPLE.net/#重复;重复\ninvalid;无效'),
@@ -668,6 +686,7 @@ try {
   await page.getByRole('option', { name: /candidates.csv/ }).waitFor({ state: 'attached' });
   await page.reload();
   await page.getByLabel('推广站点').selectOption({ label: '示例站点' });
+  await tab('任务');
   await page.getByRole('option', { name: /candidates.csv/ }).waitFor({ state: 'attached' });
   const options = await page.getByLabel('导入批次').locator('option').allTextContents();
   assert.equal(options.length, 3);
@@ -691,6 +710,7 @@ try {
   await page.getByLabel('推广站点').selectOption({ label: '第二站点' });
   await page.getByText('当前站点暂无导入记录。').waitFor();
   assert.equal(await page.getByRole('button', { name: '导出 CSV' }).count(), 0);
+  await tab('新建批次');
   await paste.fill('https://second-target.example/');
   await page.getByRole('button', { name: '预览导入' }).click();
   await page.getByRole('button', { name: '确认并保存' }).click();
@@ -700,6 +720,7 @@ try {
   assert.match(secondCsv, /second-target.example/);
   assert.match(secondCsv, /第二站点/);
   assert.doesNotMatch(secondCsv, /example.net|示例站点/);
+  await tab('新建批次');
   const originalText = '目录 https://txt-first.example/；备用 https://txt-second.example/';
   await page.getByLabel('CSV 或 TXT 文件').setInputFiles({
     name: 'links.TXT', mimeType: 'text/plain',
@@ -713,6 +734,7 @@ try {
   await page.getByRole('option', { name: /links.TXT/ }).waitFor({ state: 'attached' });
   await page.reload();
   await page.getByLabel('推广站点').selectOption({ label: '第二站点' });
+  await tab('任务');
   const txtOption = page.getByRole('option', { name: /links.TXT/ });
   await txtOption.waitFor({ state: 'attached' });
   await page.getByLabel('导入批次').selectOption(await txtOption.getAttribute('value'));
@@ -723,6 +745,7 @@ try {
   assert.match(txtCsv, /"3","—","未识别","无效地址","未成功","输入无效"/);
   assert.match(txtCsv, /"第二站点","https:\/\/second.example","3"/);
   assert.doesNotMatch(txtCsv, /second-target\.example/);
+  await tab('清单');
   await page.getByRole('button', { name: '外链清单' }).click();
   const catalog = page.getByRole('region', { name: '活跃外链列表' });
   await catalog.getByText('catalog5.example', { exact: true }).waitFor();
@@ -751,6 +774,7 @@ try {
     assert.equal(await catalog.getByRole('listitem').count(), 0);
   }
   await page.getByRole('button', { name: '推广站点' }).click();
+  await tab('任务');
   await page.getByRole('cell', { name: 'https://txt-first.example/', exact: true }).waitFor();
   await page.getByRole('button', { name: 'AI 模型' }).click();
   await page.getByLabel('服务类型').waitFor();
@@ -794,11 +818,28 @@ try {
   }
   await page.getByLabel('数据来源').selectOption('local');
   await page.getByLabel('推广站点').selectOption({ label: '示例站点' });
+  await tab('任务');
   const migrated = page.getByLabel('导入批次');
   await migrated.getByRole('option', { name: /candidates.csv/ }).waitFor({ state: 'attached' });
   assert.equal(await migrated.locator('option').count(), 3);
   await migrated.selectOption(await migrated.getByRole('option', { name: /candidates.csv/ }).getAttribute('value'));
   await page.getByRole('cell', {name: 'https://example.net', exact: true}).waitFor();
+  if (webSmoke) {
+    let analysisRequests = 0;
+    await context.route('https://sidepanel-analysis.example/**', route => {
+      assert.equal(route.request().method(), 'GET');
+      analysisRequests++;
+      return route.fulfill({ contentType: 'text/html', body: '<title>Side panel analysis</title>' });
+    });
+    await tab('新建批次');
+    await paste.fill('https://sidepanel-analysis.example/');
+    await page.getByRole('button', { name: '预览导入' }).click();
+    await page.getByRole('button', { name: '保存并开始分析' }).click();
+    await page.getByRole('heading', { name: '任务', exact: true }).waitFor();
+    await page.getByText('本轮分析结束。', { exact: true }).waitFor();
+    await page.getByText('Side panel analysis', { exact: true }).waitFor();
+    assert.equal(analysisRequests, 1);
+  }
   console.log(`Chrome smoke passed${webSmoke ? ' (mock extension APIs)' : ''}: side panel at 320/392px, CSV and TXT export with backend off, serial URL checks, Retry-After and request timeouts, browser restart queue recovery, directory reauthorization and backup/restore, linked moderation receipts, filtered backlink revisits, issue recovery, site isolation, catalog search, scrolling and export, legacy workbench and two model profiles.`);
 } finally {
   try {

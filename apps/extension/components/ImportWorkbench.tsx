@@ -1,8 +1,8 @@
 import { SubmissionApprovals } from './SubmissionApprovals';
 import { AnalysisResults } from './AnalysisResults';
 import { VerifiedLinks } from './VerifiedLinks';
-import { observeChecks, pendingCheckCount, runQueue } from '../lib/check-queue';
-import { BatchChecks } from './BatchChecks';
+import { enqueue, observeChecks, pendingCheckCount, runQueue } from '../lib/check-queue';
+import { BatchChecks, requestCheckAccess } from './BatchChecks';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { importBatchSchema, MAX_IMPORT_BYTES, MAX_IMPORT_REQUEST_BYTES, type ImportBatch, type Workspace } from '@urlput/contracts';
 import { buildLedger, mapRows, readTable, readTextRows, type ColumnMapping, type Delimiter, type LedgerRow } from '@urlput/import';
@@ -78,7 +78,13 @@ function ResumeChecks({ dir }: { dir: FileSystemDirectoryHandle }) {
   </section>;
 }
 
-export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean }) {
+type WorkbenchView = 'setup' | 'tasks' | 'library';
+
+export function ImportWorkbench({ withCatalog = false, view, onBatchSaved }: {
+  withCatalog?: boolean;
+  view?: WorkbenchView;
+  onBatchSaved?: () => void;
+}) {
   const [legacy, setLegacy] = useState(() => sessionStorage.getItem('urlput-source') === 'legacy');
   const [binding, setBinding] = useState<FileSystemDirectoryHandle>();
   const [authorized, setAuthorized] = useState(false);
@@ -187,7 +193,7 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
     } finally { setChoosing(false); }
   }
   return <>
-    <section className="card controls">
+    <section className="card controls" hidden={Boolean(view && view !== 'library' && dir)}>
       <label>数据来源<select value={legacy ? 'legacy' : 'local'} onChange={event => {
         sessionStorage.setItem('urlput-source', event.target.value);
         setLegacy(event.target.value === 'legacy');
@@ -200,18 +206,29 @@ export function ImportWorkbench({ withCatalog = false }: { withCatalog?: boolean
       {!legacy && <button disabled={choosing} onClick={() => void choose('source')}>选择备份来源</button>}
       {!legacy && backupSource && <button disabled={choosing} onClick={() => void choose('restore')}>选择恢复目标并恢复</button>}
       {!legacy && directoryStatus && <p role="status">{directoryStatus}</p>}
+      {!legacy && !binding && <p>首次使用请选择空文件夹。已有数据时，选择包含 URLPut-data-v1 的上一级文件夹。</p>}
       {error && <p role="alert">{error}</p>}
     </section>
-    {!legacy && dir && <ResumeChecks key={`resume-${generation}`} dir={dir} />}
+    {!legacy && dir && <div hidden={Boolean(view && view !== 'tasks')}>
+      <ResumeChecks key={`resume-${generation}`} dir={dir} />
+    </div>}
     {(legacy || dir) && <Workbench key={legacy ? 'legacy' : `local-${generation}`}
-      directory={legacy ? undefined : dir} migrationDirectory={legacy ? dir : undefined} withCatalog={withCatalog && legacy} />}
+      directory={legacy ? undefined : dir} migrationDirectory={legacy ? dir : undefined} withCatalog={withCatalog && legacy} view={view} onBatchSaved={onBatchSaved} />}
   </>;
 }
 
-function Workbench({ directory, migrationDirectory, withCatalog }: { directory?: FileSystemDirectoryHandle; migrationDirectory?: FileSystemDirectoryHandle; withCatalog: boolean }) {
+function Workbench({ directory, migrationDirectory, withCatalog, view, onBatchSaved }: {
+  directory?: FileSystemDirectoryHandle;
+  migrationDirectory?: FileSystemDirectoryHandle;
+  withCatalog: boolean;
+  view?: WorkbenchView;
+  onBatchSaved?: () => void;
+}) {
   const auth = directory ? undefined : remoteAuth();
   const [homepage, setHomepage] = useState('');
-  const [library, setLibrary] = useState<'sites' | 'links'>('sites');
+  const [libraryTab, setLibrary] = useState<'sites' | 'links'>('sites');
+  const showLibrary = !view || view === 'library';
+  const library = showLibrary ? libraryTab : 'sites';
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspace] = useState('');
   const [siteId, setSite] = useState('');
@@ -335,21 +352,36 @@ function Workbench({ directory, migrationDirectory, withCatalog }: { directory?:
     setError('');
   }
 
-  async function save() {
+  const [analysisBatch, setAnalysisBatch] = useState<string>();
+  const [analysisStatus, setAnalysisStatus] = useState('');
+
+  async function save(startAnalysis = false) {
     if (!preview || !path) return;
     setError('');
     setBusy(true);
     try {
       if (directory) {
+        if (startAnalysis) await requestCheckAccess(ledger);
         const result = await saveLocalBatch(directory, siteId, preview);
         setSaved(result.batch);
         setHistory(result.history);
         setPreview(undefined);
+        if (startAnalysis) setAnalysisBatch(result.batch.id);
+        if (onBatchSaved) { updateText(''); onBatchSaved(); }
+        if (startAnalysis) {
+          setAnalysisStatus('正在分析…');
+          try {
+            await enqueue(directory, { site: siteId, batch: result.batch.id, analysis: true });
+            await runQueue(directory);
+            setAnalysisStatus('本轮分析结束。');
+          } catch (error) { setAnalysisStatus(message(error)); }
+        }
         return;
       }
       const batch = await request<Batch>(path, preview);
       setSaved(batch);
       setPreview(undefined);
+      if (onBatchSaved) { updateText(''); onBatchSaved(); }
       try { setHistory(await request<BatchSummary[]>(path)); }
       catch { setError('批次已保存，暂时无法刷新历史。'); }
     } catch (error) { setError(message(error)); }
@@ -426,7 +458,7 @@ function Workbench({ directory, migrationDirectory, withCatalog }: { directory?:
       {!configured && <section className="card"><button onClick={() => void requestConfiguredAccess()
         .then(granted => { if (granted) setConfigured(true); else setError('请授权工作台 API。'); })
         .catch(error => setError(message(error)))}>连接工作台</button></section>}
-      {withCatalog && <div className="library-tabs" role="group" aria-label="清单类型">
+      {withCatalog && showLibrary && <div className="library-tabs" role="group" aria-label="清单类型">
         <button type="button" aria-pressed={library === 'sites'} className={library === 'sites' ? '' : 'secondary'}
           onClick={() => setLibrary('sites')}>推广站点</button>
         <button type="button" aria-pressed={library === 'links'} className={library === 'links' ? '' : 'secondary'}
@@ -452,11 +484,11 @@ function Workbench({ directory, migrationDirectory, withCatalog }: { directory?:
           resetSite(); setWorkspaces([]); setWorkspace(''); setSite(''); setCodeSent(false); setCode('');
         })}>退出登录</button>}
       </section>
-      {migrationDirectory && site && <section className="card">
+      {showLibrary && migrationDirectory && site && <section className="card">
         <button disabled={busy} onClick={() => void migrateSite()}>将本站历史批次复制到本机目录</button>
         {migrationStatus && <p role="status">{migrationStatus}</p>}
       </section>}
-      {directory && workspace && <form className="card controls" onSubmit={async event => {
+      {directory && workspace && (showLibrary || !site) && <form className="card controls" onSubmit={async event => {
         event.preventDefault();
         setBusy(true);
         try {
@@ -472,15 +504,15 @@ function Workbench({ directory, migrationDirectory, withCatalog }: { directory?:
         <label>官网地址<input type="url" required value={homepage} onChange={event => setHomepage(event.target.value)} /></label>
         <button disabled={busy}>添加推广站点</button>
       </form>}
-      {directory && site && <VerifiedLinks key={site.id} dir={directory} site={site} batch={saved} onUpdate={async () => {
+      {(showLibrary || view === 'tasks') && directory && site && <VerifiedLinks key={site.id} dir={directory} site={site} batch={saved} onUpdate={async () => {
         if (!saved) return;
         const refreshed = await localReportBatch(directory, siteId, saved.id);
         setSaved(current => current === saved ? refreshed : current);
       }} />}
       {library === 'links' && workspaceId && <LinkCatalog key={workspaceId} workspaceId={workspaceId} />}
       <div hidden={library !== 'sites'}>
-        {directory && site && history.length > 0 && <AnalysisResults key={site.id} dir={directory} site={site.id} batches={history} />}
-        <section className="card stack">
+        {showLibrary && directory && site && history.length > 0 && <AnalysisResults key={site.id} dir={directory} site={site.id} batches={history} />}
+        <section className="card stack" hidden={Boolean(view && (view !== 'setup' || !site))}>
           <h2>导入候选网址</h2>
           <label>CSV 或 TXT 文件<input type="file" accept=".csv,.txt,text/csv,text/plain" disabled={busy} onChange={event => {
             const file = event.target.files?.[0];
@@ -511,12 +543,14 @@ function Workbench({ directory, migrationDirectory, withCatalog }: { directory?:
           </div>}
           <button disabled={busy || readingFile || !(plainText ? parsed.textRows?.length : columns[mapping.url])} onClick={createPreview}>预览导入</button>
         </section>
-        {preview && <section className="card stack">
+        {preview && <section className="card stack" hidden={Boolean(view && view !== 'setup')}>
           <h2>导入预览</h2><p>共 {ledger.length} 行，其中 {ledger.filter(row => row.disposition === 'candidate').length} 条候选。</p>
           <RowTable key={preview.requestId} rows={ledger} />
+          {view === 'setup' && directory && <button disabled={busy || !path || !ledger.some(row => row.disposition === 'candidate')}
+            onClick={() => void save(true)}>保存并开始分析</button>}
           <button disabled={busy || !path} onClick={() => void save()}>{busy ? '保存中…' : '确认并保存'}</button>
         </section>}
-        <section className="card stack">
+        <section className="card stack" hidden={Boolean(view && view !== 'tasks')}>
           <h2>逐行台账</h2>
           {history.length ? <label>导入批次<select value={saved?.id ?? ''} disabled={busy} onChange={event => void openBatch(event.target.value)}>
             <option value="">选择历史批次</option>
@@ -546,7 +580,8 @@ function Workbench({ directory, migrationDirectory, withCatalog }: { directory?:
               </form>
             </details>}
             {directory && <SubmissionApprovals key={saved.id} dir={directory} site={siteId} batch={saved} />}
-            {directory && <BatchChecks key={saved.id} dir={directory} site={siteId} batch={saved} />}
+            {saved.id === analysisBatch && <p role="status">{analysisStatus}</p>}
+            {directory && <BatchChecks key={saved.id} dir={directory} site={siteId} batch={saved} initiallyAnalysis={saved.id === analysisBatch} />}
           </>}
         </section>
       </div>
