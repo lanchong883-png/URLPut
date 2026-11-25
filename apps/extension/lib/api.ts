@@ -25,7 +25,7 @@ export function remoteAuth() {
 }
 
 export type ReviewReceipt = { evidence: string; submittedAt: string; recordedAt: string };
-export type BatchRow = LedgerRow & { review?: ReviewReceipt; verification?: LinkRecord };
+export type BatchRow = LedgerRow & { review?: ReviewReceipt; verification?: LinkRecord; draftSource?: string; submissionSkippedAt?: string };
 
 export type Batch = {
   id: string;
@@ -33,8 +33,13 @@ export type Batch = {
   filename: string | null;
   createdAt: string;
   rows: BatchRow[];
+  snapshot?: {
+    site: { name: string; homepage: string };
+    execution: '仅分析' | '分析后准备人工投稿';
+    sources: import('./local-link-lists').LinkSource[][];
+  };
 };
-export type BatchSummary = Omit<Batch, 'rows'> & { rowCount: number };
+export type BatchSummary = Omit<Batch, 'rows' | 'snapshot'> & { rowCount: number };
 
 async function sendRequest(path: string, body?: ImportBatch, signal?: AbortSignal) {
   const { data } = (await remoteAuth()?.auth.getSession()) ?? {};

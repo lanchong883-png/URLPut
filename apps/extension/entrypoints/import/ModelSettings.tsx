@@ -57,7 +57,7 @@ export function ModelSettings() {
   return (
     <section className="card stack">
       <h2>AI 模型</h2>
-      <p>兼容 OpenAI Chat Completions。连接测试只发送固定测试消息。分析与文案开关将用于后续功能。</p>
+      <p>兼容 OpenAI Chat Completions。连接测试只发送固定测试消息。启用文案后，分析后执行模式可使用该模型准备人工审阅草稿。</p>
       <fieldset disabled={busy} className="stack">
         <label>服务类型<select value={provider} onChange={event => void switchProvider(event.target.value as Provider)}>
           <option value="local">本地模型</option><option value="custom">自建模型服务</option>

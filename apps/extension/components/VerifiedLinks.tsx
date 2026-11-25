@@ -53,6 +53,10 @@ export function VerifiedLinks({ dir, site, batch, onUpdate }: {
       if (receipt) {
         const saved = await localBatch(dir, site.id, receipt.batch);
         const row = saved.rows.find(item => item.sequence === receipt.sequence);
+        const snapshotTarget = saved.snapshot && verificationInput(page.href, saved.snapshot.site.homepage).target;
+        if (snapshotTarget && target.href !== snapshotTarget.href) {
+          throw new Error('关联批次回执时，预期目标须与批次快照中的推广站点一致。');
+        }
         const rowHost = row?.normalizedUrl && new URL(row.normalizedUrl).hostname;
         const entryHost = row?.normalizedEntry && new URL(row.normalizedEntry).hostname;
         if (!row?.review || (page.hostname !== rowHost && page.hostname !== entryHost)) {
@@ -60,6 +64,10 @@ export function VerifiedLinks({ dir, site, batch, onUpdate }: {
         }
       }
       const previous = existing.find(item => item.page === page.href && item.target === target.href);
+      if (receipt && batch?.snapshot && previous?.receipts?.some(item =>
+        item.batch !== receipt.batch || item.sequence !== receipt.sequence)) {
+        throw new Error('该公开评论已经关联另一条回执，请核对原记录。');
+      }
       let result: LinkRecord;
       try {
         const { response, signal } = await publicRequest(source, 'GET');
@@ -168,7 +176,7 @@ export function VerifiedLinks({ dir, site, batch, onUpdate }: {
       void verify(String(data.get('page')), String(data.get('target')), selected ? Number(selected) : undefined);
     }}>
       <label>公开评论定位链接<input type="url" required name="page" placeholder="https://example.org/article#comment123" /></label>
-      <label>预期目标网址<input type="url" required name="target" defaultValue={site.homepage} /></label>
+      <label>预期目标网址<input type="url" required name="target" key={batch?.id ?? site.id} defaultValue={batch?.snapshot?.site.homepage ?? site.homepage} /></label>
       {batch?.rows.some(row => row.review) && <label>关联当前批次回执<select key={batch.id} name="review">
         <option value="">独立核验</option>
         {batch.rows.filter(row => row.review).map(row =>

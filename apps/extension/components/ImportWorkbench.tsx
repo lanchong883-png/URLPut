@@ -1,16 +1,22 @@
 import { SubmissionApprovals } from './SubmissionApprovals';
 import { AnalysisResults } from './AnalysisResults';
 import { VerifiedLinks } from './VerifiedLinks';
-import { enqueue, observeChecks, pendingCheckCount, runQueue } from '../lib/check-queue';
+import { enqueue, observeChecks, pendingCheckCount, runQueue, scheduleMultiSiteBatch } from '../lib/check-queue';
 import { BatchChecks, requestCheckAccess } from './BatchChecks';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { importBatchSchema, MAX_IMPORT_BYTES, MAX_IMPORT_REQUEST_BYTES, type ImportBatch, type Workspace } from '@urlput/contracts';
 import { buildLedger, mapRows, readTable, readTextRows, type ColumnMapping, type Delimiter, type LedgerRow } from '@urlput/import';
 import { remoteAuth, request, requestConfiguredAccess, type Batch, type BatchSummary } from '../lib/api';
 import { LinkCatalog } from './LinkCatalog';
+import { LocalLinkLists } from './LocalLinkLists';
+import { LocalSites } from './LocalSites';
+import { MultiSiteSetup } from './MultiSiteSetup';
+import { DraftTemplates } from './DraftTemplates';
+import { MultiSiteHistory } from './MultiSiteHistory';
+import { PendingSubmissionReviews } from './PendingSubmissionReviews';
 import { downloadLedger, reportCells, reportColumns, type ReportSite } from '../lib/report';
 
-import { addSite, copyDirectory, directoryBinding, directoryPermission, localReportBatch, localHistory, openDirectory, prepareDirectory, recordPendingReview, registerMigratedSite, saveLocalBatch, workspaceFor } from '../lib/local-directory';
+import { activeUrlLock, addSite, copyDirectory, directoryBinding, directoryPermission, localReportBatch, localHistory, openDirectory, pendingMultiSiteBatches, prepareDirectory, recordPendingReview, registerMigratedSite, saveLocalBatch, workspaceFor, directoryLastWrite } from '../lib/local-directory';
 
 const fields: Record<keyof ColumnMapping, string> = { url: '候选网址', entry: '投稿入口', name: '名称', notes: '备注' };
 const defaultMapping: ColumnMapping = { url: 0 };
@@ -60,7 +66,13 @@ function ResumeChecks({ dir }: { dir: FileSystemDirectoryHandle }) {
       }).catch(error => { if (active && revision === current) setStatus(message(error)); });
     }
     const unsubscribe = observeChecks(refresh);
-    refresh();
+    void pendingMultiSiteBatches(dir).then(async batches => {
+      for (const batch of batches) {
+        if (!active) return;
+        await scheduleMultiSiteBatch(dir, batch);
+      }
+    }).catch(error => { if (active) setStatus(message(error)); })
+      .finally(() => { if (active) refresh(); });
     return () => { active = false; unsubscribe(); };
   }, [dir]);
   if (!pending && !status) return null;
@@ -78,18 +90,45 @@ function ResumeChecks({ dir }: { dir: FileSystemDirectoryHandle }) {
   </section>;
 }
 
-type WorkbenchView = 'setup' | 'tasks' | 'library';
+type WorkbenchView = 'setup' | 'tasks' | 'library' | 'templates';
 
-export function ImportWorkbench({ withCatalog = false, view, onBatchSaved }: {
+export function ImportWorkbench({ withCatalog = false, view, onBatchSaved, settings = false, onOpenSettings, onCloseSettings, onNavigate }: {
   withCatalog?: boolean;
   view?: WorkbenchView;
   onBatchSaved?: () => void;
+  settings?: boolean;
+  onOpenSettings?: () => void;
+  onCloseSettings?: () => void;
+  onNavigate?: (view: WorkbenchView) => void;
 }) {
   const [legacy, setLegacy] = useState(() => sessionStorage.getItem('urlput-source') === 'legacy');
   const [binding, setBinding] = useState<FileSystemDirectoryHandle>();
   const [authorized, setAuthorized] = useState(false);
   const dir = authorized ? binding : undefined;
   const [label, setLabel] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [lastWrite, setLastWrite] = useState<number>();
+  const workbench = useRef<HTMLDivElement>(null);
+  const lastFocus = useRef<HTMLElement>(null);
+  const [workbenchBusy, setWorkbenchBusy] = useState(false);
+  const previousSettings = useRef(settings);
+
+  function restoreFocus() {
+    requestAnimationFrame(() => {
+      const previous = lastFocus.current;
+      if (previous?.isConnected && previous.getClientRects().length && !previous.matches(':disabled')) previous.focus();
+      else {
+        const heading = workbench.current?.querySelector<HTMLElement>('[data-draft-heading]');
+        if (heading?.getClientRects().length) heading.focus();
+      }
+    });
+  }
+
+  useEffect(() => {
+    if (previousSettings.current && !settings) restoreFocus();
+    previousSettings.current = settings;
+    if (settings && dir) setLastWrite(directoryLastWrite(dir));
+  }, [settings, dir]);
   const [error, setError] = useState('');
   const [choosing, setChoosing] = useState(false);
   const [directoryStatus, setDirectoryStatus] = useState('');
@@ -104,26 +143,40 @@ export function ImportWorkbench({ withCatalog = false, view, onBatchSaved }: {
       if (!value || !active || version !== revision.current) return;
       setBinding(value);
       const granted = await directoryPermission(value) === 'granted';
-      const name = granted ? (await workspaceFor(value)).name : '';
+      const loaded = granted ? await workspaceFor(value) : undefined;
       if (active && version === revision.current) {
         setAuthorized(granted);
-        setLabel(name);
+        setLabel(loaded?.name ?? '');
       }
     }).catch(err => {
       if (active && version === revision.current) setError(message(err));
-    });
+    }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, []);
 
   useEffect(() => {
-    if (!binding || !authorized || choosing || legacy) return;
+    if (!binding || choosing || legacy || workbenchBusy) return;
     const handle = binding;
     let active = true;
     async function checkPermission() {
       const version = revision.current;
       try {
+        const current = await directoryBinding();
+        if (current && !(await handle.isSameEntry(current))) {
+          const granted = await directoryPermission(current) === 'granted';
+          const loaded = granted ? await workspaceFor(current) : undefined;
+          if (!active || version !== revision.current) return;
+          revision.current++;
+          setBinding(current);
+          setAuthorized(granted);
+          setLabel(loaded?.name ?? '');
+          setError('');
+          setGeneration(value => value + 1);
+          return;
+        }
         const permission = await directoryPermission(handle);
-        if (permission !== 'granted' && active && version === revision.current) {
+        if (permission === 'granted') await workspaceFor(handle);
+        if (authorized && permission !== 'granted' && active && version === revision.current) {
           setAuthorized(false);
           setError('数据目录权限已失效，请重新授权原目录。');
         }
@@ -135,11 +188,13 @@ export function ImportWorkbench({ withCatalog = false, view, onBatchSaved }: {
       }
     }
     window.addEventListener('focus', checkPermission);
+    document.addEventListener('visibilitychange', checkPermission);
     return () => {
       active = false;
       window.removeEventListener('focus', checkPermission);
+      document.removeEventListener('visibilitychange', checkPermission);
     };
-  }, [authorized, binding, choosing, legacy]);
+  }, [authorized, binding, choosing, legacy, workbenchBusy]);
 
   async function authorize() {
     if (!binding) return;
@@ -151,6 +206,8 @@ export function ImportWorkbench({ withCatalog = false, view, onBatchSaved }: {
       const workspace = await workspaceFor(binding);
       setLabel(workspace.name);
       setAuthorized(true);
+      if (settings) onCloseSettings?.();
+      restoreFocus();
     } catch (err) { setAuthorized(false); setError(message(err)); }
     finally { setChoosing(false); }
   }
@@ -161,6 +218,7 @@ export function ImportWorkbench({ withCatalog = false, view, onBatchSaved }: {
     setBinding(directory);
     setAuthorized(true);
     setLabel(workspace.name);
+    if (onCloseSettings) { onCloseSettings(); restoreFocus(); }
     setGeneration(value => value + 1);
   }
 
@@ -175,7 +233,10 @@ export function ImportWorkbench({ withCatalog = false, view, onBatchSaved }: {
       if (!picker.showDirectoryPicker) throw new Error('请在支持目录选择的桌面 Chrome 工作台中打开。');
       const parent = await picker.showDirectoryPicker({ mode: operation === 'source' ? 'read' : 'readwrite' });
       if (operation === 'create' || operation === 'bind') {
-        await bind(await (operation === 'create' ? prepareDirectory(parent) : openDirectory(parent)));
+        await navigator.locks.request(activeUrlLock, { ifAvailable: true }, async active => {
+          if (!active) throw new Error('有只读任务正在运行，请等当前操作结束后再切换数据目录。');
+          await bind(await (operation === 'create' ? prepareDirectory(parent) : openDirectory(parent)));
+        });
         setBackupSource(undefined);
       } else if (operation === 'source') {
         setBackupSource(await openDirectory(parent));
@@ -189,47 +250,74 @@ export function ImportWorkbench({ withCatalog = false, view, onBatchSaved }: {
         setDirectoryStatus(`已恢复并切换到：${parent.name}。`);
       }
     } catch (err) {
-      if (!(err instanceof DOMException && err.name === 'AbortError')) setError(message(err));
+      if (err instanceof DOMException && err.name === 'AbortError') setDirectoryStatus('已取消，可重新选择目录。');
+      else setError(message(err));
     } finally { setChoosing(false); }
   }
   return <>
-    <section className="card controls" hidden={Boolean(view && view !== 'library' && dir)}>
-      <label>数据来源<select value={legacy ? 'legacy' : 'local'} onChange={event => {
+    <section className="card controls" hidden={Boolean(onOpenSettings && !settings)}>
+      {onOpenSettings && <>
+        <h2>数据目录</h2>
+        <p>目录：{label || (binding ? '原数据目录' : '尚未绑定')}</p>
+        <p>授权状态：{loading ? '检查中' : dir ? '可读写' : binding ? '需重新授权' : '未绑定'}</p>
+        <p>本次会话最近写入：{lastWrite ? new Date(lastWrite).toLocaleString() : '暂无记录'}</p>
+      </>}
+      <label>数据来源<select disabled={choosing || workbenchBusy} value={legacy ? 'legacy' : 'local'} onChange={event => {
         sessionStorage.setItem('urlput-source', event.target.value);
         setLegacy(event.target.value === 'legacy');
       }}><option value="local">本机目录</option><option value="legacy">旧版服务工作空间</option></select></label>
-      {!legacy && <button disabled={choosing} onClick={() => void choose(binding ? 'bind' : 'create')}>{binding ? '重新选择数据目录' : '选择数据目录'}</button>}
-      {!legacy && binding && <button disabled={choosing} onClick={() => void choose('create')}>初始化空数据目录</button>}
-      {!legacy && binding && !authorized && <button disabled={choosing} onClick={() => void authorize()}>重新授权原目录</button>}
-      {!legacy && dir && <span>{label}</span>}
-      {!legacy && dir && <button disabled={choosing} onClick={() => void choose('backup')}>备份数据目录</button>}
-      {!legacy && <button disabled={choosing} onClick={() => void choose('source')}>选择备份来源</button>}
-      {!legacy && backupSource && <button disabled={choosing} onClick={() => void choose('restore')}>选择恢复目标并恢复</button>}
+      {!legacy && <button disabled={choosing || workbenchBusy || loading} onClick={() => void choose(binding ? 'bind' : 'create')}>{binding ? '重新选择数据目录' : onOpenSettings ? '初始化空数据目录' : '选择数据目录'}</button>}
+      {onOpenSettings && !legacy && !binding && <button disabled={choosing || workbenchBusy || loading} onClick={() => void choose('bind')}>绑定已有数据目录</button>}
+      {!legacy && binding && <button disabled={choosing || workbenchBusy || loading} onClick={() => void choose('create')}>初始化空数据目录</button>}
+      {!legacy && binding && !authorized && <button disabled={choosing || workbenchBusy || loading} onClick={() => void authorize()}>重新授权原目录</button>}
+      {!onOpenSettings && !legacy && dir && <span>{label}</span>}
+      {!legacy && dir && <button disabled={choosing || workbenchBusy || loading} onClick={() => void choose('backup')}>备份数据目录</button>}
+      {!legacy && <button disabled={choosing || workbenchBusy || loading} onClick={() => void choose('source')}>选择备份来源</button>}
+      {!legacy && backupSource && <button disabled={choosing || workbenchBusy || loading} onClick={() => void choose('restore')}>选择恢复目标并恢复</button>}
       {!legacy && directoryStatus && <p role="status">{directoryStatus}</p>}
       {!legacy && !binding && <p>首次使用请选择空文件夹。已有数据时，选择包含 URLPut-data-v1 的上一级文件夹。</p>}
       {error && <p role="alert">{error}</p>}
     </section>
-    {!legacy && dir && <div hidden={Boolean(view && view !== 'tasks')}>
+    {!legacy && dir && <div hidden={settings || Boolean(view && view !== 'tasks')}>
       <ResumeChecks key={`resume-${generation}`} dir={dir} />
     </div>}
-    {(legacy || dir) && <Workbench key={legacy ? 'legacy' : `local-${generation}`}
-      directory={legacy ? undefined : dir} migrationDirectory={legacy ? dir : undefined} withCatalog={withCatalog && legacy} view={view} onBatchSaved={onBatchSaved} />}
+    <div ref={workbench} hidden={settings} onFocusCapture={event => {
+      if (!event.target.closest('[data-directory-recovery]')) lastFocus.current = event.target;
+    }}>
+      {onOpenSettings && !legacy && dir && directoryStatus.startsWith('已恢复并切换到') && <p role="status">{directoryStatus}</p>}
+      {onOpenSettings && !legacy && !dir && <section className="card stack" data-directory-recovery>
+        <p role={error ? 'alert' : 'status'}>{error || (loading ? '正在检查目录授权…' : binding ? '请重新授权原数据目录。' : '请先在设置中绑定数据目录。')}</p>
+        {!loading && binding && <button disabled={choosing || workbenchBusy || loading} onClick={() => void authorize()}>重新授权原目录</button>}
+        {!loading && <button className="secondary" onClick={onOpenSettings}>打开设置</button>}
+      </section>}
+      {(legacy || dir || onOpenSettings) && <Workbench key={legacy ? 'legacy' : onOpenSettings ? 'local' : `local-${generation}`}
+        local={!legacy} generation={generation} onBusy={setWorkbenchBusy} directory={legacy ? undefined : dir}
+        migrationDirectory={legacy ? dir : undefined} withCatalog={withCatalog && legacy} view={view} onBatchSaved={onBatchSaved} onNavigate={onNavigate} />}
+    </div>
   </>;
 }
 
-function Workbench({ directory, migrationDirectory, withCatalog, view, onBatchSaved }: {
+function Workbench({ local, generation, onBusy, directory, migrationDirectory, withCatalog, view, onBatchSaved, onNavigate }: {
+  generation: number;
+  onBusy: (busy: boolean) => void;
+  local: boolean;
   directory?: FileSystemDirectoryHandle;
   migrationDirectory?: FileSystemDirectoryHandle;
   withCatalog: boolean;
   view?: WorkbenchView;
   onBatchSaved?: () => void;
+  onNavigate?: (view: WorkbenchView) => void;
 }) {
-  const auth = directory ? undefined : remoteAuth();
+  const auth = local ? undefined : remoteAuth();
+  const [multiSite, setMultiSite] = useState(false);
+  const [returnToBatch, setReturnToBatch] = useState(false);
   const [homepage, setHomepage] = useState('');
   const [libraryTab, setLibrary] = useState<'sites' | 'links'>('sites');
   const showLibrary = !view || view === 'library';
   const library = showLibrary ? libraryTab : 'sites';
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [loadedDirectory, setLoadedDirectory] = useState<FileSystemDirectoryHandle>();
+  const readyDirectory = directory && directory === loadedDirectory ? directory : undefined;
   const [workspaceId, setWorkspace] = useState('');
   const [siteId, setSite] = useState('');
   const [text, setText] = useState('');
@@ -242,27 +330,51 @@ function Workbench({ directory, migrationDirectory, withCatalog, view, onBatchSa
   const [mapping, setMapping] = useState<ColumnMapping>(defaultMapping);
   const [preview, setPreview] = useState<ImportBatch>();
   const [saved, setSaved] = useState<Batch>();
+  const receiptDetails = useRef<HTMLDetailsElement>(null);
+  const receiptSequence = useRef<HTMLInputElement>(null);
+  const receiptEvidence = useRef<HTMLInputElement>(null);
+  const [reviewJump, setReviewJump] = useState<{ batch: string; site: string; sequence: number; request: number }>();
   const [history, setHistory] = useState<BatchSummary[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    onBusy(busy);
+    return () => onBusy(false);
+  }, [busy, onBusy]);
   const [signedIn, setSignedIn] = useState(!auth);
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [codeSent, setCodeSent] = useState(false);
   const [configured, setConfigured] = useState(!auth);
   const workspace = workspaces.find(item => item.id === workspaceId);
-  const site = workspace?.sites.find(item => item.id === siteId);
-  const path = workspaceId && siteId ? `/workspaces/${workspaceId}/sites/${siteId}/imports` : '';
+  const selectableSites = workspace?.sites.filter(item => !item.inactive || view === 'tasks') ?? [];
+  const site = selectableSites.find(item => item.id === siteId);
+  const path = workspaceId && site && (!local || readyDirectory) ? `/workspaces/${workspaceId}/sites/${siteId}/imports` : '';
   const ledger = useMemo(() => preview ? buildLedger(preview.rows) : [], [preview]);
 
-  const loadWorkspaces = useCallback(async () => {
-    try {
-      const data = directory ? [await workspaceFor(directory)] : await request<Workspace[]>('/workspaces');
+  useEffect(() => {
+    if (!signedIn || !configured || (local && !directory)) return;
+    let active = true;
+    const load = directory ? workspaceFor(directory).then(value => [value]) : request<Workspace[]>('/workspaces');
+    void load.then(data => {
+      if (!active) return;
       setWorkspaces(data);
+      setLoadedDirectory(directory);
       setWorkspace(data[0]?.id ?? '');
-      setSite(data[0]?.sites[0]?.id ?? '');
-    } catch (error) { setError(message(error)); }
-  }, [directory]);
+      setSite(current => {
+        if (local && data[0]?.sites.some(item => item.id === current)) return current;
+        return local && current ? '' : data[0]?.sites.find(site => !site.inactive)?.id ?? '';
+      });
+    }).catch(error => { if (active) setError(message(error)); });
+    return () => { active = false; };
+  }, [signedIn, configured, local, directory]);
+
+  useEffect(() => {
+    setSaved(undefined);
+    setHistory([]);
+    setAnalysisBatch(undefined);
+    setAnalysisStatus('');
+  }, [generation]);
 
   useEffect(() => {
     if (!auth) return;
@@ -271,16 +383,12 @@ function Workbench({ directory, migrationDirectory, withCatalog, view, onBatchSa
   }, []);
 
   useEffect(() => {
-    if (signedIn && configured) void loadWorkspaces();
-  }, [signedIn, configured, loadWorkspaces]);
-
-  useEffect(() => {
     if (!path) return;
     let active = true;
-    void (directory ? localHistory(directory, siteId) : request<BatchSummary[]>(path)).then(items => { if (active) setHistory(items); })
+    void (readyDirectory ? localHistory(readyDirectory, siteId) : request<BatchSummary[]>(path)).then(items => { if (active) setHistory(items); })
       .catch(error => { if (active) setError(message(error)); });
     return () => { active = false; };
-  }, [path, directory, siteId]);
+  }, [path, readyDirectory, siteId]);
 
   const parsed = useMemo(() => {
     try {
@@ -352,6 +460,7 @@ function Workbench({ directory, migrationDirectory, withCatalog, view, onBatchSa
     setError('');
   }
 
+  const pendingSave = useRef<{ requestId: string; directory: FileSystemDirectoryHandle; site: string } | null>(null);
   const [analysisBatch, setAnalysisBatch] = useState<string>();
   const [analysisStatus, setAnalysisStatus] = useState('');
 
@@ -362,7 +471,15 @@ function Workbench({ directory, migrationDirectory, withCatalog, view, onBatchSa
     try {
       if (directory) {
         if (startAnalysis) await requestCheckAccess(ledger);
+        const pending = pendingSave.current;
+        if (pending?.requestId === preview.requestId &&
+          (pending.site !== siteId || !(await pending.directory.isSameEntry(directory)))) {
+          throw new Error('本次保存仍待确认。请回到原目录及推广站点重试，或重新预览后创建新批次。');
+        }
+        pendingSave.current = { requestId: preview.requestId, directory, site: siteId };
         const result = await saveLocalBatch(directory, siteId, preview);
+        if (startAnalysis) await enqueue(directory, { site: siteId, batch: result.batch.id, analysis: true });
+        pendingSave.current = null;
         setSaved(result.batch);
         setHistory(result.history);
         setPreview(undefined);
@@ -371,7 +488,6 @@ function Workbench({ directory, migrationDirectory, withCatalog, view, onBatchSa
         if (startAnalysis) {
           setAnalysisStatus('正在分析…');
           try {
-            await enqueue(directory, { site: siteId, batch: result.batch.id, analysis: true });
             await runQueue(directory);
             setAnalysisStatus('本轮分析结束。');
           } catch (error) { setAnalysisStatus(message(error)); }
@@ -388,10 +504,24 @@ function Workbench({ directory, migrationDirectory, withCatalog, view, onBatchSa
     finally { setBusy(false); }
   }
 
+  async function openLocalResult(dir: FileSystemDirectoryHandle, id: string, selectedSite: string, sequence?: number) {
+    const [report, summaries] = await Promise.all([
+      localReportBatch(dir, selectedSite, id), localHistory(dir, selectedSite),
+    ]);
+    setSite(selectedSite);
+    setSaved(report);
+    setHistory(summaries);
+    setAnalysisBatch(report.snapshot ? id : undefined);
+    setReviewJump(current => sequence === undefined ? undefined :
+      { batch: id, site: selectedSite, sequence, request: (current?.request ?? 0) + 1 });
+  }
+
   async function openBatch(id: string) {
+    if (!path) return;
     if (!id) { setSaved(undefined); return; }
     setBusy(true);
     setError('');
+    setReviewJump(undefined);
     try {
       setSaved(directory ? await localReportBatch(directory, siteId, id) : await request<Batch>(`${path}/${id}`));
       setPreview(undefined);
@@ -448,6 +578,7 @@ function Workbench({ directory, migrationDirectory, withCatalog, view, onBatchSa
 
   return <>
     {error && <div className="error" role="alert">{error}</div>}
+    {local && directory && !readyDirectory && !error && <p role="status">正在读取工作空间…</p>}
     {auth && !signedIn && <section className="card stack">
       <h2>登录</h2>
       <label>电子邮箱<input type="email" value={email} disabled={codeSent} onChange={event => setEmail(event.target.value)} /></label>
@@ -458,12 +589,41 @@ function Workbench({ directory, migrationDirectory, withCatalog, view, onBatchSa
       {!configured && <section className="card"><button onClick={() => void requestConfiguredAccess()
         .then(granted => { if (granted) setConfigured(true); else setError('请授权工作台 API。'); })
         .catch(error => setError(message(error)))}>连接工作台</button></section>}
-      {withCatalog && showLibrary && <div className="library-tabs" role="group" aria-label="清单类型">
+      {(withCatalog || (readyDirectory && view === 'library')) && showLibrary && <div className="library-tabs" role="group" aria-label="清单类型">
         <button type="button" aria-pressed={library === 'sites'} className={library === 'sites' ? '' : 'secondary'}
           onClick={() => setLibrary('sites')}>推广站点</button>
         <button type="button" aria-pressed={library === 'links'} className={library === 'links' ? '' : 'secondary'}
           onClick={() => setLibrary('links')}>外链清单</button>
       </div>}
+      {view === 'setup' && readyDirectory && workspace && <section className="card controls">
+        <button className="secondary" aria-pressed={multiSite} disabled={busy}
+          onClick={() => setMultiSite(value => !value)}>{multiSite ? '返回单站导入' : '多站建批'}</button>
+      </section>}
+      {view === 'library' && returnToBatch && <button className="secondary" onClick={() => {
+        setReturnToBatch(false);
+        onNavigate?.('setup');
+      }}>返回多站建批</button>}
+      {multiSite && workspace && <div hidden={view !== 'setup'}>
+        <MultiSiteSetup key={generation} dir={readyDirectory} workspace={workspace} visible={view === 'setup'}
+          onOpenLibrary={onNavigate ? type => {
+            setLibrary(type);
+            setReturnToBatch(true);
+            onNavigate('library');
+          } : undefined} onBusy={setBusy} onStarted={async batch => {
+            if (!readyDirectory) return;
+            const first = batch.sites[0];
+            const report = await localReportBatch(readyDirectory, first.id, batch.id);
+            const history = await localHistory(readyDirectory, first.id);
+            setSite(first.id);
+            setSaved(report);
+            setHistory(history);
+            setAnalysisBatch(batch.id);
+            setMultiSite(false);
+            onBatchSaved?.();
+          }} />
+      </div>}
+      {view === 'templates' && readyDirectory && <DraftTemplates key={generation} dir={readyDirectory} />}
+      {view !== 'templates' && !(view === 'setup' && multiSite) && <>
       <section className="card controls">
         <label>工作空间<select value={workspaceId} disabled={busy} onChange={event => {
           if (workspaceId === event.target.value) return;
@@ -473,11 +633,14 @@ function Workbench({ directory, migrationDirectory, withCatalog, view, onBatchSa
         }}>{!workspaces.length && <option value="">暂无工作空间</option>}{workspaces.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         {library === 'sites' && <label>推广站点<select value={siteId} disabled={busy} onChange={event => {
           if (siteId === event.target.value) return;
-          resetSite();
+          if (local) {
+            setSaved(undefined);
+            setHistory([]);
+          } else resetSite();
           setSite(event.target.value);
         }}>
-          {!workspace?.sites.length && <option value="">暂无站点</option>}
-          {workspace?.sites.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+          {!site && <option value="">{selectableSites.length ? '请选择推广站点' : '暂无站点'}</option>}
+          {selectableSites.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select></label>}
         {auth && <button className="secondary" onClick={() => void auth?.auth.signOut().then(({ error }) => {
           if (error) { setError(message(error)); return; }
@@ -488,15 +651,15 @@ function Workbench({ directory, migrationDirectory, withCatalog, view, onBatchSa
         <button disabled={busy} onClick={() => void migrateSite()}>将本站历史批次复制到本机目录</button>
         {migrationStatus && <p role="status">{migrationStatus}</p>}
       </section>}
-      {directory && workspace && (showLibrary || !site) && <form className="card controls" onSubmit={async event => {
+      {readyDirectory && workspace && library === 'sites' && (showLibrary || !site) && <form className="card controls" onSubmit={async event => {
         event.preventDefault();
         setBusy(true);
         try {
-          const result = await addSite(directory, homepage);
+          const result = await addSite(readyDirectory, homepage);
           resetSite();
           setWorkspaces([result.workspace]);
           setSite(result.site.id);
-          if (result.site.id === siteId) setHistory(await localHistory(directory, siteId));
+          if (result.site.id === siteId) setHistory(await localHistory(readyDirectory, siteId));
           setHomepage('');
         } catch (err) { setError(message(err)); }
         finally { setBusy(false); }
@@ -504,16 +667,20 @@ function Workbench({ directory, migrationDirectory, withCatalog, view, onBatchSa
         <label>官网地址<input type="url" required value={homepage} onChange={event => setHomepage(event.target.value)} /></label>
         <button disabled={busy}>添加推广站点</button>
       </form>}
-      {(showLibrary || view === 'tasks') && directory && site && <VerifiedLinks key={site.id} dir={directory} site={site} batch={saved} onUpdate={async () => {
+      {view === 'library' && library === 'sites' && readyDirectory && workspace && <LocalSites key={generation}
+        dir={readyDirectory} workspace={workspace} onChange={value => setWorkspaces([value])} />}
+      {((showLibrary && library === 'sites') || view === 'tasks') && readyDirectory && site && <VerifiedLinks key={site.id} dir={readyDirectory} site={site} batch={saved} onUpdate={async () => {
         if (!saved) return;
-        const refreshed = await localReportBatch(directory, siteId, saved.id);
+        const refreshed = await localReportBatch(readyDirectory, siteId, saved.id);
         setSaved(current => current === saved ? refreshed : current);
       }} />}
-      {library === 'links' && workspaceId && <LinkCatalog key={workspaceId} workspaceId={workspaceId} />}
+      {library === 'links' && (local
+        ? readyDirectory && <LocalLinkLists key={generation} dir={readyDirectory} />
+        : workspaceId && <LinkCatalog key={workspaceId} workspaceId={workspaceId} />)}
       <div hidden={library !== 'sites'}>
-        {showLibrary && directory && site && history.length > 0 && <AnalysisResults key={site.id} dir={directory} site={site.id} batches={history} />}
-        <section className="card stack" hidden={Boolean(view && (view !== 'setup' || !site))}>
-          <h2>导入候选网址</h2>
+        {showLibrary && readyDirectory && site && history.length > 0 && <AnalysisResults key={site.id} dir={readyDirectory} site={site.id} batches={history} />}
+        <section className="card stack" hidden={Boolean(view && (view !== 'setup' || (!site && Boolean(directory) && !text && !preview)))}>
+          <h2 data-draft-heading tabIndex={-1}>导入候选网址</h2>
           <label>CSV 或 TXT 文件<input type="file" accept=".csv,.txt,text/csv,text/plain" disabled={busy} onChange={event => {
             const file = event.target.files?.[0];
             event.target.value = '';
@@ -546,45 +713,70 @@ function Workbench({ directory, migrationDirectory, withCatalog, view, onBatchSa
         {preview && <section className="card stack" hidden={Boolean(view && view !== 'setup')}>
           <h2>导入预览</h2><p>共 {ledger.length} 行，其中 {ledger.filter(row => row.disposition === 'candidate').length} 条候选。</p>
           <RowTable key={preview.requestId} rows={ledger} />
-          {view === 'setup' && directory && <button disabled={busy || !path || !ledger.some(row => row.disposition === 'candidate')}
+          {view === 'setup' && local && <button disabled={busy || !path || !ledger.some(row => row.disposition === 'candidate')}
             onClick={() => void save(true)}>保存并开始分析</button>}
           <button disabled={busy || !path} onClick={() => void save()}>{busy ? '保存中…' : '确认并保存'}</button>
         </section>}
+        {view === 'tasks' && readyDirectory && <>
+          <MultiSiteHistory key={`history-${generation}`} dir={readyDirectory} onOpen={(id, selectedSite) =>
+            openLocalResult(readyDirectory, id, selectedSite)} />
+          <PendingSubmissionReviews key={`review-${generation}`} dir={readyDirectory} onOpen={(id, selectedSite, sequence) =>
+            openLocalResult(readyDirectory, id, selectedSite, sequence)} />
+        </>}
         <section className="card stack" hidden={Boolean(view && view !== 'tasks')}>
           <h2>逐行台账</h2>
-          {history.length ? <label>导入批次<select value={saved?.id ?? ''} disabled={busy} onChange={event => void openBatch(event.target.value)}>
+          {history.length ? <label>导入批次<select value={saved?.id ?? ''} disabled={busy || !path} onChange={event => void openBatch(event.target.value)}>
             <option value="">选择历史批次</option>
             {history.map(item => <option key={item.id} value={item.id}>{new Date(item.createdAt).toLocaleString()} · {item.filename ?? '粘贴'} · {item.rowCount} 行</option>)}
           </select></label> : <p>当前站点暂无导入记录。</p>}
           {saved && site && <>
             <button className="secondary" type="button" onClick={() => downloadLedger(saved, site)}>导出 CSV</button>
-            <RowTable key={saved.id} rows={saved.rows} site={site} />
-            {directory && <details key={saved.id + '-receipt'}>
+            <RowTable key={saved.id} rows={saved.rows} site={saved.snapshot?.site ?? site} />
+            {readyDirectory && <details key={`${siteId}-${saved.id}-receipt`} ref={receiptDetails}>
               <summary>登记待审核回执</summary>
               <form className="stack" onSubmit={async event => {
                 event.preventDefault();
                 const data = new FormData(event.currentTarget);
                 setBusy(true);
                 try {
-                  const batch = await recordPendingReview(directory, siteId, saved.id, Number(data.get('sequence')),
+                  const batch = await recordPendingReview(readyDirectory, siteId, saved.id, Number(data.get('sequence')),
                     String(data.get('evidence')), String(data.get('submittedAt')));
-                  setSaved(await localReportBatch(directory, siteId, batch.id));
+                  setSaved(await localReportBatch(readyDirectory, siteId, batch.id));
                   setError('');
                 } catch (err) { setError(message(err)); }
                 finally { setBusy(false); }
               }}>
-                <label>已提交记录的序号<input name="sequence" type="number" min="1" max={saved.rows.length} step="1" required /></label>
+                <label>已提交记录的序号<input ref={receiptSequence} name="sequence" type="number" min="1" max={saved.rows.length} step="1" required /></label>
                 <label>实际提交时间<input name="submittedAt" type="datetime-local" required /></label>
-                <label>平台待审核提示或回执编号<input name="evidence" maxLength={1000} required /></label>
+                <label>平台待审核提示或回执编号<input ref={receiptEvidence} name="evidence" maxLength={1000} required /></label>
                 <button disabled={busy}>保存回执</button>
               </form>
             </details>}
-            {directory && <SubmissionApprovals key={saved.id} dir={directory} site={siteId} batch={saved} />}
+            {readyDirectory && saved.snapshot?.execution !== '仅分析' && <SubmissionApprovals
+              key={`${siteId}-${saved.id}-${reviewJump?.request ?? 0}`} dir={readyDirectory} site={siteId} batch={saved}
+              onRegisterReceipt={sequence => {
+                const details = receiptDetails.current;
+                const field = receiptSequence.current;
+                if (!details || !field) return;
+                const evidence = receiptEvidence.current;
+                if (field.value !== String(sequence)) {
+                  if (field.value) details.querySelector('form')?.reset();
+                  field.value = String(sequence);
+                }
+                details.open = true;
+                evidence?.focus();
+              }}
+              onUpdate={async () => {
+                const report = await localReportBatch(readyDirectory, siteId, saved.id);
+                setSaved(current => current === saved ? report : current);
+              }}
+              initialSequence={reviewJump?.batch === saved.id && reviewJump.site === siteId ? reviewJump.sequence : undefined} />}
             {saved.id === analysisBatch && <p role="status">{analysisStatus}</p>}
-            {directory && <BatchChecks key={saved.id} dir={directory} site={siteId} batch={saved} initiallyAnalysis={saved.id === analysisBatch} />}
+            {readyDirectory && <BatchChecks key={saved.id} dir={readyDirectory} site={siteId} batch={saved} initiallyAnalysis={saved.id === analysisBatch} />}
           </>}
         </section>
       </div>
+      </>}
     </>}
   </>;
 }

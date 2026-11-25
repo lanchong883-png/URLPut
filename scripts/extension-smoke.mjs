@@ -121,7 +121,8 @@ try {
   await page.goto(`${origin}/sidepanel.html`);
   const nav = page.getByRole('navigation', { name: '插件导航' });
   await nav.getByRole('button', { name: '新建批次' }).click();
-  await page.getByRole('button', { name: '选择数据目录' }).click();
+  await page.getByRole('button', { name: '打开设置' }).click();
+  await page.getByRole('button', { name: '初始化空数据目录' }).click();
   await page.getByLabel('官网地址').fill('https://local.example');
   await page.getByRole('button', { name: '添加推广站点' }).click();
   await page.getByRole('option', { name: 'local.example' }).waitFor({ state: 'attached' });
@@ -133,11 +134,80 @@ try {
   await page.getByRole('button', { name: '加入只读检查队列' }).waitFor();
   assert.equal(await page.getByLabel('或粘贴表格及网址').isVisible(), false);
   await nav.getByRole('button', { name: '清单', exact: true }).click();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
   await page.getByRole('button', { name: '备份数据目录' }).waitFor();
+  await page.evaluate(async () => {
+    await new Promise(locked => {
+      void navigator.locks.request('urlput-active-url', () => new Promise(release => {
+        window.releaseTestQueue = release;
+        locked();
+      }));
+    });
+  });
+  try {
+    await page.getByRole('button', { name: '重新选择数据目录' }).click();
+    await page.getByRole('alert').filter({ hasText: '有只读任务正在运行' }).waitFor();
+  } finally {
+    await page.evaluate(() => window.releaseTestQueue());
+  }
+  await page.getByRole('button', { name: '返回', exact: true }).click();
   assert.equal(await page.getByLabel('导入批次').isVisible(), false);
   await nav.getByRole('button', { name: '新建批次' }).click();
   await page.getByLabel('或粘贴表格及网址').waitFor();
   assert.equal(await page.getByLabel('或粘贴表格及网址').inputValue(), '');
+  for (const width of [320, 392]) {
+    await page.setViewportSize({ width, height: 760 });
+    const draft = page.getByLabel('或粘贴表格及网址');
+    const url = 'https://recovery.example/' + 'long-path'.repeat(24);
+    await draft.fill(url);
+    await page.getByRole('button', { name: '预览导入' }).click();
+    await draft.focus();
+    await page.evaluate(() => {
+      sessionStorage.setItem('directory-permission', 'deny');
+      window.dispatchEvent(new Event('focus'));
+    });
+    const recover = page.getByRole('button', { name: '重新授权原目录' });
+    await recover.click();
+    await page.getByRole('alert').filter({ hasText: '请允许读取和写入原数据目录' }).waitFor();
+    assert.equal(await draft.inputValue(), url);
+    assert.equal(await page.getByRole('button', { name: '确认并保存' }).isDisabled(), true);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width);
+    await page.evaluate(() => sessionStorage.setItem('directory-permission', 'prompt'));
+    await recover.click();
+    await page.waitForFunction(() => document.activeElement?.tagName === 'TEXTAREA');
+    assert.equal(await draft.inputValue(), url);
+    await page.getByRole('cell', { name: url, exact: true }).waitFor();
+  }
+  await nav.getByRole('button', { name: '清单', exact: true }).click();
+  await page.getByLabel('官网地址').fill('https://recovery-site.example');
+  await page.getByRole('button', { name: '添加推广站点' }).click();
+  await page.getByRole('option', { name: 'recovery-site.example' }).waitFor({ state: 'attached' });
+  await nav.getByRole('button', { name: '新建批次' }).click();
+  const retryUrl = 'https://retry-save.example/';
+  await page.getByLabel('或粘贴表格及网址').fill(retryUrl);
+  await page.getByRole('button', { name: '预览导入' }).click();
+  await page.evaluate(() => {
+    const createWritable = FileSystemFileHandle.prototype.createWritable;
+    FileSystemFileHandle.prototype.createWritable = function (...args) {
+      if (this.name.endsWith('.index.json')) {
+        FileSystemFileHandle.prototype.createWritable = createWritable;
+        sessionStorage.setItem('directory-permission', 'deny');
+        window.dispatchEvent(new Event('focus'));
+        throw new DOMException('受控写入失败', 'NotAllowedError');
+      }
+      return createWritable.apply(this, args);
+    };
+  });
+  await page.getByRole('button', { name: '确认并保存' }).click();
+  await page.getByRole('alert').filter({ hasText: '受控写入失败' }).waitFor();
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.getByRole('button', { name: '重新授权原目录' }).waitFor();
+  await page.evaluate(() => sessionStorage.setItem('directory-permission', 'prompt'));
+  await page.getByRole('button', { name: '重新授权原目录' }).click();
+  await page.getByRole('button', { name: '确认并保存' }).click();
+  await page.getByRole('heading', { name: '任务', exact: true }).waitFor();
+  await page.getByRole('cell', { name: retryUrl, exact: true }).waitFor();
+  assert.equal(await page.getByLabel('导入批次').locator('option').count(), 2);
   await page.goto(`${origin}/import.html`);
   await page.getByRole('button', { name: '备份数据目录' }).waitFor();
   await page.evaluate(() => {
@@ -153,7 +223,7 @@ try {
   await page.evaluate(() => sessionStorage.setItem('directory-permission', 'prompt'));
   await reauthorize.click();
   await page.getByRole('option', { name: 'test-data', exact: true }).waitFor({ state: 'attached' });
-  assert.equal(await page.evaluate(() => sessionStorage.getItem('directory-picker-count')), '1');
+  assert.equal(await page.evaluate(() => sessionStorage.getItem('directory-picker-count')), '2');
   const history = page.getByLabel('导入批次');
   await history.selectOption({ index: 1 });
   await page.getByRole('cell', { name: 'https://offline.example', exact: true }).waitFor();
@@ -633,7 +703,7 @@ try {
       assert.equal(queueRequests.at(-1).path, '/0');
       assert.ok(queueRequests.at(-1).at - queueRequests[0].at >= 8000);
     } finally { releaseTimeoutRoute(); }
-    await page.getByLabel('推广站点').selectOption({ label: 'local.example' });
+    await page.getByLabel('推广站点').and(page.locator('select')).selectOption({ label: 'local.example' });
     await page.getByLabel('或粘贴表格及网址').fill('https://OK-OFFLINE.example/#duplicate\nhttps://OFFLINE.example/#duplicate');
     await page.getByRole('button', { name: '预览导入' }).click();
     await page.getByRole('button', { name: '确认并保存' }).click();
@@ -652,13 +722,235 @@ try {
     await page.getByRole('button', { name: '保存回执' }).click();
     await page.getByRole('alert').filter({ hasText: '已有该网址的待审核回执' }).waitFor();
   }
+  if (webSmoke) {
+    await page.goto(`${origin}/sidepanel.html`);
+    const multiTab = name => page.getByRole('navigation', { name: '插件导航' }).getByRole('button', { name, exact: true }).click();
+    let listChecks = 0;
+    let batchChecks = 0;
+    const candidate = 'https://multi-analysis.example/one';
+    const firstAnalysis = Promise.withResolvers();
+    await context.route('https://multi-analysis.example/**', route => {
+      if (route.request().method() === 'HEAD') listChecks++;
+      else {
+        assert.equal(route.request().method(), 'GET');
+        batchChecks++;
+        if (batchChecks === 1) {
+          firstAnalysis.resolve(route);
+          return;
+        }
+      }
+      return route.fulfill({ contentType: 'text/html', body: '<title>Multi-site analysis evidence</title>' });
+    });
+    await multiTab('清单');
+    await page.getByLabel('官网地址').fill('https://multi-alpha.example');
+    await page.getByRole('button', { name: '添加推广站点' }).click();
+    await page.getByRole('option', { name: 'multi-alpha.example' }).waitFor({ state: 'attached' });
+    await page.getByLabel('官网地址').fill('https://multi-beta.example');
+    await page.getByRole('button', { name: '添加推广站点' }).click();
+    await page.getByRole('option', { name: 'multi-beta.example' }).waitFor({ state: 'attached' });
+    await page.getByRole('button', { name: '外链清单', exact: true }).click();
+    await page.getByLabel('清单名称').fill('多站验收清单');
+    await page.getByLabel('粘贴外链或表格').fill(
+      'URL,网站类型,价格,样本链接属性,DR,评分来源,评分日期\n' +
+      candidate + ',博客,免费,nofollow,0,受控样本,2026-11-23\n' + candidate + '#duplicate\ninvalid',
+    );
+    await page.getByRole('button', { name: '保存新清单' }).click();
+    await page.getByText('新增 1，已有 0，重复 1，问题 1。').waitFor();
+    await page.getByText('2 条来源').waitFor();
+    await page.getByRole('button', { name: '检查入口' }).click();
+    await page.getByText('活跃', { exact: true }).waitFor();
+    assert.equal(listChecks, 1);
+    await multiTab('新建批次');
+    await page.getByRole('button', { name: '多站建批', exact: true }).click();
+    await page.getByLabel('筛选批次站点').fill('multi-');
+    await page.getByRole('button', { name: '全选匹配站点' }).click();
+    await page.getByLabel('批次使用的外链清单').selectOption({ label: '多站验收清单' });
+    await page.getByText('DR 0 · 受控样本 · 2026-11-23').waitFor();
+    await page.getByRole('button', { name: '去管理外链清单' }).click();
+    await page.getByRole('button', { name: '返回多站建批' }).click();
+    await page.waitForFunction(() => document.activeElement?.textContent === '去管理外链清单');
+    await page.getByLabel('批次名称').fill('两站一候选');
+    await page.getByText('2 个站点，每站 1 条候选，共 2 个组合。').waitFor();
+    await page.getByRole('button', { name: '启动多站分析' }).click();
+    await page.getByRole('heading', { name: '任务', exact: true }).waitFor();
+    const firstRoute = await Promise.race([firstAnalysis.promise, new Promise((_, reject) => {
+      const timeout = setTimeout(() => reject(new Error('多站分析首个请求未启动')), 10000);
+      timeout.unref();
+    })]);
+    await page.getByRole('button', { name: '两站一候选', exact: true }).click();
+    await page.getByRole('button', { name: '暂停调度' }).click();
+    await page.getByRole('status').filter({ hasText: '已暂停' }).waitFor();
+    await firstRoute.fulfill({ contentType: 'text/html', body: '<title>Multi-site analysis evidence</title>' });
+    await page.getByText('Multi-site analysis evidence', { exact: true }).waitFor();
+    await page.getByText(/完成 1 \/ 2 站/).waitFor();
+    assert.equal(batchChecks, 1);
+    await page.getByRole('button', { name: '继续批次' }).click();
+    await page.getByText(/完成 2 \/ 2 站/).waitFor();
+    await page.getByText(/候选 2 · 已处理 2.*待处理 0.*已接收 0.*有效 0/).waitFor();
+    await page.getByLabel('进度范围').selectOption({ label: 'multi-beta.example' });
+    await page.getByText(/候选 1 · 已处理 1.*待处理 0/).waitFor();
+    const fileDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: '导出当前范围 CSV' }).click();
+    const csv = await readFile(await (await fileDownload).path(), 'utf8');
+    assert.match(csv, /^\uFEFF"序号","网站域名","网站分类","URL","结果类别","结论","原因与下一步","推广站点","推广站点网址"/);
+    assert.match(csv, /multi-beta.example/);
+    assert.doesNotMatch(csv, /multi-alpha.example/);
+    assert.match(csv, /"网站分析","已完成"/);
+    await page.getByLabel('批次状态').selectOption('done');
+    await page.getByRole('button', { name: '两站一候选', exact: true }).waitFor();
+    await page.getByLabel('推广站点').and(page.locator('select')).selectOption({ label: 'multi-beta.example' });
+    await page.getByLabel('导入批次').selectOption({ label: (await page.getByRole('option', { name: /两站一候选/ }).textContent()).trim() });
+    await page.getByText('Multi-site analysis evidence', { exact: true }).waitFor();
+    assert.equal(batchChecks, 2);
+    await multiTab('内容模板');
+    await page.getByLabel('选择要编辑的模板').selectOption({ label: '通用文案 · 官网导览' });
+    await page.getByLabel('模板内容').fill('受控模板：{{站点名称}} {{站点网址}}');
+    await page.getByRole('button', { name: '保存模板版本' }).click();
+    await page.getByText('模板新版本已保存。').waitFor();
+    await multiTab('新建批次');
+    await page.getByRole('button', { name: '多站建批', exact: true }).click();
+    await page.getByLabel('筛选批次站点').fill('multi-alpha');
+    await page.getByRole('button', { name: '全选匹配站点' }).click();
+    await page.getByLabel('批次使用的外链清单').selectOption({ label: '多站验收清单' });
+    await page.getByLabel('执行方式').selectOption('execute');
+    await page.getByLabel('每站滚动 24 小时额度').fill('2');
+    await page.getByLabel('执行方式').selectOption('analysis');
+    await page.getByLabel('执行方式').selectOption('execute');
+    assert.equal(await page.getByLabel('每站滚动 24 小时额度').inputValue(), '2');
+    await page.getByLabel('批次名称').fill('模板验收批次');
+    await page.getByRole('button', { name: '启动分析并准备草稿' }).click();
+    await page.getByRole('heading', { name: '任务', exact: true }).waitFor();
+    await page.getByText('Multi-site analysis evidence', { exact: true }).waitFor();
+    await page.getByText('逐条批准手动投稿', { exact: true }).click();
+    await page.getByLabel('投稿候选').selectOption('1');
+    await page.getByRole('button', { name: '准备并保存此条草稿' }).click();
+    await page.getByText('草稿来源：官网导览 v2', { exact: true }).waitFor();
+    assert.match(await page.getByLabel('投稿内容').inputValue(), /受控模板：multi-alpha.example/);
+    await page.getByLabel('核对后的平台标识').fill('controlled-platform');
+    await page.getByRole('button', { name: '批准此条并保存投稿占位' }).click();
+    await page.getByText(/已批准并保存投稿占位/).waitFor();
+    assert.equal(batchChecks, 2, '相同站点与候选复用上一批已完成的分析');
+    await page.getByText('跨批投稿待确认', { exact: true }).click();
+    const pending = page.locator('details').filter({ has: page.getByText('跨批投稿待确认', { exact: true }) });
+    const newReview = pending.getByRole('listitem').filter({ hasText: candidate });
+    await newReview.getByText('已批准，等待用户手动提交').waitFor();
+    await newReview.getByRole('button', { name: '查看原批次' }).click();
+    await page.waitForFunction(() => document.activeElement?.tagName === 'SELECT' && document.activeElement.value === '1');
+    await page.getByText('草稿来源：官网导览 v2', { exact: true }).waitFor();
+
+    const receipt = '受控多站回执 #MULTI-10';
+    await page.getByText('登记待审核回执', { exact: true }).click();
+    await page.getByLabel('已提交记录的序号').fill('1');
+    function currentLocalMinute() {
+      const now = new Date();
+      return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+    }
+    await page.getByLabel('实际提交时间').fill(currentLocalMinute());
+    await page.getByLabel('平台待审核提示或回执编号').fill(receipt);
+    await page.getByRole('button', { name: '保存回执' }).click();
+    await page.getByRole('alert').filter({ hasText: '取得平台回执后再登记' }).waitFor();
+
+    const publicUrl = candidate + '/published';
+    let manualPosts = 0;
+    await context.route(candidate, async route => {
+      if (route.request().method() === 'POST') {
+        manualPosts++;
+        assert.match(new URLSearchParams(route.request().postData()).get('draft'), /受控模板/);
+        await route.abort('connectionreset');
+      } else await route.fulfill({
+        contentType: 'text/html; charset=utf-8',
+        body: manualPosts ? `<p>${receipt}</p>`
+          : '<form method="post"><label>正文<textarea name="draft" required></textarea></label><button>提交审核</button></form>',
+      });
+    });
+    await context.route(publicUrl, route => route.fulfill({
+      contentType: 'text/html; charset=utf-8',
+      body: '<article id="comment-10"><a href="https://multi-alpha.example/">推广站点</a></article>',
+    }));
+    const opened = context.waitForEvent('page');
+    await page.getByRole('button', { name: '开始单次手动投稿' }).click();
+    const submission = await opened;
+    await submission.getByLabel('正文').fill(await page.getByLabel('已批准内容').inputValue());
+    const disconnected = submission.waitForEvent('requestfailed');
+    await submission.getByRole('button', { name: '提交审核' }).click();
+    assert.equal((await disconnected).method(), 'POST');
+    await submission.close();
+    await page.bringToFront();
+    await newReview.getByText('投稿结果待核对，请检查原平台记录').waitFor();
+    await page.reload();
+    await multiTab('任务');
+    await page.getByText('跨批投稿待确认', { exact: true }).click();
+    await newReview.getByRole('button', { name: '查看原批次' }).click();
+    const recovery = page.getByRole('link', { name: '打开原平台核对回执' });
+    assert.equal(await recovery.getAttribute('href'), candidate);
+    const checked = context.waitForEvent('page');
+    const recoveryRequest = context.waitForEvent('request', request => request.url() === candidate);
+    await recovery.click();
+    const confirmation = await checked;
+    assert.equal((await recoveryRequest).method(), 'GET');
+    await confirmation.getByText(receipt, { exact: true }).waitFor();
+    await confirmation.close();
+    await page.bringToFront();
+    await page.getByText(/已开始一次投稿/).waitFor();
+    assert.equal(await page.getByRole('button', { name: '开始单次手动投稿' }).count(), 0);
+    assert.equal(manualPosts, 1);
+
+    await page.getByRole('button', { name: '登记此条回执', exact: true }).click();
+    assert.equal(await page.getByLabel('已提交记录的序号').inputValue(), '1');
+    assert.equal(await page.getByLabel('实际提交时间').inputValue(), '');
+    assert.equal(await page.getByLabel('平台待审核提示或回执编号').evaluate(input => document.activeElement === input), true);
+    await page.getByLabel('平台待审核提示或回执编号').fill(receipt);
+    await page.getByLabel('实际提交时间').fill(currentLocalMinute());
+    await page.getByRole('button', { name: '保存回执' }).click();
+    await page.getByText('此条已有待审核回执。', { exact: true }).waitFor();
+    await newReview.waitFor({ state: 'detached' });
+    await page.getByText('已核验外链台账（0）', { exact: true }).click();
+    await page.getByLabel('公开评论定位链接').fill(publicUrl + '#comment-10');
+    await page.getByLabel('关联当前批次回执').selectOption('1');
+    await page.getByLabel('预期目标网址').fill('https://incorrect-target.example/');
+    await page.getByRole('button', { name: '只读核验并保存' }).click();
+    await page.getByText(/须与批次快照中的推广站点一致/).waitFor();
+    await page.getByLabel('预期目标网址').fill('https://multi-alpha.example/');
+    await page.getByRole('button', { name: '只读核验并保存' }).click();
+    await page.getByRole('cell', { name: '有效外链', exact: true }).waitFor();
+    const evidenceDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: '导出 CSV', exact: true }).click();
+    const evidence = await readFile(await (await evidenceDownload).path(), 'utf8');
+    assert.match(evidence, /#MULTI-10/);
+    assert.match(evidence, /#comment-10/);
+    assert.match(evidence, /"提交成功","有效外链"/);
+    assert.equal(manualPosts, 1);
+
+    await multiTab('新建批次');
+    await page.getByRole('button', { name: '多站建批', exact: true }).click();
+    await page.getByLabel('筛选批次站点').fill('multi-beta');
+    await page.getByRole('button', { name: '全选匹配站点' }).click();
+    await page.getByLabel('批次使用的外链清单').selectOption({ label: '多站验收清单' });
+    await page.getByLabel('执行方式').selectOption('execute');
+    await page.getByLabel('批次名称').fill('人工跳过验收');
+    await page.getByRole('button', { name: '启动分析并准备草稿' }).click();
+    await page.getByRole('heading', { name: '任务', exact: true }).waitFor();
+    await page.getByText('逐条批准手动投稿', { exact: true }).click();
+    await page.getByLabel('投稿候选').selectOption('1');
+    await page.getByRole('button', { name: '跳过此条投稿' }).click();
+    await page.getByRole('cell', { name: '已跳过投稿', exact: true }).waitFor();
+    await page.reload();
+    await multiTab('任务');
+    await page.getByRole('button', { name: '人工跳过验收', exact: true }).click();
+    await page.getByRole('button', { name: '打开该站结果' }).click();
+    await page.getByRole('cell', { name: '已跳过投稿', exact: true }).waitFor();
+    assert.equal(manualPosts, 1);
+
+  }
   assert.deepEqual(apiCalls, []);
   await context.unroute(apiPattern, blockApi);
   await startLegacyBackend();
   await page.goto(`${origin}/sidepanel.html`);
   const tab = name => page.getByRole('navigation', { name: '插件导航' }).getByRole('button', { name, exact: true }).click();
   await tab('清单');
+  await page.getByRole('button', { name: '设置', exact: true }).click();
   await page.getByLabel('数据来源').selectOption('legacy');
+  await page.getByRole('button', { name: '返回', exact: true }).click();
   await tab('新建批次');
   assert.equal(await page.getByRole('navigation', { name: '插件导航' }).getByRole('button').count(), 6);
   for (const width of [320, 392]) {
@@ -667,7 +959,7 @@ try {
   }
   await page.getByRole('heading', { name: '导入候选网址' }).waitFor();
   await page.getByText('示例站点', { exact: true }).waitFor({ state: 'attached' });
-  await page.getByLabel('推广站点').selectOption({ label: '示例站点' });
+  await page.getByLabel('推广站点').and(page.locator('select')).selectOption({ label: '示例站点' });
   const paste = page.getByLabel('或粘贴表格及网址');
   await paste.fill('URL\nhttps://example.org\nhttps://EXAMPLE.org/#a\ninvalid');
   await page.getByRole('button', { name: '预览导入' }).click();
@@ -685,7 +977,7 @@ try {
   await page.getByRole('button', { name: '确认并保存' }).click();
   await page.getByRole('option', { name: /candidates.csv/ }).waitFor({ state: 'attached' });
   await page.reload();
-  await page.getByLabel('推广站点').selectOption({ label: '示例站点' });
+  await page.getByLabel('推广站点').and(page.locator('select')).selectOption({ label: '示例站点' });
   await tab('任务');
   await page.getByRole('option', { name: /candidates.csv/ }).waitFor({ state: 'attached' });
   const options = await page.getByLabel('导入批次').locator('option').allTextContents();
@@ -707,7 +999,7 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width);
   }
 
-  await page.getByLabel('推广站点').selectOption({ label: '第二站点' });
+  await page.getByLabel('推广站点').and(page.locator('select')).selectOption({ label: '第二站点' });
   await page.getByText('当前站点暂无导入记录。').waitFor();
   assert.equal(await page.getByRole('button', { name: '导出 CSV' }).count(), 0);
   await tab('新建批次');
@@ -733,7 +1025,7 @@ try {
   await page.getByRole('button', { name: '确认并保存' }).click();
   await page.getByRole('option', { name: /links.TXT/ }).waitFor({ state: 'attached' });
   await page.reload();
-  await page.getByLabel('推广站点').selectOption({ label: '第二站点' });
+  await page.getByLabel('推广站点').and(page.locator('select')).selectOption({ label: '第二站点' });
   await tab('任务');
   const txtOption = page.getByRole('option', { name: /links.TXT/ });
   await txtOption.waitFor({ state: 'attached' });
@@ -811,13 +1103,15 @@ try {
     ['/custom/v1/chat/completions', 'Bearer test-session-key', 'custom-model'],
   ]);
   await page.getByRole('button', { name: '清单', exact: true }).click();
-  await page.getByLabel('推广站点').selectOption({ label: '示例站点' });
+  await page.getByLabel('推广站点').and(page.locator('select')).selectOption({ label: '示例站点' });
   for (let attempt = 0; attempt < 2; attempt++) {
     await page.getByRole('button', { name: '将本站历史批次复制到本机目录' }).click();
     await page.getByText('已核对并保存 2 个批次。').waitFor();
   }
+  await page.getByRole('button', { name: '设置', exact: true }).click();
   await page.getByLabel('数据来源').selectOption('local');
-  await page.getByLabel('推广站点').selectOption({ label: '示例站点' });
+  await page.getByRole('button', { name: '返回', exact: true }).click();
+  await page.getByLabel('推广站点').and(page.locator('select')).selectOption({ label: '示例站点' });
   await tab('任务');
   const migrated = page.getByLabel('导入批次');
   await migrated.getByRole('option', { name: /candidates.csv/ }).waitFor({ state: 'attached' });

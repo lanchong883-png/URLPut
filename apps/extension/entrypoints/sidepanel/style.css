@@ -116,3 +116,6 @@
 .catalog-list time { font-size: .8rem; }
 
 .side-panel [hidden] { display: none; }
+
+.panel-actions { display: flex; gap: .4rem; }
+.draft-sections { margin: 0; padding: 0; border: 0; min-inline-size: 0; }

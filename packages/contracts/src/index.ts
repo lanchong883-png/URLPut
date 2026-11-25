@@ -20,7 +20,7 @@ export const importBatchSchema = z.object({
 
 export type ImportBatch = z.infer<typeof importBatchSchema>;
 
-export const siteSchema = z.object({ id: z.uuid(), name: z.string(), homepage: z.string() });
+export const siteSchema = z.object({ id: z.uuid(), name: z.string(), homepage: z.string(), inactive: z.boolean().optional() });
 export const workspaceSchema = z.object({
   id: z.uuid(),
   name: z.string(),
